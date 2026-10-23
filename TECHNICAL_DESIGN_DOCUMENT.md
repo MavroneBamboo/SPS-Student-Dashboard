@@ -250,7 +250,7 @@ Required interactions:
 - Save amendments directly to the current draft and record an audit event.
 - Return to the normal Schedule view without losing amendments.
 
-The UI must use the real weekday and period represented by each row/cell, not its current sorted index. This prevents a known legacy failure where editing after sorting changed a different day. Period 5 must be rendered and editable; the current school layout is five teaching periods, including the 12:00–13:25 slot as Period 3.
+The UI must use the real weekday and period represented by each row/cell, not its current sorted index. This prevents a known legacy failure where editing after sorting changed a different day. The current school layout is five displayed columns—`P1`, `P2`, `Lunch`, `P3`, `P4`—but only four are schedulable teaching periods. The lunch column is rendered for report alignment and must reject lesson drops and edits.
 
 ### 15.4 PDF/report output
 
@@ -280,4 +280,4 @@ A teacher profile is not an application login account. The Operator uses a teach
 
 The lesson API must resolve references by stable IDs, validate weekly counts and block lengths, and reject inactive or unavailable resources. The scheduler and Amend 4-up editor must call the same conflict/availability service. If a teacher short code changes, the change must be audited and all related lesson references must remain intact.
 
-Legacy availability migration requires an explicit conversion from the current 20-position string to the five-day/five-period model. The conversion must not silently assume the missing fifth-period value; it must use an approved migration rule and record exceptions.
+Legacy availability migration requires an explicit conversion from the current 20-position string to four teaching periods per day, with the lunch column inserted only for visual alignment. The conversion must record the mapping and any exceptions.

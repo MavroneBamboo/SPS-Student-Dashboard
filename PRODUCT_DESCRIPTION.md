@@ -225,7 +225,7 @@ The **Amend 4-up** workspace is the primary timetable function. It must support:
 - By Instructional Class and By Teacher views.
 - Four-up timetable review with configurable page density.
 - Previous/next page navigation and search.
-- Five weekdays and five teaching periods.
+- Five weekdays with four teaching periods and a lunch interval displayed as Period 3.
 - Double-click editing of a lesson.
 - Drag-and-drop movement with swap behavior where valid.
 - Right-click shift/remove actions.

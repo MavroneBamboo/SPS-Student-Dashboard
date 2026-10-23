@@ -394,4 +394,4 @@ The teacher profile must contain a stable ID, unique short code, full name, adju
 
 Teacher profiles must be created or imported before lessons can be created. The API must reject missing or inactive teacher references, duplicate short codes, invalid availability and lesson requirements with impossible counts. Availability and double-booking rules must be shared by the scheduler and Amend 4-up editor.
 
-The legacy application stores availability as a positional colon-separated value and its form currently exposes 20 slots, while the latest five-period schedule requires 25 weekly slots. Migration must show and resolve this mismatch; the new database must store explicit day/period rows or a versioned availability structure.
+The legacy application stores availability as a positional colon-separated value with 20 teaching slots: four teaching periods per day. The visual timetable has a fifth daily column for lunch, but lunch is not a teaching slot. The new database must store explicit day/period rows or a versioned availability structure, with lunch represented as a non-schedulable interval.
