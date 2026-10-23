@@ -38,7 +38,7 @@ Every class must exist and be active. Success returns one validated rule ID, edi
 
 ## Legacy migration
 
-Revision `0004` preserves existing text targets, definitions, dates and activity flags. Old rows receive `binding_state=UNRESOLVED`, null resource foreign keys and version 1. No name guessing or automatic deactivation occurs. An active unresolved rule in the requested year/date blocks planning because its affected classes are unknown. IT must bind it with a full `PUT` payload or archive it. Invalid legacy JSON is displayed as null and remains preserved in the database until corrected.
+Revision `0004` preserves existing text targets, definitions, dates and activity flags. Old rows receive `binding_state=UNRESOLVED`, null resource foreign keys and version 1. No name guessing or automatic deactivation occurs. An active unresolved rule in the requested year/date blocks planning because its affected classes are unknown. A reversed legacy date range blocks the whole academic year until corrected. IT must bind it with a full `PUT` payload or archive it. Invalid legacy JSON is displayed as null and remains preserved in the database until corrected.
 
 New rules are `BOUND`, with class/cluster foreign keys. `target_key` is only a display snapshot; code renaming does not change identity. Future timetable versions must snapshot the resolved definition/version for historical reproducibility.
 

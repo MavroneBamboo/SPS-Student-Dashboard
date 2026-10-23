@@ -192,6 +192,7 @@ def test_legacy_rule_requires_explicit_binding_and_invalid_definition_blocks_res
             instructional_class_id=None,
             target_key="Legacy display name",
             rule_json='{"maxLessonsPerDay":4}',
+            effective_to=date(2025, 12, 31),  # a malformed legacy window must not disappear from resolution
         )
         db.add(legacy)
         db.commit()

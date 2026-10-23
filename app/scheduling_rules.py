@@ -2,7 +2,7 @@ import json
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import ClassCluster, ClassClusterMember, InstructionalClass, SchedulingRule
@@ -86,8 +86,13 @@ def resolve_rules(db: Session, request: RuleResolutionRequest) -> list[ResolvedR
         select(SchedulingRule).where(
             SchedulingRule.is_active.is_(True),
             func.upper(func.trim(SchedulingRule.academic_year)) == request.academic_year,
-            SchedulingRule.effective_from <= request.on_date,
-            or_(SchedulingRule.effective_to.is_(None), SchedulingRule.effective_to >= request.on_date),
+            or_(
+                and_(
+                    SchedulingRule.effective_from <= request.on_date,
+                    or_(SchedulingRule.effective_to.is_(None), SchedulingRule.effective_to >= request.on_date),
+                ),
+                and_(SchedulingRule.binding_state == "UNRESOLVED", SchedulingRule.effective_to < SchedulingRule.effective_from),
+            ),
         )
     ).all()
     unresolved = [row.id for row in candidates if row.binding_state != "BOUND"]
