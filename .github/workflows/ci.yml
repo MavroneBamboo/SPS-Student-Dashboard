@@ -111,15 +111,25 @@ jobs:
       - name: Build production image
         run: docker build --tag sps-student-dashboard:ci .
 
-      - name: Scan image for critical and high vulnerabilities
+      - name: Export the final container filesystem
+        run: |
+          docker create --name sps-scan-image sps-student-dashboard:ci
+          docker export --output image-rootfs.tar sps-scan-image
+          mkdir rootfs
+          tar -xf image-rootfs.tar -C rootfs
+          docker rm sps-scan-image
+
+      - name: Scan the final container filesystem for critical and high vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: sps-student-dashboard:ci
+          scan-type: fs
+          scan-ref: rootfs
           format: json
           output: trivy-results.json
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: os,library
+          scanners: vuln
           severity: CRITICAL,HIGH
 
       - name: Summarize container scan findings
