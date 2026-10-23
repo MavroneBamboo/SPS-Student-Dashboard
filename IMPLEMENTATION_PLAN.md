@@ -300,11 +300,10 @@ Before production deployment:
 
 ## 9. Immediate next actions
 
-1. Approve this TDD and identify technical decision owners.
-2. Confirm the application/database stack and internal hosting target.
-3. Confirm authentication integration and key-management approach.
-4. Convert Phase 0 and Phase 1 deliverables into tracked issues.
-5. Build the minimal Compose stack and CI pipeline first.
+1. Confirm the remaining identity-integration, hosting, and key-custody decisions with their owners.
+2. Require the Python/security/migration, secret-scan, and container-scan checks in repository branch protection, with MavroneBamboo review before merge.
+3. Continue with the next vertical feature slice and add its business-rule, permission, audit, and migration tests in the same PR.
+4. Extend CI with frontend/browser tests, timetable/import/report invariants, and Compose runtime smoke tests as those capabilities are implemented; add release publication and deployment approval only when a target environment is approved.
 6. Establish the acceptance-test catalogue before profile implementation.
 
 ## 10. Timetable integration workstream
