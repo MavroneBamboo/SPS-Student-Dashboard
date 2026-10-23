@@ -213,6 +213,7 @@ The new application should model the timetable as first-class domain data rather
 - `instructional_classes` — class code, description and reporting order.
 - `class_clusters` and `class_cluster_members` — reusable groups of instructional classes.
 - `period_definitions` — default and override period definitions, including scope, target, start/end time and schedulability.
+- `scheduling_rules` and `scheduling_rule_targets` — versioned planning rules and their class/cluster scope.
 - `lesson_requirements` — subject, teacher, class, weekly count and block length.
 - `timetable_slots` — version, class, teacher, subject, weekday, period, note and lock state.
 - `timetable_conflicts` — detected conflict type, severity, status and resolution.
@@ -232,6 +233,8 @@ The scheduling engine must check:
 - Consecutive-period block length.
 - Locked slots and approved amendments.
 - School-specific fixed events, which must be configurable rather than hard-coded.
+
+Scheduling cannot start without a complete rule resolution. Each class included in a plan must resolve to exactly one active rule set for the academic period and effective date. The API must reject missing rules, duplicate rules, overlapping class/cluster targets and duplicate lesson placements; it must never select one rule arbitrarily.
 
 Generation must create a new draft version or require an explicit replacement confirmation. It must never silently destroy an approved timetable.
 
@@ -280,6 +283,8 @@ Resource setup is a prerequisite to lesson scheduling. The application must prov
 - Class clusters: named groups of instructional classes used for shared period overrides.
 - Period definitions: a default pattern inherited by all classes, plus effective-dated class or cluster overrides. `P3` is reserved for lunch and remains non-schedulable.
 - Lesson requirements: subject, teacher, instructional class, weekly count and block length.
+
+Scheduling rules are mandatory reference data for every planning run. Rules must be versioned and scoped to a class or cluster, with one unambiguous active rule per class and effective period. Duplicate or overlapping rules are invalid and must be blocked at the database and service layers.
 
 A teacher profile is not an application login account. The Operator uses a teacher profile in a lesson; the IT Administrator controls reference data; the Executive only views approved outputs. A teacher may be unavailable for a slot even when the Operator is allowed to edit the timetable.
 

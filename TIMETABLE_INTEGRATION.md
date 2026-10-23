@@ -43,6 +43,8 @@ The scheduler cannot add a teacher implicitly. The operator or administrator mus
 
 Class setup also includes cluster membership and period configuration. Every class starts with the default period pattern (`P1`, `P2`, `Lunch`, `P3`, `P4`). A period created for a single class or cluster may override the matching default without changing unrelated classes. Period 3 remains the lunch interval and cannot be converted into a teaching period.
 
+Scheduling rules are a required prerequisite for every planning run. Each class must resolve to one and only one applicable rule set. Missing, duplicated or overlapping class/cluster rules must prevent generation and manual placement; duplicate timetable placements are also rejected.
+
 The lesson editor should use controlled selectors populated from these profiles. It must reject a lesson that references a missing teacher, subject or instructional class. Teacher availability must be visible and editable before generation, and the scheduler plus Amend 4-up must use the same availability rules.
 
 The legacy source serialises availability as a colon-separated array of 20 teaching slots. The visual report has a lunch column for daily alignment, but lunch must remain non-schedulable. The replacement system must use a versioned day/period availability model rather than an opaque positional string.
