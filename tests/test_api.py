@@ -39,3 +39,25 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         listed = client.get("/api/v1/students?q=Protected", headers=headers)
         assert listed.status_code == 200
         assert listed.json()[0]["pris_no"] == "PS-TEST-001"
+
+
+def test_attendance_session_record_duplicate_and_correction_reason():
+    with TestClient(app) as client:
+        login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": "test-bootstrap-password"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        student = {"pris_no": "PS-ATT-001", "name": "Attendance Student", "class_name": "TM1 LNP 1", "category": "OP", "status": "ACTIVE"}
+        assert client.post("/api/v1/students", json=student, headers=headers).status_code == 201
+        session = client.post("/api/v1/attendance/sessions", json={"session_date": "2026-10-23", "session_type": "MORNING", "class_name": "TM1 LNP 1", "expected_count": 1}, headers=headers)
+        assert session.status_code == 201
+        session_id = session.json()["id"]
+        record_payload = {"pris_no": "PS-ATT-001", "attendance_status": "PRESENT"}
+        record = client.post(f"/api/v1/attendance/sessions/{session_id}/records", json=record_payload, headers=headers)
+        assert record.status_code == 201
+        assert client.post(f"/api/v1/attendance/sessions/{session_id}/records", json=record_payload, headers=headers).status_code == 409
+        correction = client.patch(f"/api/v1/attendance/records/{record.json()['id']}", json={"pris_no": "PS-ATT-001", "attendance_status": "ABSENT"}, headers=headers)
+        assert correction.status_code == 422
+        correction = client.patch(f"/api/v1/attendance/records/{record.json()['id']}", json={"pris_no": "PS-ATT-001", "attendance_status": "ABSENT", "correction_reason": "Verified against paper register"}, headers=headers)
+        assert correction.status_code == 200
+        assert client.get(f"/api/v1/attendance/sessions/{session_id}/records", headers=headers).json()[0]["attendance_status"] == "ABSENT"
+        assert client.post(f"/api/v1/attendance/sessions/{session_id}/close", headers=headers).status_code == 200
+        assert client.patch(f"/api/v1/attendance/records/{record.json()['id']}", json={"pris_no": "PS-ATT-001", "attendance_status": "PRESENT", "correction_reason": "Correction attempted after close"}, headers=headers).status_code == 409

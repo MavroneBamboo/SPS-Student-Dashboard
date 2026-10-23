@@ -47,3 +47,31 @@ class StudentCreate(BaseModel):
 
 class StudentResponse(StudentCreate):
     id: int
+
+
+class AttendanceSessionCreate(BaseModel):
+    session_date: date
+    session_type: str = Field(pattern="^(MORNING|AFTERNOON|FULL_DAY)$")
+    class_name: str = Field(min_length=1, max_length=120)
+    expected_count: int = Field(ge=1, le=10000)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class AttendanceSessionResponse(AttendanceSessionCreate):
+    id: int
+    status: str
+
+
+class AttendanceRecordCreate(BaseModel):
+    pris_no: str = Field(min_length=1, max_length=40)
+    attendance_status: str = Field(pattern="^(PRESENT|ABSENT|LATE|EXCUSED|MISSING)$")
+    correction_reason: str | None = Field(default=None, max_length=1000)
+
+
+class AttendanceRecordResponse(BaseModel):
+    id: int
+    session_id: int
+    pris_no: str
+    student_name: str
+    attendance_status: str
+    correction_reason: str | None
