@@ -32,3 +32,9 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - CI test workflow and container-based pytest suite.
 
 This remains an early foundation, not a production-ready release. The APIs currently cover basic student intake/profile history, attendance entry, preliminary dashboard/export endpoints and scheduling-rule storage. Remaining work includes managed user/role administration, Excel imports, complete timetable planning and Amend 4-up lesson placement, approved business-report reconciliation, backup/restore, broader security hardening and a production frontend.
+
+## Continuous integration
+
+Pull requests targeting `main` run lint and formatting checks, Python static-security and dependency audits, PostgreSQL-backed API tests with coverage reporting, Alembic migration checks, a production-container build and vulnerability scan, Compose configuration validation, and a full-history secret scan. Weekly Dependabot updates are enabled for Python and GitHub Actions dependencies. CI uses disposable test credentials and an isolated PostgreSQL service; it does not connect to operational data.
+
+For local Python development, install the test toolset with `python -m pip install -e ".[test]"`, then run `ruff check app tests migrations`, `ruff format --check app tests migrations`, `bandit -q -r app`, and `pytest`. Set `DATABASE_URL` to an isolated PostgreSQL database to exercise the same database engine as CI. Coverage is reported while the initial baseline is being established; no aggregate minimum is enforced yet.

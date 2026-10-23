@@ -236,19 +236,29 @@ Exit criteria: pilot users complete agreed scenarios, reporting is accepted and 
 
 ## 5. CI/CD pipeline gates
 
-Every pull request must run:
+CI is an evolving product control: whenever a feature adds a new module, security boundary, migration, workflow, or report, its automated tests and relevant CI gate must be added in the same change. The pipeline must remain proportional to implemented behavior; future gates are not represented as already complete.
 
-1. Formatting and linting.
-2. Static analysis and dependency lock checks.
-3. Unit and service tests.
-4. API/integration tests using an isolated database.
-5. End-to-end role and workflow tests.
-6. Database migration up/down or forward-upgrade tests.
-7. Docker Compose health and startup tests.
-8. Dependency, container and secret scans.
-9. Coverage and critical-test thresholds.
+The current pull-request workflow runs:
 
-The release pipeline additionally performs artifact signing or integrity recording, deployment validation, smoke tests and approval gates. A failed security or migration gate blocks promotion.
+1. Ruff lint and formatting checks on application, test, and migration code.
+2. Bandit static security analysis and `pip-audit` dependency vulnerability checks.
+3. API/business-rule tests against an isolated PostgreSQL 17 service, with coverage uploaded as an artifact (coverage is reported but has no arbitrary threshold until a measured baseline is established).
+4. Alembic clean-database upgrade, repeat-upgrade idempotency, and model/schema parity checks.
+5. Python compile checks for application and migration sources.
+6. Production Docker image build, Trivy scan for fixable critical/high vulnerabilities, and Docker Compose configuration validation.
+7. Gitleaks scan across repository history for committed secrets.
+
+As the application grows, add and require these gates alongside their owning feature:
+
+- Frontend lint, unit, accessibility, and browser-level workflow tests when the production UI is introduced.
+- Timetable invariant/property tests for unique placements, rule completeness, lunch exclusion, and teacher/class conflicts before timetable planning or Amend 4-up is implemented.
+- Workbook-import golden fixtures, malformed-file cases, and reconciliation totals with the Excel intake/import feature.
+- Report golden-data reconciliation and export authorization tests with each report implementation.
+- Compose end-to-end startup, readiness, and smoke tests in a disposable environment before release deployment.
+- Backup/restore, load, and expanded security tests before production-readiness approval.
+- Increase coverage thresholds from the observed baseline in small, explicit steps; critical security, migration, and scheduling invariants must have direct tests regardless of aggregate coverage.
+
+The release pipeline additionally performs immutable artifact publication, integrity/signature recording, deployment validation, smoke tests and approval gates. A failed security, migration, or required behavior gate blocks promotion. Temporary exceptions must identify an owner, rationale, and expiry.
 
 ## 6. Definition of done
 
@@ -290,11 +300,10 @@ Before production deployment:
 
 ## 9. Immediate next actions
 
-1. Approve this TDD and identify technical decision owners.
-2. Confirm the application/database stack and internal hosting target.
-3. Confirm authentication integration and key-management approach.
-4. Convert Phase 0 and Phase 1 deliverables into tracked issues.
-5. Build the minimal Compose stack and CI pipeline first.
+1. Confirm the remaining identity-integration, hosting, and key-custody decisions with their owners.
+2. Require the Python/security/migration, secret-scan, and container-scan checks in repository branch protection, with MavroneBamboo review before merge.
+3. Continue with the next vertical feature slice and add its business-rule, permission, audit, and migration tests in the same PR.
+4. Extend CI with frontend/browser tests, timetable/import/report invariants, and Compose runtime smoke tests as those capabilities are implemented; add release publication and deployment approval only when a target environment is approved.
 6. Establish the acceptance-test catalogue before profile implementation.
 
 ## 10. Timetable integration workstream

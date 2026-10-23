@@ -1,5 +1,3 @@
-import base64
-
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import get_settings
