@@ -115,11 +115,28 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: sps-student-dashboard:ci
-          format: table
+          format: json
+          output: trivy-results.json
           exit-code: "1"
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+
+      - name: Summarize container scan findings
+        if: always()
+        run: |
+          if [ -f trivy-results.json ]; then
+            jq -r '.Results[]? | select(.Vulnerabilities != null) | .Target as $target | .Vulnerabilities[] | [$target, .PkgName, .InstalledVersion, .FixedVersion, .VulnerabilityID, .Severity] | @tsv' trivy-results.json
+          fi
+
+      - name: Upload container scan report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: trivy-container-scan-${{ github.run_id }}
+          path: trivy-results.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Validate Compose configuration
         env:
