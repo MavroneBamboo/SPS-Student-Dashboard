@@ -185,3 +185,17 @@ The following are not required for the first release unless separately approved:
 - Reports can be printed and exported.
 - Invalid imports are rejected with actionable row-level messages.
 - User, profile, attendance, import and privileged configuration changes are auditable.
+
+## 9. Mandatory platform and security requirements
+
+The production system must also satisfy the following requirements:
+
+- CI/CD must be established as part of the project, with repeatable build, test, security-scan and deployment pipelines.
+- Automated testing must be comprehensive and must be updated in the same change as every new feature or changed business rule.
+- The complete application must be deployable through Docker Compose, including the application, database, reverse proxy and approved supporting services.
+- Database protection must include encryption at rest, encrypted connections where supported, managed secrets and application-level encryption for designated sensitive fields.
+- JWT access tokens must be short-lived, signed with a managed secret or key, validated server-side and never treated as proof of authorisation by the frontend alone.
+- Frontend code must never connect directly to the database. All data access must pass through authenticated and authorised backend APIs.
+- Security must be applied throughout design, development, testing, deployment, operations, logging, backup and recovery.
+
+These requirements are release gates, not optional future enhancements.
