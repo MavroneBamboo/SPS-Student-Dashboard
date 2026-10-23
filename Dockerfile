@@ -4,8 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir ".[test]"
 COPY app ./app
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir ".[test]"
 COPY tests ./tests
 
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app

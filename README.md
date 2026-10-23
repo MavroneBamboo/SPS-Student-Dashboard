@@ -22,6 +22,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - PBKDF2 password hashing.
 - Protected scheduling-rule API with duplicate/overlap rejection.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
+- Student profile updates with append-only status history and audit events.
 - Attendance session and record API with class eligibility checks, duplicate prevention, correction reasons, record review and session close control.
 - Committed-data dashboard API, filtered attendance CSV export and IT-only audit event review.
 - CI test workflow and container-based pytest suite.

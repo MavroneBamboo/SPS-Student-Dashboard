@@ -49,6 +49,28 @@ class StudentResponse(StudentCreate):
     id: int
 
 
+class StudentUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=240)
+    class_name: str | None = Field(default=None, min_length=1, max_length=120)
+    category: str | None = Field(default=None, min_length=1, max_length=40)
+    status: str | None = Field(default=None, min_length=1, max_length=40)
+    status_effective: date | None = None
+    date_of_birth: date | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one student field must be provided")
+        return self
+
+
+class StudentStatusHistoryResponse(BaseModel):
+    previous_status: str | None
+    new_status: str
+    effective_date: date
+    changed_by: int
+
+
 class AttendanceSessionCreate(BaseModel):
     session_date: date
     session_type: str = Field(pattern="^(MORNING|AFTERNOON|FULL_DAY)$")

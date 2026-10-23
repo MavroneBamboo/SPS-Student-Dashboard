@@ -9,6 +9,7 @@ os.environ["BOOTSTRAP_PASSWORD"] = "test-bootstrap-password"
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.security import create_access_token
 
 
 def test_live_health():
@@ -41,6 +42,19 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         listed = client.get("/api/v1/students?q=Protected", headers=headers)
         assert listed.status_code == 200
         assert listed.json()[0]["pris_no"] == "PS-TEST-001"
+        student_id = created.json()["id"]
+        updated = client.patch(f"/api/v1/students/{student_id}", json={"name": "Updated Protected Name", "status": "INACTIVE", "status_effective": "2026-10-23"}, headers=headers)
+        assert updated.status_code == 200
+        assert updated.json()["name"] == "Updated Protected Name"
+        history = client.get(f"/api/v1/students/{student_id}/status-history", headers=headers)
+        assert history.status_code == 200
+        assert [entry["new_status"] for entry in history.json()] == ["ACTIVE", "INACTIVE"]
+        assert client.patch(f"/api/v1/students/{student_id}", json={}, headers=headers).status_code == 422
+
+        executive_headers = {"Authorization": f"Bearer {create_access_token(2, 'executive-test', 'Executive')}"}
+        assert client.get("/api/v1/students", headers=executive_headers).status_code == 403
+        assert client.get(f"/api/v1/students/{student_id}/status-history", headers=executive_headers).status_code == 403
+        assert client.get("/api/v1/reports/dashboard", headers=executive_headers).status_code == 200
 
 
 def test_attendance_session_record_duplicate_and_correction_reason():

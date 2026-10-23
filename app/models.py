@@ -50,6 +50,18 @@ class Student(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class StudentStatusHistory(Base):
+    __tablename__ = "student_status_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True)
+    previous_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(40))
+    effective_date: Mapped[date] = mapped_column(Date)
+    changed_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
 
