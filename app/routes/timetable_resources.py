@@ -68,22 +68,14 @@ def _teacher_response(row: Teacher) -> TeacherResponse:
 
 
 def _resolved_period_rows(db: DbSession, instructional_class_id: int) -> list[PeriodDefinition]:
-    defaults = db.scalars(
-        select(PeriodDefinition).where(PeriodDefinition.scope == "DEFAULT", PeriodDefinition.is_active.is_(True))
-    ).all()
+    defaults = db.scalars(select(PeriodDefinition).where(PeriodDefinition.scope == "DEFAULT", PeriodDefinition.is_active.is_(True))).all()
     if len(defaults) != 5 or {row.slot_code for row in defaults} != {"P1", "P2", "LUNCH", "P3", "P4"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Default period pattern is incomplete")
-    membership = db.scalar(
-        select(ClassClusterMember).where(ClassClusterMember.instructional_class_id == instructional_class_id)
-    )
+    membership = db.scalar(select(ClassClusterMember).where(ClassClusterMember.instructional_class_id == instructional_class_id))
     override_scopes = [and_(PeriodDefinition.scope == "CLASS", PeriodDefinition.target_id == instructional_class_id)]
     if membership:
-        override_scopes.append(
-            and_(PeriodDefinition.scope == "CLUSTER", PeriodDefinition.target_id == membership.cluster_id)
-        )
-    overrides = db.scalars(
-        select(PeriodDefinition).where(PeriodDefinition.is_active.is_(True), or_(*override_scopes))
-    ).all()
+        override_scopes.append(and_(PeriodDefinition.scope == "CLUSTER", PeriodDefinition.target_id == membership.cluster_id))
+    overrides = db.scalars(select(PeriodDefinition).where(PeriodDefinition.is_active.is_(True), or_(*override_scopes))).all()
     by_scope_and_slot = {(row.scope, row.slot_code): row for row in overrides}
     resolved = []
     for default in defaults:
@@ -97,10 +89,7 @@ def _resolved_period_rows(db: DbSession, instructional_class_id: int) -> list[Pe
 def _validate_period_intervals(db: DbSession, class_ids: list[int]) -> None:
     for class_id in class_ids:
         periods = _resolved_period_rows(db, class_id)
-        intervals = [
-            (time_value.fromisoformat(row.starts_at), time_value.fromisoformat(row.ends_at), row.slot_code)
-            for row in periods
-        ]
+        intervals = [(time_value.fromisoformat(row.starts_at), time_value.fromisoformat(row.ends_at), row.slot_code) for row in periods]
         intervals.sort()
         for previous, current in zip(intervals, intervals[1:], strict=False):
             if previous[1] > current[0]:
@@ -219,9 +208,7 @@ def add_class_to_cluster(cluster_id: int, payload: ClusterMemberCreate, db: DbSe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster or instructional class not found")
     if db.scalar(select(ClassClusterMember).where(ClassClusterMember.instructional_class_id == instructional_class.id)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Instructional class already belongs to a cluster")
-    membership = ClassClusterMember(
-        cluster_id=cluster.id, instructional_class_id=instructional_class.id, created_by=int(claims["sub"])
-    )
+    membership = ClassClusterMember(cluster_id=cluster.id, instructional_class_id=instructional_class.id, created_by=int(claims["sub"]))
     db.add(membership)
     record_event(
         db,

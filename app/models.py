@@ -91,9 +91,7 @@ class ClassClusterMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     cluster_id: Mapped[int] = mapped_column(ForeignKey("class_clusters.id", ondelete="CASCADE"), index=True)
-    instructional_class_id: Mapped[int] = mapped_column(
-        ForeignKey("instructional_classes.id", ondelete="CASCADE"), index=True
-    )
+    instructional_class_id: Mapped[int] = mapped_column(ForeignKey("instructional_classes.id", ondelete="CASCADE"), index=True)
     created_by: Mapped[int] = mapped_column(Integer)
 
 

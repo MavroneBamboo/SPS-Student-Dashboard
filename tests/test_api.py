@@ -240,9 +240,7 @@ def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
             headers=superuser_headers,
         )
         assert created_user.status_code == 201
-        admin_login = client.post(
-            "/api/v1/auth/login", json={"username": "timetable.admin", "password": "timetable-admin-temporary"}
-        )
+        admin_login = client.post("/api/v1/auth/login", json={"username": "timetable.admin", "password": "timetable-admin-temporary"})
         assert admin_login.status_code == 200
         changed_password = client.post(
             "/api/v1/auth/change-password",
@@ -269,17 +267,13 @@ def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
             == 422
         )
 
-        subject = client.post(
-            "/api/v1/timetable/subjects", json={"code": "math", "name": "Mathematics"}, headers=headers
-        )
+        subject = client.post("/api/v1/timetable/subjects", json={"code": "math", "name": "Mathematics"}, headers=headers)
         instructional_class = client.post(
             "/api/v1/timetable/classes",
             json={"code": "A4A", "name": "A4 A", "reporting_order": 10},
             headers=headers,
         )
-        cluster = client.post(
-            "/api/v1/timetable/clusters", json={"code": "NORTH", "name": "North Cluster"}, headers=headers
-        )
+        cluster = client.post("/api/v1/timetable/clusters", json={"code": "NORTH", "name": "North Cluster"}, headers=headers)
         assert subject.status_code == instructional_class.status_code == cluster.status_code == 201
         class_id = instructional_class.json()["id"]
         cluster_id = cluster.json()["id"]
@@ -293,9 +287,7 @@ def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
         lunch = resolved.json()[2]
         assert lunch["is_schedulable"] is False
         assert lunch["display_order"] == 3
-        assert client.patch(
-            f"/api/v1/timetable/periods/{lunch['id']}", {"label": "Teaching Period"}, headers=headers
-        ).status_code == 422
+        assert client.patch(f"/api/v1/timetable/periods/{lunch['id']}", {"label": "Teaching Period"}, headers=headers).status_code == 422
 
         cluster_period = {
             "scope": "CLUSTER",
