@@ -9,6 +9,7 @@ from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
 from app.lesson_validation import validate_existing_class_lessons
 from app.models import ClassCluster, ClassClusterMember, InstructionalClass, PeriodDefinition, Subject, Teacher
+from app.scheduling_rules import assert_membership_rules_compatible
 from app.schemas import (
     ClusterCreate,
     ClusterMemberCreate,
@@ -173,6 +174,7 @@ def add_class_to_cluster(cluster_id: int, payload: ClusterMemberCreate, db: DbSe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster or instructional class not found")
     if db.scalar(select(ClassClusterMember).where(ClassClusterMember.instructional_class_id == instructional_class.id)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Instructional class already belongs to a cluster")
+    assert_membership_rules_compatible(db, instructional_class.id, cluster.id)
     membership = ClassClusterMember(cluster_id=cluster.id, instructional_class_id=instructional_class.id, created_by=int(claims["sub"]))
     db.add(membership)
     record_event(

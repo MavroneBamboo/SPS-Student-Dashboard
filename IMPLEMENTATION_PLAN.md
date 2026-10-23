@@ -17,7 +17,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 - PR #18 established the initial encrypted student/API foundation and is merged.
 - PR #19 established CI quality, security, PostgreSQL migration, production-image and Compose validation gates and is merged.
 - PR #26 contains the teacher, subject, instructional-class, cluster and period-definition API foundation. The next increment adds persistent lesson requirements, archive/restore, availability/block validation and concurrent-edit protection.
-- Complete scheduling-rule resolution, timetable versions, generation/placement validation, resource editing, Amend 4-up UI and end-to-end tests remain outstanding.
+- The rule-resolution increment adds stable targets, typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
+- Timetable versions, generation/placement validation, resource editing, Amend 4-up UI and end-to-end tests remain outstanding. The planner must invoke rule resolution in its write transaction and apply the returned constraints.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
 - Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
 
@@ -353,6 +354,7 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 - Lesson API increment: stable foreign keys, one requirement per academic-year/class/teacher/subject combination, paginated reads, version-checked replacement/archive/restore and audited writes. Block planning preserves the weekly total with a shorter final block when needed. Period/cluster changes revalidate active requirements under a shared PostgreSQL transaction lock.
 - Extend CI with lesson permission/lifecycle tests, real simultaneous-save and configuration-change races, database constraint checks, block-packing cases and a baseline-data upgrade preservation rehearsal.
 - Add rule-completeness, rule-overlap, duplicate-placement and exactly-one-applicable-rule tests before generation and Amend 4-up placement.
+- Rule increment tests cover date boundaries/open ends, missing/ambiguous bulk resolution, unresolved legacy binding, direct database overlap rejection and concurrent class/cluster or membership changes. Duplicate-placement tests still require the future placement model.
 
 Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.
 

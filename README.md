@@ -23,7 +23,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Bootstrap Superuser login with short-lived signed JWT access tokens.
 - Mandatory first-login password change; Superuser-only account creation and role assignment with account-activity checks on each authenticated request.
 - PBKDF2 password hashing.
-- Initial scheduling-rule storage with same-text-scope duplicate/overlap rejection; complete class/cluster rule resolution is pending.
+- Stable-ID scheduling rules with effective dates, edit versions, class/cluster overlap prevention and exactly-one-rule bulk resolution. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md) for the API and legacy binding process.
 - Teacher, subject, instructional-class and cluster resource APIs, with inherited period definitions and a non-schedulable third lunch column.
 - Lesson requirements linked to resource IDs, with duplicate prevention, availability/block checks, versioned edits, archive/restore and audit events. Operators and IT Administrators can maintain requirements.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import MetaData, create_engine, inspect, select
@@ -28,7 +29,7 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
     try:
         metadata = MetaData()
         metadata.reflect(bind=database)
-        users, students, teachers = (metadata.tables[name] for name in ("users", "students", "teachers"))
+        users, students, teachers, rules = (metadata.tables[name] for name in ("users", "students", "teachers", "scheduling_rules"))
         with database.begin() as connection:
             connection.execute(
                 users.insert().values(
@@ -60,12 +61,30 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
                     created_by=1,
                 )
             )
-            snapshots = {table.name: list(connection.execute(select(table))) for table in (users, students, teachers)}
+            connection.execute(
+                rules.insert().values(
+                    academic_year="2026",
+                    target_type="CLASS",
+                    target_key="Legacy display name",
+                    effective_from=date(2026, 1, 1),
+                    rule_json='{"maxLessonsPerDay":4}',
+                    is_active=True,
+                    created_by=1,
+                )
+            )
+            snapshots = {table.name: list(connection.execute(select(table))) for table in (users, students, teachers, rules)}
         migrate("head")
         migrate("head")
         assert "lesson_requirements" in inspect(database).get_table_names()
         with database.connect() as connection:
-            for table in (users, students, teachers):
+            for table in (users, students, teachers, rules):
                 assert list(connection.execute(select(table))) == snapshots[table.name]
+            upgraded = MetaData()
+            upgraded.reflect(bind=connection)
+            legacy_rule = connection.execute(select(upgraded.tables["scheduling_rules"])).mappings().one()
+            assert legacy_rule["binding_state"] == "UNRESOLVED"
+            assert legacy_rule["instructional_class_id"] is None
+            assert legacy_rule["cluster_id"] is None
+            assert legacy_rule["version"] == 1
     finally:
         database.dispose()

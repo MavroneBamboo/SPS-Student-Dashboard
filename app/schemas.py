@@ -1,5 +1,6 @@
 from datetime import date
 from datetime import time as time_value
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -47,13 +48,34 @@ class UserResponse(BaseModel):
     must_change_password: bool
 
 
+class RuleDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    max_lessons_per_day: int = Field(default=4, ge=1, le=4)
+    allowed_days: list[Literal["MON", "TUE", "WED", "THU", "FRI"]] = Field(
+        default_factory=lambda: ["MON", "TUE", "WED", "THU", "FRI"], min_length=1, max_length=5
+    )
+    allowed_periods: list[Literal["P1", "P2", "P3", "P4"]] = Field(
+        default_factory=lambda: ["P1", "P2", "P3", "P4"], min_length=1, max_length=4
+    )
+
+    @model_validator(mode="after")
+    def unique_slots(self):
+        if len(self.allowed_days) != len(set(self.allowed_days)) or len(self.allowed_periods) != len(set(self.allowed_periods)):
+            raise ValueError("Allowed days and periods must be unique")
+        return self
+
+
 class RuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, str_to_upper=True)
+
     academic_year: str = Field(min_length=1, max_length=20)
-    target_type: str = Field(pattern="^(CLASS|CLUSTER)$")
-    target_key: str = Field(min_length=1, max_length=120)
+    target_type: Literal["CLASS", "CLUSTER"]
+    target_id: int = Field(gt=0)
     effective_from: date
     effective_to: date | None = None
-    rule: dict = Field(default_factory=dict)
+    rule: RuleDefinition = Field(default_factory=RuleDefinition)
 
     @model_validator(mode="after")
     def valid_dates(self):
@@ -62,9 +84,46 @@ class RuleCreate(BaseModel):
         return self
 
 
-class RuleResponse(RuleCreate):
-    id: int
+class RuleUpdate(RuleCreate):
+    expected_version: int = Field(ge=1)
     is_active: bool
+
+
+class RuleResponse(BaseModel):
+    id: int
+    academic_year: str
+    target_type: str
+    target_id: int | None
+    target_key: str
+    effective_from: date
+    effective_to: date | None
+    rule: dict | None
+    binding_state: str
+    version: int
+    is_active: bool
+
+
+class RuleResolutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, str_to_upper=True)
+
+    academic_year: str = Field(min_length=1, max_length=20)
+    on_date: date
+    class_ids: list[int] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_classes(self):
+        if any(class_id < 1 for class_id in self.class_ids) or len(self.class_ids) != len(set(self.class_ids)):
+            raise ValueError("class_ids must contain unique positive IDs")
+        return self
+
+
+class ResolvedRule(BaseModel):
+    instructional_class_id: int
+    rule_id: int
+    version: int
+    target_type: str
+    target_id: int
+    rule: RuleDefinition
 
 
 WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI")

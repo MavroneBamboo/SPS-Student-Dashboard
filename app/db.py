@@ -11,6 +11,8 @@ class Base(DeclarativeBase):
 
 
 def _engine_kwargs(url: str) -> dict:
+    if url.startswith("postgresql"):
+        return {"isolation_level": "READ COMMITTED"}
     return {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
 
 

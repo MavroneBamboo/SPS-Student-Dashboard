@@ -38,21 +38,15 @@ def test_live_health():
     assert response.json()["status"] == "ok"
 
 
-def test_bootstrap_login_and_rule_validation():
+def test_bootstrap_login_password_change_and_user_administration():
     with TestClient(app) as client:
         login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": INITIAL_BOOTSTRAP_PASSWORD})
         assert login.status_code == 200
         assert login.json()["must_change_password"] is True
         token = login.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
-        payload = {
-            "academic_year": "2026",
-            "target_type": "CLASS",
-            "target_key": "A4 A",
-            "effective_from": "2026-01-01",
-            "rule": {"maxLessonsPerDay": 4},
-        }
-        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 403
+        payload = {"username": "operator.one", "temporary_password": "operator-temporary-password", "role": "Operator"}
+        assert client.post("/api/v1/users", json=payload, headers=headers).status_code == 403
         changed = client.post(
             "/api/v1/auth/change-password",
             json={"current_password": INITIAL_BOOTSTRAP_PASSWORD, "new_password": ROTATED_BOOTSTRAP_PASSWORD},
@@ -61,8 +55,6 @@ def test_bootstrap_login_and_rule_validation():
         assert changed.status_code == 200
         assert changed.json()["must_change_password"] is False
         headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
-        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 201
-        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 409
         created_user = client.post(
             "/api/v1/users",
             json={"username": "operator.one", "temporary_password": "operator-temporary-password", "role": "Operator"},

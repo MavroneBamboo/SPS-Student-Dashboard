@@ -20,12 +20,25 @@ class User(Base):
 
 class SchedulingRule(Base):
     __tablename__ = "scheduling_rules"
-    __table_args__ = (UniqueConstraint("academic_year", "target_type", "target_key", "effective_from", name="uq_rule_scope_start"),)
+    __table_args__ = (
+        CheckConstraint(
+            "(binding_state = 'UNRESOLVED' AND instructional_class_id IS NULL AND cluster_id IS NULL) OR "
+            "(binding_state = 'BOUND' AND ((target_type = 'CLASS' AND instructional_class_id IS NOT NULL AND cluster_id IS NULL) OR "
+            "(target_type = 'CLUSTER' AND cluster_id IS NOT NULL AND instructional_class_id IS NULL)))",
+            name="ck_rule_binding",
+        ),
+        CheckConstraint("binding_state = 'UNRESOLVED' OR effective_to IS NULL OR effective_to >= effective_from", name="ck_rule_dates"),
+        CheckConstraint("version >= 1", name="ck_rule_version"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     academic_year: Mapped[str] = mapped_column(String(20), index=True)
     target_type: Mapped[str] = mapped_column(String(20))
     target_key: Mapped[str] = mapped_column(String(120))
+    instructional_class_id: Mapped[int | None] = mapped_column(ForeignKey("instructional_classes.id", name="fk_rule_class"), index=True)
+    cluster_id: Mapped[int | None] = mapped_column(ForeignKey("class_clusters.id", name="fk_rule_cluster"), index=True)
+    binding_state: Mapped[str] = mapped_column(String(20), default="UNRESOLVED")
+    version: Mapped[int] = mapped_column(Integer, default=1)
     effective_from: Mapped[date] = mapped_column(Date)
     effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     rule_json: Mapped[str] = mapped_column(Text)
