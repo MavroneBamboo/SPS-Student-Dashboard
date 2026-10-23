@@ -1,4 +1,5 @@
 from datetime import date
+from datetime import time as time_value
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -64,6 +65,124 @@ class RuleCreate(BaseModel):
 class RuleResponse(RuleCreate):
     id: int
     is_active: bool
+
+
+WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI")
+TEACHING_PERIODS = ("P1", "P2", "P3", "P4")
+
+
+class TeacherCreate(BaseModel):
+    short_code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    full_name: str = Field(min_length=1, max_length=160)
+    is_adjunct: bool = False
+    availability: dict[str, list[str]] = Field(default_factory=lambda: {day: list(TEACHING_PERIODS) for day in WEEKDAYS})
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_availability(self):
+        if set(self.availability) != set(WEEKDAYS):
+            raise ValueError("availability must provide exactly MON, TUE, WED, THU, and FRI")
+        for day, periods in self.availability.items():
+            if len(periods) != len(set(periods)) or not set(periods) <= set(TEACHING_PERIODS):
+                raise ValueError(f"{day} availability must contain unique teaching periods P1 through P4 only")
+        return self
+
+
+class TeacherResponse(TeacherCreate):
+    id: int
+
+
+class SubjectCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    is_active: bool = True
+
+
+class SubjectResponse(SubjectCreate):
+    id: int
+
+
+class InstructionalClassCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    reporting_order: int = Field(default=0, ge=0, le=10000)
+    is_active: bool = True
+
+
+class InstructionalClassResponse(InstructionalClassCreate):
+    id: int
+
+
+class ClusterCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    is_active: bool = True
+
+
+class ClusterResponse(ClusterCreate):
+    id: int
+    class_ids: list[int] = Field(default_factory=list)
+
+
+class ClusterMemberCreate(BaseModel):
+    instructional_class_id: int = Field(gt=0)
+
+
+class PeriodCreate(BaseModel):
+    scope: str = Field(pattern="^(DEFAULT|CLASS|CLUSTER)$")
+    target_id: int | None = Field(default=None, gt=0)
+    slot_code: str = Field(pattern="^(P1|P2|LUNCH|P3|P4)$")
+    label: str = Field(min_length=1, max_length=80)
+    starts_at: time_value | None = None
+    ends_at: time_value | None = None
+
+    @model_validator(mode="after")
+    def validate_period_definition(self):
+        if (self.scope == "DEFAULT") != (self.target_id is None):
+            raise ValueError("DEFAULT periods have no target_id; CLASS and CLUSTER periods require one")
+        if self.starts_at is None or self.ends_at is None:
+            raise ValueError("Every period definition requires start and end times")
+        if self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be later than starts_at")
+        if self.slot_code == "LUNCH" and self.label.strip().upper() != "LUNCH":
+            raise ValueError("Lunch must remain labelled Lunch and requires a time interval")
+        return self
+
+
+class PeriodResponse(BaseModel):
+    id: int
+    scope: str
+    target_id: int | None
+    slot_code: str
+    display_order: int
+    label: str
+    starts_at: time_value | None
+    ends_at: time_value | None
+    is_schedulable: bool
+    is_active: bool = True
+
+
+class PeriodUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=80)
+    starts_at: time_value | None = None
+    ends_at: time_value | None = None
+
+    @model_validator(mode="after")
+    def require_ordered_times(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one period field must be provided")
+        if ("starts_at" in self.model_fields_set) != ("ends_at" in self.model_fields_set):
+            raise ValueError("Update both starts_at and ends_at together")
+        if "starts_at" in self.model_fields_set and (self.starts_at is None or self.ends_at is None):
+            raise ValueError("Period start and end times cannot be cleared")
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be later than starts_at")
+        if any(value is None for value in self.model_dump(exclude_unset=True).values()):
+            raise ValueError("Period fields cannot be null")
+        return self
 
 
 class StudentCreate(BaseModel):

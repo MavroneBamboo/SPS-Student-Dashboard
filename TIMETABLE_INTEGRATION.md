@@ -11,6 +11,8 @@ The latest supplied PDFs at `C:\Users\Prisuser\Downloads\` are treated as the cu
 
 The current timetable layout is five weekdays with four teaching periods and a lunch interval: `P1`, `P2`, `Lunch`, `P3`, `P4`. Period 3 is the lunch column in the displayed report layout; it is not a teaching slot.
 
+**Source/version discrepancy:** the latest `TImeTables-legacy` changelog and `FormAmend.cs` instead show five teaching periods (`P1`–`P5`), with 12:00–13:25 as teaching Period 3; the teacher PDF separately overlays “Lunch / Master” at that position. The product owner has explicitly directed that Period 3 be lunch and non-schedulable in the replacement. This implementation follows that instruction (four teaching periods plus lunch) and therefore must not claim slot-for-slot compatibility with the latest legacy `.pri` files until the mapping is approved and reconciled.
+
 ## 2. Existing workflow
 
 ```text
@@ -42,6 +44,10 @@ The scheduler cannot add a teacher implicitly. The operator or administrator mus
 4. **Lessons** — subject, teacher, instructional class, periods per week (`Count`) and block length (`Length`).
 
 Class setup also includes cluster membership and period configuration. Every class starts with the default period pattern (`P1`, `P2`, `Lunch`, `P3`, `P4`). A period created for a single class or cluster may override the matching default without changing unrelated classes. Period 3 remains the lunch interval and cannot be converted into a teaching period.
+
+### Initial production API increment
+
+The application now defines the initial timetable resource schema and authenticated API routes under `/api/v1/timetable`: `teachers`, `subjects`, `classes`, `clusters`, cluster membership, `periods`, and resolved periods at `classes/{id}/periods`. The migration seeds the default five-column pattern and the documented times. Period definitions are unique by scope, target and slot. Class-specific period values override a matching cluster value, which overrides the default; a class is restricted to one cluster to avoid ambiguous inheritance. Writes are IT Administrator-only and audited. The first increment is backend-only: it does not yet include resource edit/deactivation UI, lesson requirements, scheduler rules, timetable generation, or Amend 4-up persistence.
 
 Scheduling rules are a required prerequisite for every planning run. Each class must resolve to one and only one applicable rule set. Missing, duplicated or overlapping class/cluster rules must prevent generation and manual placement; duplicate timetable placements are also rejected.
 

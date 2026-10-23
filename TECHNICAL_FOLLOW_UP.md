@@ -3,7 +3,7 @@
 ## Technical Follow-up Document
 
 **Version:** 1.0  
-**Status:** Proposed technical baseline  
+**Status:** Active technical baseline; implementation is proceeding in tested vertical slices
 **Related product document:** [PRODUCT_DESCRIPTION.md](PRODUCT_DESCRIPTION.md)
 
 ## 1. Recommended architecture
@@ -40,6 +40,8 @@ For the internal network, deploy:
 - Optional Windows/Active Directory authentication if the environment supports it.
 
 The application must be usable in an air-gapped or restricted network. External cloud services must not be required for core operation.
+
+Implementation note: the initial API foundation is present, with signed-in, role-guarded resources and encrypted student fields. The first timetable resource schema/API increment is being added as a separate migration and feature branch; this document remains the target design, not a claim that the entire product is implemented.
 
 ## 3. Security and first-run bootstrap
 

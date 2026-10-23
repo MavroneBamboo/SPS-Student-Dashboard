@@ -3,7 +3,7 @@
 ## Implementation Plan
 
 **Version:** 1.0  
-**Status:** Proposed delivery plan  
+**Status:** Active implementation plan; delivered slices are recorded below
 **Companion document:** [TECHNICAL_DESIGN_DOCUMENT.md](TECHNICAL_DESIGN_DOCUMENT.md)
 
 ## 1. Delivery approach
@@ -11,6 +11,14 @@
 Build the system in vertical increments. Each increment must produce a deployable, tested slice rather than a large unverified handover. The team should maintain a single backlog, protect `main`, require pull requests and run the full CI pipeline on every change.
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
+
+### Current delivery checkpoint (23 October 2026)
+
+- PR #18 established the initial encrypted student/API foundation and is merged.
+- PR #19 established CI quality, security, PostgreSQL migration, production-image and Compose validation gates; it is a separate review/merge dependency.
+- The current timetable-resource API increment adds the initial teacher, subject, instructional-class, cluster and period-definition schema/API. The feature remains incomplete until lesson requirements, scheduling rules, timetable versions, placement validation, Amend 4-up UI and end-to-end tests are delivered.
+- The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
+- Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
 
 ## 2. Delivery principles
 
