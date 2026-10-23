@@ -2,10 +2,6 @@ import csv
 import io
 import os
 
-os.environ.setdefault("DATABASE_URL", "sqlite:///./test-sps-dashboard.db")
-os.environ.setdefault("JWT_SECRET", "test-secret-that-is-long-enough")  # gitleaks:allow
-os.environ.setdefault("BOOTSTRAP_PASSWORD", "test-bootstrap-password")
-
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -42,21 +38,15 @@ def test_live_health():
     assert response.json()["status"] == "ok"
 
 
-def test_bootstrap_login_and_rule_validation():
+def test_bootstrap_login_password_change_and_user_administration():
     with TestClient(app) as client:
         login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": INITIAL_BOOTSTRAP_PASSWORD})
         assert login.status_code == 200
         assert login.json()["must_change_password"] is True
         token = login.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
-        payload = {
-            "academic_year": "2026",
-            "target_type": "CLASS",
-            "target_key": "A4 A",
-            "effective_from": "2026-01-01",
-            "rule": {"maxLessonsPerDay": 4},
-        }
-        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 403
+        payload = {"username": "operator.one", "temporary_password": "operator-temporary-password", "role": "Operator"}
+        assert client.post("/api/v1/users", json=payload, headers=headers).status_code == 403
         changed = client.post(
             "/api/v1/auth/change-password",
             json={"current_password": INITIAL_BOOTSTRAP_PASSWORD, "new_password": ROTATED_BOOTSTRAP_PASSWORD},
@@ -65,8 +55,6 @@ def test_bootstrap_login_and_rule_validation():
         assert changed.status_code == 200
         assert changed.json()["must_change_password"] is False
         headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
-        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 201
-        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 409
         created_user = client.post(
             "/api/v1/users",
             json={"username": "operator.one", "temporary_password": "operator-temporary-password", "role": "Operator"},
@@ -229,3 +217,114 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         actions = {event["action"] for event in audit.json()}
         assert {"student.created", "attendance.session.created", "attendance.record.created"} <= actions
         assert all("pris_no" not in event["details"] for event in audit.json())
+
+
+def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
+    with TestClient(app) as client:
+        superuser_headers = login_headers(client)
+        created_user = client.post(
+            "/api/v1/users",
+            json={"username": "timetable.admin", "temporary_password": "timetable-admin-temporary", "role": "IT Administrator"},
+            headers=superuser_headers,
+        )
+        assert created_user.status_code == 201
+        admin_login = client.post("/api/v1/auth/login", json={"username": "timetable.admin", "password": "timetable-admin-temporary"})
+        assert admin_login.status_code == 200
+        changed_password = client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "timetable-admin-temporary", "new_password": "timetable-admin-permanent"},
+            headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"},
+        )
+        assert changed_password.status_code == 200
+        headers = {"Authorization": f"Bearer {changed_password.json()['access_token']}"}
+        availability = {day: ["P1", "P2", "P3", "P4"] for day in ("MON", "TUE", "WED", "THU", "FRI")}
+        teacher_payload = {"short_code": "teach-a", "full_name": "Teacher A", "is_adjunct": True, "availability": availability}
+        assert client.post("/api/v1/timetable/teachers", json=teacher_payload, headers=superuser_headers).status_code == 403
+        teacher = client.post("/api/v1/timetable/teachers", json=teacher_payload, headers=headers)
+        assert teacher.status_code == 201
+        assert teacher.json()["short_code"] == "TEACH-A"
+        assert teacher.json()["availability"] == availability
+        assert client.post("/api/v1/timetable/teachers", json=teacher_payload, headers=headers).status_code == 409
+        invalid_availability = {**availability, "MON": ["P1", "LUNCH"]}
+        assert (
+            client.post(
+                "/api/v1/timetable/teachers",
+                json={**teacher_payload, "short_code": "TEACH-B", "availability": invalid_availability},
+                headers=headers,
+            ).status_code
+            == 422
+        )
+
+        subject = client.post("/api/v1/timetable/subjects", json={"code": "math", "name": "Mathematics"}, headers=headers)
+        instructional_class = client.post(
+            "/api/v1/timetable/classes",
+            json={"code": "A4A", "name": "A4 A", "reporting_order": 10},
+            headers=headers,
+        )
+        cluster = client.post("/api/v1/timetable/clusters", json={"code": "NORTH", "name": "North Cluster"}, headers=headers)
+        assert subject.status_code == instructional_class.status_code == cluster.status_code == 201
+        class_id = instructional_class.json()["id"]
+        cluster_id = cluster.json()["id"]
+        member_payload = {"instructional_class_id": class_id}
+        assert client.post(f"/api/v1/timetable/clusters/{cluster_id}/classes", json=member_payload, headers=headers).status_code == 201
+        assert client.post(f"/api/v1/timetable/clusters/{cluster_id}/classes", json=member_payload, headers=headers).status_code == 409
+
+        resolved = client.get(f"/api/v1/timetable/classes/{class_id}/periods", headers=headers)
+        assert resolved.status_code == 200
+        assert [period["slot_code"] for period in resolved.json()] == ["P1", "P2", "LUNCH", "P3", "P4"]
+        lunch = resolved.json()[2]
+        assert lunch["is_schedulable"] is False
+        assert lunch["display_order"] == 3
+        assert (
+            client.patch(f"/api/v1/timetable/periods/{lunch['id']}", json={"label": "Teaching Period"}, headers=headers).status_code == 422
+        )
+
+        cluster_period = {
+            "scope": "CLUSTER",
+            "target_id": cluster_id,
+            "slot_code": "P1",
+            "label": "Morning block",
+            "starts_at": "08:00",
+            "ends_at": "08:45",
+        }
+        assert client.post("/api/v1/timetable/periods", json=cluster_period, headers=headers).status_code == 201
+        assert client.post("/api/v1/timetable/periods", json=cluster_period, headers=headers).status_code == 409
+        assert client.get(f"/api/v1/timetable/classes/{class_id}/periods", headers=headers).json()[0]["label"] == "Morning block"
+
+        class_period = {
+            "scope": "CLASS",
+            "target_id": class_id,
+            "slot_code": "P1",
+            "label": "A4 A first period",
+            "starts_at": "08:15",
+            "ends_at": "09:00",
+        }
+        assert client.post("/api/v1/timetable/periods", json=class_period, headers=headers).status_code == 201
+        assert client.get(f"/api/v1/timetable/classes/{class_id}/periods", headers=headers).json()[0]["label"] == "A4 A first period"
+        overlapping_period = {
+            "scope": "CLASS",
+            "target_id": class_id,
+            "slot_code": "P2",
+            "label": "Overlapping period",
+            "starts_at": "08:45",
+            "ends_at": "09:30",
+        }
+        assert client.post("/api/v1/timetable/periods", json=overlapping_period, headers=headers).status_code == 409
+        assert (
+            client.post(
+                "/api/v1/timetable/periods",
+                json={**class_period, "slot_code": "LUNCH", "label": "Teaching period", "starts_at": "12:00", "ends_at": "12:30"},
+                headers=headers,
+            ).status_code
+            == 422
+        )
+
+        actions = {event["action"] for event in client.get("/api/v1/reports/audit", headers=headers).json()}
+        assert {
+            "timetable.teacher.created",
+            "timetable.subject.created",
+            "timetable.class.created",
+            "timetable.cluster.created",
+            "timetable.cluster.class_added",
+            "timetable.period.created",
+        } <= actions

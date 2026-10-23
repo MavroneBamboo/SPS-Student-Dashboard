@@ -3,7 +3,7 @@
 ## Technical Follow-up Document
 
 **Version:** 1.0  
-**Status:** Proposed technical baseline  
+**Status:** Active technical baseline; implementation is proceeding in tested vertical slices
 **Related product document:** [PRODUCT_DESCRIPTION.md](PRODUCT_DESCRIPTION.md)
 
 ## 1. Recommended architecture
@@ -41,7 +41,11 @@ For the internal network, deploy:
 
 The application must be usable in an air-gapped or restricted network. External cloud services must not be required for core operation.
 
+Implementation note: the initial API foundation is present, with signed-in, role-guarded resources and encrypted student fields. Timetable resource setup, persistent lesson requirements and rule resolution are being delivered through reviewed feature branches. Lesson writes validate active references, availability and blocks, preserve archived data, and coordinate with period configuration changes. The scheduler, the production UI and full recovery verification remain outstanding; this document remains the target design.
+
 ## 3. Security and first-run bootstrap
+
+Scheduling-rule delivery now uses stable targets, validated definitions, atomic edit versions and shared resolution. Applicable unresolved legacy rules block planning pending explicit IT reconciliation. PostgreSQL enforces cross-scope overlap checks and serializes membership/rule writes. The scheduler and production UI must still consume this service; details are in [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 
 ### 3.1 Bootstrap design
 

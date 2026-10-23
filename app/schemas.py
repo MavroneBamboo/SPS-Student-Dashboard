@@ -1,6 +1,8 @@
 from datetime import date
+from datetime import time as time_value
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -46,13 +48,34 @@ class UserResponse(BaseModel):
     must_change_password: bool
 
 
+class RuleDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    max_lessons_per_day: int = Field(default=4, ge=1, le=4)
+    allowed_days: list[Literal["MON", "TUE", "WED", "THU", "FRI"]] = Field(
+        default_factory=lambda: ["MON", "TUE", "WED", "THU", "FRI"], min_length=1, max_length=5
+    )
+    allowed_periods: list[Literal["P1", "P2", "P3", "P4"]] = Field(
+        default_factory=lambda: ["P1", "P2", "P3", "P4"], min_length=1, max_length=4
+    )
+
+    @model_validator(mode="after")
+    def unique_slots(self):
+        if len(self.allowed_days) != len(set(self.allowed_days)) or len(self.allowed_periods) != len(set(self.allowed_periods)):
+            raise ValueError("Allowed days and periods must be unique")
+        return self
+
+
 class RuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, str_to_upper=True)
+
     academic_year: str = Field(min_length=1, max_length=20)
-    target_type: str = Field(pattern="^(CLASS|CLUSTER)$")
-    target_key: str = Field(min_length=1, max_length=120)
+    target_type: Literal["CLASS", "CLUSTER"]
+    target_id: int = Field(gt=0)
     effective_from: date
     effective_to: date | None = None
-    rule: dict = Field(default_factory=dict)
+    rule: RuleDefinition = Field(default_factory=RuleDefinition)
 
     @model_validator(mode="after")
     def valid_dates(self):
@@ -61,9 +84,186 @@ class RuleCreate(BaseModel):
         return self
 
 
-class RuleResponse(RuleCreate):
-    id: int
+class RuleUpdate(RuleCreate):
+    expected_version: int = Field(ge=1)
     is_active: bool
+
+
+class RuleResponse(BaseModel):
+    id: int
+    academic_year: str
+    target_type: str
+    target_id: int | None
+    target_key: str
+    effective_from: date
+    effective_to: date | None
+    rule: dict | None
+    binding_state: str
+    version: int
+    is_active: bool
+
+
+class RuleResolutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, str_to_upper=True)
+
+    academic_year: str = Field(min_length=1, max_length=20)
+    on_date: date
+    class_ids: list[int] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_classes(self):
+        if any(class_id < 1 for class_id in self.class_ids) or len(self.class_ids) != len(set(self.class_ids)):
+            raise ValueError("class_ids must contain unique positive IDs")
+        return self
+
+
+class ResolvedRule(BaseModel):
+    instructional_class_id: int
+    rule_id: int
+    version: int
+    target_type: str
+    target_id: int
+    rule: RuleDefinition
+
+
+WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI")
+TEACHING_PERIODS = ("P1", "P2", "P3", "P4")
+
+
+class TeacherCreate(BaseModel):
+    short_code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    full_name: str = Field(min_length=1, max_length=160)
+    is_adjunct: bool = False
+    availability: dict[str, list[str]] = Field(default_factory=lambda: {day: list(TEACHING_PERIODS) for day in WEEKDAYS})
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_availability(self):
+        if set(self.availability) != set(WEEKDAYS):
+            raise ValueError("availability must provide exactly MON, TUE, WED, THU, and FRI")
+        for day, periods in self.availability.items():
+            if len(periods) != len(set(periods)) or not set(periods) <= set(TEACHING_PERIODS):
+                raise ValueError(f"{day} availability must contain unique teaching periods P1 through P4 only")
+        return self
+
+
+class TeacherResponse(TeacherCreate):
+    id: int
+
+
+class LessonRequirementCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, str_to_upper=True)
+
+    academic_year: str = Field(min_length=1, max_length=20)
+    instructional_class_id: int = Field(gt=0)
+    teacher_id: int = Field(gt=0)
+    subject_id: int = Field(gt=0)
+    weekly_count: int = Field(ge=1, le=20)
+    block_length: int = Field(default=1, ge=1, le=4)
+
+
+class LessonRequirementUpdate(LessonRequirementCreate):
+    expected_version: int = Field(ge=1)
+    is_active: bool
+
+
+class LessonRequirementResponse(LessonRequirementCreate):
+    id: int
+    version: int
+    is_active: bool
+
+
+class SubjectCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    is_active: bool = True
+
+
+class SubjectResponse(SubjectCreate):
+    id: int
+
+
+class InstructionalClassCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    reporting_order: int = Field(default=0, ge=0, le=10000)
+    is_active: bool = True
+
+
+class InstructionalClassResponse(InstructionalClassCreate):
+    id: int
+
+
+class ClusterCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    is_active: bool = True
+
+
+class ClusterResponse(ClusterCreate):
+    id: int
+    class_ids: list[int] = Field(default_factory=list)
+
+
+class ClusterMemberCreate(BaseModel):
+    instructional_class_id: int = Field(gt=0)
+
+
+class PeriodCreate(BaseModel):
+    scope: str = Field(pattern="^(DEFAULT|CLASS|CLUSTER)$")
+    target_id: int | None = Field(default=None, gt=0)
+    slot_code: str = Field(pattern="^(P1|P2|LUNCH|P3|P4)$")
+    label: str = Field(min_length=1, max_length=80)
+    starts_at: time_value | None = None
+    ends_at: time_value | None = None
+
+    @model_validator(mode="after")
+    def validate_period_definition(self):
+        if (self.scope == "DEFAULT") != (self.target_id is None):
+            raise ValueError("DEFAULT periods have no target_id; CLASS and CLUSTER periods require one")
+        if self.starts_at is None or self.ends_at is None:
+            raise ValueError("Every period definition requires start and end times")
+        if self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be later than starts_at")
+        if self.slot_code == "LUNCH" and self.label.strip().upper() != "LUNCH":
+            raise ValueError("Lunch must remain labelled Lunch and requires a time interval")
+        return self
+
+
+class PeriodResponse(BaseModel):
+    id: int
+    scope: str
+    target_id: int | None
+    slot_code: str
+    display_order: int
+    label: str
+    starts_at: time_value | None
+    ends_at: time_value | None
+    is_schedulable: bool
+    is_active: bool = True
+
+
+class PeriodUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=80)
+    starts_at: time_value | None = None
+    ends_at: time_value | None = None
+
+    @model_validator(mode="after")
+    def require_ordered_times(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one period field must be provided")
+        if ("starts_at" in self.model_fields_set) != ("ends_at" in self.model_fields_set):
+            raise ValueError("Update both starts_at and ends_at together")
+        if "starts_at" in self.model_fields_set and (self.starts_at is None or self.ends_at is None):
+            raise ValueError("Period start and end times cannot be cleared")
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be later than starts_at")
+        if any(value is None for value in self.model_dump(exclude_unset=True).values()):
+            raise ValueError("Period fields cannot be null")
+        return self
 
 
 class StudentCreate(BaseModel):
