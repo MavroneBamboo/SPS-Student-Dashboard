@@ -266,3 +266,18 @@ The export must be immutable/versioned, must not mutate shared timetable data wh
 Instructional classes are not individual students. The timetable module links to the student/attendance domain through the controlled class reference. A class used in attendance must be mapped to its timetable instructional class where applicable. Changes to class definitions must be effective-dated and audited so historical attendance and timetable reports remain reproducible.
 
 Operators manage timetable drafts and attendance sessions. IT Administrators manage reference data and conflict rules. Executives receive read-only approved timetable views and exports.
+
+### 15.6 Resource setup and teacher profiles
+
+Resource setup is a prerequisite to lesson scheduling. The application must provide controlled management for:
+
+- Teacher profiles: stable ID, unique short code, full name, adjunct flag, active/effective dates and normalized availability.
+- Subjects: name, short code and description.
+- Instructional classes: name, short name, description and reporting order.
+- Lesson requirements: subject, teacher, instructional class, weekly count and block length.
+
+A teacher profile is not an application login account. The Operator uses a teacher profile in a lesson; the IT Administrator controls reference data; the Executive only views approved outputs. A teacher may be unavailable for a slot even when the Operator is allowed to edit the timetable.
+
+The lesson API must resolve references by stable IDs, validate weekly counts and block lengths, and reject inactive or unavailable resources. The scheduler and Amend 4-up editor must call the same conflict/availability service. If a teacher short code changes, the change must be audited and all related lesson references must remain intact.
+
+Legacy availability migration requires an explicit conversion from the current 20-position string to the five-day/five-period model. The conversion must not silently assume the missing fifth-period value; it must use an approved migration rule and record exceptions.

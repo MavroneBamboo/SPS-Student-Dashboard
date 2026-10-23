@@ -382,3 +382,16 @@ The implementation repository must include:
 - Health/readiness endpoints and deployment runbook.
 - Backup, restore and disaster-recovery runbook.
 - Security threat model and release checklist.
+
+## 20. Timetable resource and teacher profile requirements
+
+The timetable scheduler requires a resource-management layer in addition to application users and roles. These identities must not be conflated:
+
+- An application user signs in and receives permissions through Superuser, IT Administrator, Operator or Executive roles.
+- A teacher profile is a scheduling resource referenced by lesson requirements and timetable slots.
+
+The teacher profile must contain a stable ID, unique short code, full name, adjunct flag, active/effective dates and normalized availability by weekday and period. Subjects, instructional classes and lesson requirements must be maintained as controlled reference data. A lesson requirement includes subject, teacher, instructional class, weekly count and block length.
+
+Teacher profiles must be created or imported before lessons can be created. The API must reject missing or inactive teacher references, duplicate short codes, invalid availability and lesson requirements with impossible counts. Availability and double-booking rules must be shared by the scheduler and Amend 4-up editor.
+
+The legacy application stores availability as a positional colon-separated value and its form currently exposes 20 slots, while the latest five-period schedule requires 25 weekly slots. Migration must show and resolve this mismatch; the new database must store explicit day/period rows or a versioned availability structure.

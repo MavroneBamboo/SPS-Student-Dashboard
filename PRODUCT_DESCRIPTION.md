@@ -234,3 +234,14 @@ The **Amend 4-up** workspace is the primary timetable function. It must support:
 - Save, audit and return to the normal schedule view.
 
 The module must generate both timetable report types and preserve a clear relationship between the timetable's instructional classes and the student intake/attendance classes. It must not silently overwrite an approved timetable when a new schedule is generated.
+
+### 10.1 Timetable resource setup
+
+Teacher profiles are separate from application login accounts. A teacher profile is a scheduling resource, not a user permission identity. Before a timetable can be generated, an Operator or IT Administrator must maintain:
+
+- Teacher short code, full name, adjunct status and day/period availability.
+- Subjects with name, short code and description.
+- Instructional classes with short name and description.
+- Lesson requirements linking subject, teacher and instructional class, including weekly count and block length.
+
+The system must not allow a lesson to reference an unknown teacher. Teacher availability and teacher double-booking checks must apply both during draft generation and during Amend 4-up amendments. The prototype's Resource Setup view demonstrates this prerequisite workflow.

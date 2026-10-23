@@ -45,6 +45,8 @@ The lesson editor should use controlled selectors populated from these profiles.
 
 The legacy source serialises availability as a colon-separated array and its current availability form contains 20 slots, while the latest scheduling behavior and Amend 4-up support five periods per day (25 weekly slots). Migration must normalize this mismatch explicitly and obtain business confirmation for the fifth period; the replacement system must use a versioned day/period availability model rather than an opaque positional string.
 
+The clickable prototype now exposes this prerequisite through **Resource setup** before the Amend 4-up grid. It demonstrates teacher profile creation/editing, availability selection, subject and instructional-class references, lesson requirements, duplicate short-code validation, teacher-code cascade and availability checks during timetable amendments.
+
 ## 3. Why Amend 4-up is the key capability
 
 Amend 4-up is the practical operational tool for finishing a generated timetable. It shows multiple mini-grids on one page and lets an operator inspect and correct the timetable in the same visual arrangement used by the printed reports.

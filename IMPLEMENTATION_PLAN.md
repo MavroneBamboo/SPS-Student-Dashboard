@@ -323,7 +323,17 @@ Exit criteria: a representative legacy project imports into a staging database w
 - Make fixed school events configurable.
 - Preserve approved versions when generating a replacement draft.
 
+Resource setup is an explicit delivery slice before lesson scheduling:
+
+- Build teacher profile CRUD with short code, full name, adjunct status and availability editor.
+- Build subject and instructional-class reference data.
+- Build lesson-requirement CRUD with controlled teacher/subject/class selectors.
+- Import and reconcile legacy teacher availability, including the 20-slot to 25-slot decision.
+- Add tests for inactive teachers, duplicate codes, unavailable slots, weekly count and block length.
+
 Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.
+
+Resource setup exit criteria: an Operator can create a teacher profile, mark availability, create a lesson requirement using that profile and see invalid references rejected before generation.
 
 ### Timetable phase C — Amend 4-up
 
@@ -362,3 +372,5 @@ Exit criteria: both report types reconcile with the approved grid and the report
 - Draft versus approved version protection.
 - PDF golden-file/layout comparison for both outputs.
 - Import/export reconciliation with representative `.pri` projects.
+- Teacher profile, availability and lesson-reference reconciliation.
+- Resource setup permissions and audit events.
