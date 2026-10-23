@@ -14,7 +14,14 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     with SessionLocal() as db:
         if db.query(User).filter(User.username == settings.bootstrap_username).first() is None:
-            db.add(User(username=settings.bootstrap_username, password_hash=hash_password(settings.bootstrap_password), role="Superuser", must_change_password=True))
+            db.add(
+                User(
+                    username=settings.bootstrap_username,
+                    password_hash=hash_password(settings.bootstrap_password),
+                    role="Superuser",
+                    must_change_password=True,
+                )
+            )
             db.commit()
     yield
 

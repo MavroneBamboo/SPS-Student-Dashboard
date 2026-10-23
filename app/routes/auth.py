@@ -17,7 +17,12 @@ def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     settings = get_settings()
-    return TokenResponse(access_token=create_access_token(user.id, user.username, user.role, user.must_change_password), expires_in=settings.access_token_minutes * 60, role=user.role, must_change_password=user.must_change_password)
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.username, user.role, user.must_change_password),
+        expires_in=settings.access_token_minutes * 60,
+        role=user.role,
+        must_change_password=user.must_change_password,
+    )
 
 
 @router.post("/change-password", response_model=TokenResponse)
@@ -28,10 +33,15 @@ def change_password(payload: PasswordChangeRequest, db: DbSession, claims: Curre
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
     if verify_password(payload.new_password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="New password must differ from current password")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="New password must differ from current password")
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
     record_event(db, user.id, "auth.password.changed", "user", str(user.id))
     db.commit()
     settings = get_settings()
-    return TokenResponse(access_token=create_access_token(user.id, user.username, user.role), expires_in=settings.access_token_minutes * 60, role=user.role, must_change_password=False)
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.username, user.role),
+        expires_in=settings.access_token_minutes * 60,
+        role=user.role,
+        must_change_password=False,
+    )

@@ -14,8 +14,6 @@ RUN pip install --no-cache-dir --upgrade pip \
     else \
       pip install --no-cache-dir .; \
     fi
-COPY tests ./tests
-
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000

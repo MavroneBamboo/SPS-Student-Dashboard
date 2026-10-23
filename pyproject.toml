@@ -8,21 +8,45 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
   "alembic==1.14.0",
-  "fastapi==0.115.6",
+  "fastapi==0.161.1",
   "uvicorn[standard]==0.34.0",
   "sqlalchemy==2.0.37",
   "psycopg[binary]==3.2.3",
-  "PyJWT==2.10.1",
+  "PyJWT==2.15.0",
   "pydantic-settings==2.7.1",
-  "python-multipart==0.0.20",
-  "cryptography==44.0.0",
+  "python-multipart==0.0.31",
+  "cryptography==50.0.0",
 ]
 
 [project.optional-dependencies]
-test = ["pytest==8.3.4", "httpx==0.28.1", "aiosqlite==0.20.0"]
+test = [
+  "pytest==9.0.3",
+  "httpx2==2.13.0",
+  "aiosqlite==0.20.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.9.4",
+  "bandit==1.8.3",
+  "pip-audit==2.8.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-markers"
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F", "I", "B", "UP"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.setuptools.packages.find]
 include = ["app*"]

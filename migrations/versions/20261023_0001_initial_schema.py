@@ -5,8 +5,8 @@ Revises:
 Create Date: 2026-10-23
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20261023_0001"
 down_revision = None
@@ -131,4 +131,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("The initial schema migration is intentionally irreversible; use a verified backup or a forward migration to recover data safely.")
+    raise RuntimeError(
+        "The initial schema migration is intentionally irreversible; use a verified backup or a forward migration to recover data safely."
+    )

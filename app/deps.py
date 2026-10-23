@@ -27,7 +27,13 @@ def authenticated_claims(credentials: Annotated[HTTPAuthorizationCredentials | N
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is unavailable")
-    return {**token_claims, "sub": str(user.id), "username": user.username, "role": user.role, "must_change_password": user.must_change_password}
+    return {
+        **token_claims,
+        "sub": str(user.id),
+        "username": user.username,
+        "role": user.role,
+        "must_change_password": user.must_change_password,
+    }
 
 
 CurrentClaims = Annotated[dict, Depends(authenticated_claims)]
