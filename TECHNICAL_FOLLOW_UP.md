@@ -284,3 +284,101 @@ The following must be confirmed before implementation:
 - Required report formats and print layouts.
 - Whether executives can view personally identifiable student fields.
 - Production backup location and recovery-time objective.
+
+## 14. Mandatory CI/CD and quality gates
+
+CI/CD is part of the product build and must be established before production deployment. Every pull request should run a reproducible pipeline containing at least:
+
+1. Source checkout and dependency lock verification.
+2. Formatting, linting and static analysis.
+3. Unit tests for domain and service logic.
+4. API/integration tests against an isolated test database.
+5. End-to-end tests for login, role enforcement, intake, attendance and reporting.
+6. Migration tests against a clean database and an upgrade database.
+7. Container build and Docker Compose startup validation.
+8. Dependency, container and secret scanning.
+9. Test coverage and quality thresholds.
+10. Build artifact/version publication.
+
+The pipeline must fail on test failures, migration failures, critical security findings, leaked secrets or a broken Compose deployment. Production deployment must require an approved change and must use the exact tested artifact. Environment-specific secrets must be injected by the deployment environment and must not be committed to the repository.
+
+## 15. Living test policy
+
+Tests are maintained with the feature they protect. A pull request that adds or changes behavior must include updated automated tests, including negative and permission tests where relevant. The test suite must cover at least:
+
+- Authentication, token expiry, logout and failed-login handling.
+- Superuser bootstrap, forced credential rotation and recovery controls.
+- Every role and every protected API permission.
+- Student profile validation, duplicate `Pris No.` detection and import reconciliation.
+- Attendance creation, duplicate prevention and correction audit history.
+- Dashboard filters, totals and reconciliation with source records.
+- Database migrations, backup/restore and failure recovery paths.
+- API input validation, output filtering and error handling.
+
+Coverage percentage alone is not sufficient. Critical workflows must have explicit tests, and the test plan must be reviewed whenever a new feature is added.
+
+## 16. Docker Compose deployment standard
+
+The project must provide a version-controlled Docker Compose deployment for development, testing and production-like internal deployment. The baseline services are:
+
+- `app` — backend API and application services.
+- `db` — relational database with a persistent named volume.
+- `proxy` — HTTPS termination and request routing.
+- `worker` — background imports, report generation and scheduled jobs where required.
+
+Containers must run with pinned image/dependency versions, non-root users where supported, health checks, restart policy, resource limits and explicit networks. Database volumes and backup destinations must be externalised and must not be removed by routine application redeployment. Production secrets must be supplied through protected environment files or a secrets manager, not committed `.env` files.
+
+## 17. Data protection and application security
+
+The frontend is an untrusted client. It must communicate only with the backend API over HTTPS. It must not contain database credentials, database connection strings, encryption keys or privileged service credentials.
+
+The backend must:
+
+- Enforce authentication and authorisation on every protected endpoint.
+- Validate JWT signature, issuer, audience, expiry and token type.
+- Use short-lived access tokens and a controlled refresh-token strategy, preferably with refresh-token rotation and revocation.
+- Apply server-side role and permission checks; frontend route guards are only usability controls.
+- Use parameterised queries or a safe data-access layer.
+- Apply input validation, output filtering, rate limiting and secure error responses.
+- Protect cookies/tokens against XSS, CSRF and replay according to the selected browser authentication design.
+- Record security events without logging passwords, tokens, connection strings or plaintext sensitive data.
+
+Database protection must include:
+
+- Encryption at rest using the database/server storage capabilities.
+- TLS for database connections where supported and practical.
+- Least-privilege database accounts separated by application role where appropriate.
+- Application-level authenticated encryption for designated sensitive fields, such as personal identifiers and contact details.
+- Key versioning and rotation without losing the ability to decrypt retained records.
+- Keys stored outside the database and outside source control.
+- Encrypted backups with separately protected keys.
+
+Application-level encryption does not replace database encryption at rest. Both controls are required for the fields classified as sensitive.
+
+## 18. Security assurance and operations
+
+Security must be observed across the full lifecycle:
+
+- Threat model the authentication, import, reporting, export and administration flows.
+- Maintain dependency and container vulnerability scanning.
+- Apply secure headers, HTTPS, restricted CORS and network segmentation.
+- Keep production database ports inaccessible from user networks and frontend containers.
+- Separate development, test and production credentials and data.
+- Review audit logs and security alerts.
+- Patch base images and dependencies on a defined schedule.
+- Test backup restoration and key recovery.
+- Perform security review before production release and after material changes.
+- Maintain incident response, credential rotation and vulnerability remediation procedures.
+
+## 19. Required repository deliverables
+
+The implementation repository must include:
+
+- Dockerfiles and Docker Compose files for supported environments.
+- CI/CD workflow definitions.
+- Automated test suites and test data strategy.
+- Database migration scripts.
+- Secure configuration and secret-handling documentation.
+- Health/readiness endpoints and deployment runbook.
+- Backup, restore and disaster-recovery runbook.
+- Security threat model and release checklist.
