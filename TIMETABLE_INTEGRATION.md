@@ -32,6 +32,19 @@ By InstClass + By Teacher PDF export
 
 The legacy project is a `.pri` ZIP containing six encrypted data members. It is suitable as a migration source but not as the new system of record: the encryption key is embedded in source, links use names rather than stable IDs, and item IDs are list positions.
 
+## 2.1 Resource setup is a prerequisite
+
+The scheduler cannot add a teacher implicitly. The operator or administrator must first maintain the resource profiles used by lesson requirements:
+
+1. **Teachers** — short code, full name, adjunct flag and availability by day/period.
+2. **Subjects** — name, short code and description.
+3. **Instructional Classes** — name, short name and description/reporting order.
+4. **Lessons** — subject, teacher, instructional class, periods per week (`Count`) and block length (`Length`).
+
+The lesson editor should use controlled selectors populated from these profiles. It must reject a lesson that references a missing teacher, subject or instructional class. Teacher availability must be visible and editable before generation, and the scheduler plus Amend 4-up must use the same availability rules.
+
+The legacy source serialises availability as a colon-separated array and its current availability form contains 20 slots, while the latest scheduling behavior and Amend 4-up support five periods per day (25 weekly slots). Migration must normalize this mismatch explicitly and obtain business confirmation for the fifth period; the replacement system must use a versioned day/period availability model rather than an opaque positional string.
+
 ## 3. Why Amend 4-up is the key capability
 
 Amend 4-up is the practical operational tool for finishing a generated timetable. It shows multiple mini-grids on one page and lets an operator inspect and correct the timetable in the same visual arrangement used by the printed reports.
