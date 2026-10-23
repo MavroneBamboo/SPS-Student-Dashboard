@@ -199,3 +199,38 @@ The production system must also satisfy the following requirements:
 - Security must be applied throughout design, development, testing, deployment, operations, logging, backup and recovery.
 
 These requirements are release gates, not optional future enhancements.
+
+## 10. Timetable scheduling module
+
+The product also includes the Prison School Timetable workflow currently provided by the legacy `TImeTables-legacy` WinForms system. It schedules instructional class groups, teachers, subjects and weekly lesson requirements.
+
+The timetable workflow is:
+
+```text
+Set up teachers, subjects, classes and lessons
+        ↓
+Generate an initial timetable
+        ↓
+Review unplaced lessons and conflicts
+        ↓
+Amend 4-up visual editing and approval
+        ↓
+Save the approved timetable
+        ↓
+Export By Instructional Class and By Teacher reports
+```
+
+The **Amend 4-up** workspace is the primary timetable function. It must support:
+
+- By Instructional Class and By Teacher views.
+- Four-up timetable review with configurable page density.
+- Previous/next page navigation and search.
+- Five weekdays and five teaching periods.
+- Double-click editing of a lesson.
+- Drag-and-drop movement with swap behavior where valid.
+- Right-click shift/remove actions.
+- Locking and conflict protection.
+- Class/teacher rename with controlled cascade.
+- Save, audit and return to the normal schedule view.
+
+The module must generate both timetable report types and preserve a clear relationship between the timetable's instructional classes and the student intake/attendance classes. It must not silently overwrite an approved timetable when a new schedule is generated.
