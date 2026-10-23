@@ -170,7 +170,7 @@ Every dashboard response includes filters, result timestamp, data-through timest
 
 The repository must contain Compose definitions for development and production-like internal deployment. Baseline services are `proxy`, `app`, `worker` and `db`, with optional test dependencies. Use separate Compose overrides rather than changing application code per environment.
 
-Containers must use pinned versions, non-root users where supported, health checks, restart policies, resource limits and private networks. Only the proxy publishes a user-facing port. The database port is not published externally. Persistent database volumes, encrypted backup mounts and secrets are externalised.
+Containers must use pinned versions, non-root users where supported, health checks, restart policies, resource limits and private networks. Only the proxy publishes a user-facing port. The database port is not published externally. Persistent database volumes, encrypted backup mounts and secrets are externalised. The current Compose stack runs PostgreSQL health checks, then a one-shot Alembic migration service, then starts the API; the API must not create or alter schema at runtime. The initial baseline migration is deliberately non-reversible to prevent accidental table/data deletion; recovery uses verified backups or forward migrations.
 
 ## 11. CI/CD and testing design
 

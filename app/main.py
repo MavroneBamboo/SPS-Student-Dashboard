@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.db import Base, SessionLocal, engine
+from app.db import SessionLocal
 from app.models import User
 from app.routes import attendance, auth, health, reports, rules, students
 from app.security import hash_password
@@ -11,7 +11,6 @@ from app.security import hash_password
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
     settings = get_settings()
     with SessionLocal() as db:
         if db.query(User).filter(User.username == settings.bootstrap_username).first() is None:

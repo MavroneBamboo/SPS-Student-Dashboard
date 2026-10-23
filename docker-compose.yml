@@ -13,7 +13,10 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
     environment:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
@@ -25,8 +28,8 @@ services:
       BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:?set BOOTSTRAP_PASSWORD in .env}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     expose:
       - "8000"
     networks: [private]
@@ -36,6 +39,20 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      args:
+        INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
 
   db:
     image: postgres:17.2-alpine

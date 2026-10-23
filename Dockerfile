@@ -5,7 +5,15 @@ WORKDIR /app
 
 COPY pyproject.toml .
 COPY app ./app
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir ".[test]"
+COPY alembic.ini .
+COPY migrations ./migrations
+ARG INSTALL_TEST_DEPENDENCIES=false
+RUN pip install --no-cache-dir --upgrade pip \
+    && if [ "$INSTALL_TEST_DEPENDENCIES" = "true" ]; then \
+      pip install --no-cache-dir ".[test]"; \
+    else \
+      pip install --no-cache-dir .; \
+    fi
 COPY tests ./tests
 
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
