@@ -198,3 +198,71 @@ Production deployment requires a tagged, tested container artifact, approved con
 - Agree field-level encryption classification and key custody process.
 - Define performance targets, recovery time objective and recovery point objective.
 - Resolve legacy workbook naming and formula-range issues during migration.
+
+## 15. Timetable scheduling module
+
+The legacy timetable system is a .NET WinForms application that converts weekly lesson requirements into a placed timetable for instructional class groups and teachers. It currently saves `.pri` project files and produces two PDF outputs: `Timetable By InstClass.pdf` and `Timetable By Teacher.pdf`.
+
+The new application should model the timetable as first-class domain data rather than treating the PDFs as the source of truth. The legacy `.pri` format can be imported through a controlled migration adapter, but it must not be used as the production database format.
+
+### 15.1 Timetable entities
+
+- `timetable_versions` — academic period, status, owner, version and approval state.
+- `teachers` — short code, full name, adjunct flag and availability by day/period.
+- `subjects` — code, short code and description.
+- `instructional_classes` — class code, description and reporting order.
+- `lesson_requirements` — subject, teacher, class, weekly count and block length.
+- `timetable_slots` — version, class, teacher, subject, weekday, period, note and lock state.
+- `timetable_conflicts` — detected conflict type, severity, status and resolution.
+- `timetable_audit_events` — every amendment, move, swap, removal, rename and approval.
+
+Use stable IDs and foreign keys. Do not reproduce the legacy name-only links or list-index IDs as the production identity model. Composite teachers such as `A / B` and `ALL` require explicit membership/rule data so that conflict handling is deliberate and testable.
+
+### 15.2 Scheduling behavior
+
+The first generated schedule may use a deterministic greedy placement algorithm, but it must report unplaced requirements and conflicts rather than claiming success. A later solver can improve placement without changing the timetable API.
+
+The scheduling engine must check:
+
+- Class availability and double-booking.
+- Teacher availability and double-booking.
+- Required weekly lesson count.
+- Consecutive-period block length.
+- Locked slots and approved amendments.
+- School-specific fixed events, which must be configurable rather than hard-coded.
+
+Generation must create a new draft version or require an explicit replacement confirmation. It must never silently destroy an approved timetable.
+
+### 15.3 Amend 4-up workspace
+
+Amend 4-up is the main timetable editing surface. It displays multiple class or teacher mini-grids on one page, with Monday–Friday rows and five period columns. The page density is selectable (for example 2, 4, 6, 8, 12, 16, 24 or 32 tables per page).
+
+Required interactions:
+
+- Toggle By Class / By Teacher.
+- Search class code, teacher code or teacher full name.
+- Previous/next page.
+- Double-click a cell to edit subject/teacher or class.
+- Drag a lesson to another slot; validate the destination and swap only when both moves are valid.
+- Right-click a lesson to shift or remove it.
+- Double-click a title to request a controlled rename.
+- Lock/unlock a slot.
+- Save amendments directly to the current draft and record an audit event.
+- Return to the normal Schedule view without losing amendments.
+
+The UI must use the real weekday and period represented by each row/cell, not its current sorted index. This prevents a known legacy failure where editing after sorting changed a different day. Period 5 must be rendered and editable; the current school layout is five teaching periods, including the 12:00–13:25 slot as Period 3.
+
+### 15.4 PDF/report output
+
+The reporting service generates both current formats from the same approved timetable version:
+
+- By Instructional Class: one page per eligible class group, showing subject and teacher.
+- By Teacher: one page per teacher, showing subject and instructional class.
+
+The export must be immutable/versioned, must not mutate shared timetable data while rendering, and must include the academic period, timetable version and generation timestamp. The latest supplied PDFs are acceptance references for layout and content.
+
+### 15.5 Integration with student and attendance data
+
+Instructional classes are not individual students. The timetable module links to the student/attendance domain through the controlled class reference. A class used in attendance must be mapped to its timetable instructional class where applicable. Changes to class definitions must be effective-dated and audited so historical attendance and timetable reports remain reproducible.
+
+Operators manage timetable drafts and attendance sessions. IT Administrators manage reference data and conflict rules. Executives receive read-only approved timetable views and exports.

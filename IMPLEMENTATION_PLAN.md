@@ -296,3 +296,69 @@ Before production deployment:
 4. Convert Phase 0 and Phase 1 deliverables into tracked issues.
 5. Build the minimal Compose stack and CI pipeline first.
 6. Establish the acceptance-test catalogue before profile implementation.
+
+## 10. Timetable integration workstream
+
+The timetable system is added as a first-class workstream, with Amend 4-up treated as the primary user experience.
+
+### Timetable phase A — Legacy inventory and migration adapter
+
+**Estimated duration:** 1–2 weeks
+
+- Inventory `.pri` projects, teachers, subjects, instructional classes, lesson requirements and placed slots.
+- Capture the latest By Instructional Class and By Teacher PDFs as golden layout references.
+- Define mappings from timetable instructional classes to intake/attendance classes.
+- Build a read-only `.pri` import and validation tool.
+- Report legacy composite teachers, invalid references, unplaced lessons and duplicate slots.
+
+Exit criteria: a representative legacy project imports into a staging database with a reconciliation report and no silent data loss.
+
+### Timetable phase B — Resources and scheduling draft
+
+**Estimated duration:** 2–3 weeks
+
+- Implement teachers, subjects, instructional classes, availability and lesson requirements.
+- Implement deterministic draft generation with five days and five periods.
+- Report unplaced lessons, class clashes, teacher clashes and availability failures.
+- Make fixed school events configurable.
+- Preserve approved versions when generating a replacement draft.
+
+Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.
+
+### Timetable phase C — Amend 4-up
+
+**Estimated duration:** 2–3 weeks
+
+- Implement By Class and By Teacher modes.
+- Implement 2/4/6/8/12/16/24/32 table density, paging and search.
+- Implement double-click edit, drag/swap, shift, remove, lock and title rename.
+- Validate all moves against teacher/class availability and double-booking.
+- Ensure sort order never changes the real day/period being edited.
+- Add draft save, audit events and return-to-schedule behavior.
+
+Exit criteria: operators can correct a generated draft entirely in Amend 4-up, save it, reopen it and reproduce the same result.
+
+### Timetable phase D — Reports and approval
+
+**Estimated duration:** 1–2 weeks
+
+- Generate By Instructional Class and By Teacher reports from the same approved version.
+- Compare output against the latest supplied PDFs.
+- Add version, timestamp and audit metadata.
+- Add executive read-only timetable view and downloads.
+- Add approval and publish status before attendance users consume the timetable.
+
+Exit criteria: both report types reconcile with the approved grid and the report renderer does not mutate timetable data.
+
+### Timetable testing gates
+
+- Five-period rendering and editing, including Period 3 and Period 5.
+- Teacher and class double-booking prevention.
+- Composite-teacher behavior defined and tested.
+- Locked-slot protection.
+- Drag/swap validation in both directions.
+- Edit-after-sort uses the visible weekday.
+- Rename cascade and audit history.
+- Draft versus approved version protection.
+- PDF golden-file/layout comparison for both outputs.
+- Import/export reconciliation with representative `.pri` projects.
