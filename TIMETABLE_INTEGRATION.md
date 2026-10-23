@@ -41,11 +41,13 @@ The scheduler cannot add a teacher implicitly. The operator or administrator mus
 3. **Instructional Classes** — name, short name and description/reporting order.
 4. **Lessons** — subject, teacher, instructional class, periods per week (`Count`) and block length (`Length`).
 
+Class setup also includes cluster membership and period configuration. Every class starts with the default period pattern (`P1`, `P2`, `Lunch`, `P3`, `P4`). A period created for a single class or cluster may override the matching default without changing unrelated classes. Period 3 remains the lunch interval and cannot be converted into a teaching period.
+
 The lesson editor should use controlled selectors populated from these profiles. It must reject a lesson that references a missing teacher, subject or instructional class. Teacher availability must be visible and editable before generation, and the scheduler plus Amend 4-up must use the same availability rules.
 
 The legacy source serialises availability as a colon-separated array of 20 teaching slots. The visual report has a lunch column for daily alignment, but lunch must remain non-schedulable. The replacement system must use a versioned day/period availability model rather than an opaque positional string.
 
-The clickable prototype now exposes this prerequisite through **Resource setup** before the Amend 4-up grid. It demonstrates teacher profile creation/editing, availability selection, subject and instructional-class references, lesson requirements, duplicate short-code validation, teacher-code cascade and availability checks during timetable amendments.
+The clickable prototype now exposes this prerequisite through **Resource setup** before the Amend 4-up grid. It demonstrates teacher profile creation/editing, availability selection, subject and instructional-class references, class clusters, default periods, class/cluster period overrides, lesson requirements, duplicate short-code validation, teacher-code cascade and availability checks during timetable amendments.
 
 ## 3. Why Amend 4-up is the key capability
 

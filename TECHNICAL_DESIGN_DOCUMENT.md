@@ -211,6 +211,8 @@ The new application should model the timetable as first-class domain data rather
 - `teachers` — short code, full name, adjunct flag and availability by day/period.
 - `subjects` — code, short code and description.
 - `instructional_classes` — class code, description and reporting order.
+- `class_clusters` and `class_cluster_members` — reusable groups of instructional classes.
+- `period_definitions` — default and override period definitions, including scope, target, start/end time and schedulability.
 - `lesson_requirements` — subject, teacher, class, weekly count and block length.
 - `timetable_slots` — version, class, teacher, subject, weekday, period, note and lock state.
 - `timetable_conflicts` — detected conflict type, severity, status and resolution.
@@ -274,6 +276,8 @@ Resource setup is a prerequisite to lesson scheduling. The application must prov
 - Teacher profiles: stable ID, unique short code, full name, adjunct flag, active/effective dates and normalized availability.
 - Subjects: name, short code and description.
 - Instructional classes: name, short name, description and reporting order.
+- Class clusters: named groups of instructional classes used for shared period overrides.
+- Period definitions: a default pattern inherited by all classes, plus effective-dated class or cluster overrides. `P3` is reserved for lunch and remains non-schedulable.
 - Lesson requirements: subject, teacher, instructional class, weekly count and block length.
 
 A teacher profile is not an application login account. The Operator uses a teacher profile in a lesson; the IT Administrator controls reference data; the Executive only views approved outputs. A teacher may be unavailable for a slot even when the Operator is allowed to edit the timetable.

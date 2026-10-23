@@ -327,6 +327,7 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 
 - Build teacher profile CRUD with short code, full name, adjunct status and availability editor.
 - Build subject and instructional-class reference data.
+- Build class-cluster membership and period-definition management: seed a default period pattern for all classes, then allow class or cluster overrides.
 - Build lesson-requirement CRUD with controlled teacher/subject/class selectors.
 - Import and reconcile legacy teacher availability as 20 teaching slots; represent lunch as a non-schedulable display interval.
 - Add tests for inactive teachers, duplicate codes, unavailable slots, weekly count and block length.
@@ -334,6 +335,7 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.
 
 Resource setup exit criteria: an Operator can create a teacher profile, mark availability, create a lesson requirement using that profile and see invalid references rejected before generation.
+Class-period exit criteria: every class resolves to the default period pattern unless an explicit class or cluster override exists; Period 3 remains lunch and cannot be made schedulable.
 
 ### Timetable phase C — Amend 4-up
 
