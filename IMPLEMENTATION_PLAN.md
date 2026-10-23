@@ -16,8 +16,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - PR #18 established the initial encrypted student/API foundation and is merged.
 - PR #19 established CI quality, security, PostgreSQL migration, production-image and Compose validation gates and is merged.
-- PR #26 contains the teacher, subject, instructional-class, cluster and period-definition API foundation. The next increment adds persistent lesson requirements, archive/restore, availability/block validation and concurrent-edit protection.
-- The rule-resolution increment adds stable targets, typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
+- PR #28 is merged and includes the resource setup, persistent lesson requirements and stable-target rule-resolution foundations originally submitted through #26/#27/#28. The earlier #26/#27 PRs are superseded by that merged code.
+- Rule resolution includes typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 - The timetable-draft increment adds weekly snapshots, persistent block/cell placement, full-grid validation for manual changes, revision guards, approval and executive reads of approved versions. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 - Automatic generation, publishing coordination, resource editing, the production Amend 4-up UI, exports and end-to-end tests remain outstanding. Future generation must use the same rule and placement services.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
