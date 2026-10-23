@@ -1,7 +1,7 @@
 from datetime import date
 from datetime import time as time_value
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -90,6 +90,28 @@ class TeacherCreate(BaseModel):
 
 class TeacherResponse(TeacherCreate):
     id: int
+
+
+class LessonRequirementCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, str_to_upper=True)
+
+    academic_year: str = Field(min_length=1, max_length=20)
+    instructional_class_id: int = Field(gt=0)
+    teacher_id: int = Field(gt=0)
+    subject_id: int = Field(gt=0)
+    weekly_count: int = Field(ge=1, le=20)
+    block_length: int = Field(default=1, ge=1, le=4)
+
+
+class LessonRequirementUpdate(LessonRequirementCreate):
+    expected_version: int = Field(ge=1)
+    is_active: bool
+
+
+class LessonRequirementResponse(LessonRequirementCreate):
+    id: int
+    version: int
+    is_active: bool
 
 
 class SubjectCreate(BaseModel):

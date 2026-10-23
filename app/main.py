@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import User
-from app.routes import attendance, auth, health, reports, rules, students, timetable_resources, users
+from app.routes import attendance, auth, health, lessons, reports, rules, students, timetable_resources, users
 from app.security import hash_password
 
 
@@ -31,6 +31,7 @@ app.include_router(health.router)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(rules.router, prefix="/api/v1")
 app.include_router(timetable_resources.router, prefix="/api/v1")
+app.include_router(lessons.router, prefix="/api/v1")
 app.include_router(students.router, prefix="/api/v1")
 app.include_router(attendance.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")

@@ -85,6 +85,30 @@ class ClassCluster(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LessonRequirement(Base):
+    __tablename__ = "lesson_requirements"
+    __table_args__ = (
+        UniqueConstraint("academic_year", "instructional_class_id", "teacher_id", "subject_id", name="uq_lesson_requirement_resources"),
+        CheckConstraint("weekly_count BETWEEN 1 AND 20", name="ck_lesson_weekly_count"),
+        CheckConstraint("block_length BETWEEN 1 AND 4", name="ck_lesson_block_length"),
+        CheckConstraint("version >= 1", name="ck_lesson_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    academic_year: Mapped[str] = mapped_column(String(20), index=True)
+    instructional_class_id: Mapped[int] = mapped_column(ForeignKey("instructional_classes.id"), index=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id"), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), index=True)
+    weekly_count: Mapped[int] = mapped_column(Integer)
+    block_length: Mapped[int] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[int] = mapped_column(Integer)
+    updated_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class ClassClusterMember(Base):
     __tablename__ = "class_cluster_members"
     __table_args__ = (UniqueConstraint("instructional_class_id", name="uq_cluster_member_class"),)

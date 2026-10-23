@@ -15,8 +15,9 @@ The initial release should be delivered in phases over approximately 16–20 wee
 ### Current delivery checkpoint (23 October 2026)
 
 - PR #18 established the initial encrypted student/API foundation and is merged.
-- PR #19 established CI quality, security, PostgreSQL migration, production-image and Compose validation gates; it is a separate review/merge dependency.
-- The current timetable-resource API increment adds the initial teacher, subject, instructional-class, cluster and period-definition schema/API. The feature remains incomplete until lesson requirements, scheduling rules, timetable versions, placement validation, Amend 4-up UI and end-to-end tests are delivered.
+- PR #19 established CI quality, security, PostgreSQL migration, production-image and Compose validation gates and is merged.
+- PR #26 contains the teacher, subject, instructional-class, cluster and period-definition API foundation. The next increment adds persistent lesson requirements, archive/restore, availability/block validation and concurrent-edit protection.
+- Complete scheduling-rule resolution, timetable versions, generation/placement validation, resource editing, Amend 4-up UI and end-to-end tests remain outstanding.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
 - Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
 
@@ -349,6 +350,8 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 - Build lesson-requirement CRUD with controlled teacher/subject/class selectors.
 - Import and reconcile legacy teacher availability as 20 teaching slots; represent lunch as a non-schedulable display interval.
 - Add tests for inactive teachers, duplicate codes, unavailable slots, weekly count and block length.
+- Lesson API increment: stable foreign keys, one requirement per academic-year/class/teacher/subject combination, paginated reads, version-checked replacement/archive/restore and audited writes. Block planning preserves the weekly total with a shorter final block when needed. Period/cluster changes revalidate active requirements under a shared PostgreSQL transaction lock.
+- Extend CI with lesson permission/lifecycle tests, real simultaneous-save and configuration-change races, database constraint checks, block-packing cases and a baseline-data upgrade preservation rehearsal.
 - Add rule-completeness, rule-overlap, duplicate-placement and exactly-one-applicable-rule tests before generation and Amend 4-up placement.
 
 Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.

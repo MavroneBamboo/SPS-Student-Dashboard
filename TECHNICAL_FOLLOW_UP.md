@@ -41,7 +41,7 @@ For the internal network, deploy:
 
 The application must be usable in an air-gapped or restricted network. External cloud services must not be required for core operation.
 
-Implementation note: the initial API foundation is present, with signed-in, role-guarded resources and encrypted student fields. The first timetable resource schema/API increment is being added as a separate migration and feature branch; this document remains the target design, not a claim that the entire product is implemented.
+Implementation note: the initial API foundation is present, with signed-in, role-guarded resources and encrypted student fields. Timetable resource setup and persistent lesson requirements are being delivered through reviewed feature branches. Lesson writes validate active references, availability and blocks, preserve archived data, and use edit versions plus PostgreSQL transaction coordination with period configuration changes. Rule resolution, the scheduler, the production UI and full recovery verification remain outstanding; this document remains the target design.
 
 ## 3. Security and first-run bootstrap
 

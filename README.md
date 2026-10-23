@@ -23,7 +23,9 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Bootstrap Superuser login with short-lived signed JWT access tokens.
 - Mandatory first-login password change; Superuser-only account creation and role assignment with account-activity checks on each authenticated request.
 - PBKDF2 password hashing.
-- Protected scheduling-rule API with duplicate/overlap rejection.
+- Initial scheduling-rule storage with same-text-scope duplicate/overlap rejection; complete class/cluster rule resolution is pending.
+- Teacher, subject, instructional-class and cluster resource APIs, with inherited period definitions and a non-schedulable third lunch column.
+- Lesson requirements linked to resource IDs, with duplicate prevention, availability/block checks, versioned edits, archive/restore and audit events. Operators and IT Administrators can maintain requirements.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
 - Student profile updates with append-only status history and audit events.
 - Attendance session and record API with class eligibility checks, duplicate prevention, correction reasons, record review and session close control.
@@ -38,3 +40,7 @@ This remains an early foundation, not a production-ready release. The APIs curre
 Pull requests targeting `main` run lint and formatting checks, Python static-security and dependency audits, PostgreSQL-backed API tests with coverage reporting, Alembic migration checks, a production-container build and vulnerability scan, Compose configuration validation, and a full-history secret scan. Weekly Dependabot updates are enabled for Python and GitHub Actions dependencies. CI uses disposable test credentials and an isolated PostgreSQL service; it does not connect to operational data.
 
 For local Python development, install the test toolset with `python -m pip install -e ".[test]"`, then run `ruff check app tests migrations`, `ruff format --check app tests migrations`, `bandit -q -r app`, and `pytest`. Set `DATABASE_URL` to an isolated PostgreSQL database to exercise the same database engine as CI. Coverage is reported while the initial baseline is being established; no aggregate minimum is enforced yet.
+
+Apply `alembic upgrade head` against the isolated test database before `pytest`. The suite now includes lesson lifecycle/permission checks, simultaneous lesson edits, a period-change/lesson-create race, database constraints, and a SQLite rehearsal proving that upgrading revision `0002` preserves existing profile/student rows. PostgreSQL remains the authoritative CI engine for constraint and concurrency checks.
+
+Lesson requirements are available at `/api/v1/timetable/lessons`. `PUT /{id}` requires the complete requirement, `is_active`, and the last loaded `expected_version`; a stale save returns HTTP 409. `DELETE /{id}?expected_version=N` archives the row, retaining its references and audit history. Restore it using `PUT` with `is_active=true` and its current version. Each academic-year/class/teacher/subject combination is unique, including archived rows. Weekly count is the total number of periods; block length requests consecutive blocks with a shorter remainder when necessary (for example, count 3/length 2 is a double plus a single). Lunch, unavailable slots and gaps in configured times split blocks. These checks prove individual requirement feasibility; the future scheduler must also check combined workloads, rules and clashes. Period or cluster-membership edits that invalidate an existing active requirement are rejected.

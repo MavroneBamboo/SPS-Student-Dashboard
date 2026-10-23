@@ -2,11 +2,12 @@ import json
 from datetime import time as time_value
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
+from app.lesson_validation import validate_existing_class_lessons
 from app.models import ClassCluster, ClassClusterMember, InstructionalClass, PeriodDefinition, Subject, Teacher
 from app.schemas import (
     ClusterCreate,
@@ -22,6 +23,10 @@ from app.schemas import (
     TeacherCreate,
     TeacherResponse,
 )
+from app.timetable_lock import lock_timetable_configuration
+from app.timetable_periods import affected_class_ids as _affected_class_ids
+from app.timetable_periods import resolve_period_rows as _resolved_period_rows
+from app.timetable_periods import validate_period_intervals as _validate_period_intervals
 
 router = APIRouter(prefix="/timetable", tags=["timetable resource setup"])
 READ_ROLES = ("Superuser", "IT Administrator", "Operator", "Executive")
@@ -65,47 +70,6 @@ def _teacher_response(row: Teacher) -> TeacherResponse:
         availability=json.loads(row.availability_json),
         is_active=row.is_active,
     )
-
-
-def _resolved_period_rows(db: DbSession, instructional_class_id: int) -> list[PeriodDefinition]:
-    defaults = db.scalars(select(PeriodDefinition).where(PeriodDefinition.scope == "DEFAULT", PeriodDefinition.is_active.is_(True))).all()
-    if len(defaults) != 5 or {row.slot_code for row in defaults} != {"P1", "P2", "LUNCH", "P3", "P4"}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Default period pattern is incomplete")
-    membership = db.scalar(select(ClassClusterMember).where(ClassClusterMember.instructional_class_id == instructional_class_id))
-    override_scopes = [and_(PeriodDefinition.scope == "CLASS", PeriodDefinition.target_id == instructional_class_id)]
-    if membership:
-        override_scopes.append(and_(PeriodDefinition.scope == "CLUSTER", PeriodDefinition.target_id == membership.cluster_id))
-    overrides = db.scalars(select(PeriodDefinition).where(PeriodDefinition.is_active.is_(True), or_(*override_scopes))).all()
-    by_scope_and_slot = {(row.scope, row.slot_code): row for row in overrides}
-    resolved = []
-    for default in defaults:
-        selected = by_scope_and_slot.get(("CLASS", default.slot_code))
-        if selected is None and membership:
-            selected = by_scope_and_slot.get(("CLUSTER", default.slot_code))
-        resolved.append(selected or default)
-    return sorted(resolved, key=lambda row: row.display_order)
-
-
-def _validate_period_intervals(db: DbSession, class_ids: list[int]) -> None:
-    for class_id in class_ids:
-        periods = _resolved_period_rows(db, class_id)
-        intervals = [(time_value.fromisoformat(row.starts_at), time_value.fromisoformat(row.ends_at), row.slot_code) for row in periods]
-        intervals.sort()
-        for previous, current in zip(intervals, intervals[1:], strict=False):
-            if previous[1] > current[0]:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Period intervals overlap for class {class_id}: {previous[2]} and {current[2]}",
-                )
-
-
-def _affected_class_ids(db: DbSession, scope: str, target_id: int) -> list[int]:
-    if scope == "CLASS":
-        return [target_id]
-    query = select(InstructionalClass.id).where(InstructionalClass.is_active.is_(True))
-    if scope == "CLUSTER":
-        query = query.join(ClassClusterMember).where(ClassClusterMember.cluster_id == target_id)
-    return list(db.scalars(query).all())
 
 
 @router.get("/teachers", response_model=list[TeacherResponse], dependencies=[READ_ACCESS])
@@ -202,6 +166,7 @@ def create_cluster(payload: ClusterCreate, db: DbSession, claims: Claims) -> Clu
 
 @router.post("/clusters/{cluster_id}/classes", status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def add_class_to_cluster(cluster_id: int, payload: ClusterMemberCreate, db: DbSession, claims: Claims) -> dict:
+    lock_timetable_configuration(db)
     cluster = db.get(ClassCluster, cluster_id)
     instructional_class = db.get(InstructionalClass, payload.instructional_class_id)
     if cluster is None or instructional_class is None or not cluster.is_active or not instructional_class.is_active:
@@ -221,6 +186,7 @@ def add_class_to_cluster(cluster_id: int, payload: ClusterMemberCreate, db: DbSe
     _flush_or_conflict(db, "Instructional class already belongs to a cluster")
     try:
         _validate_period_intervals(db, [instructional_class.id])
+        validate_existing_class_lessons(db, [instructional_class.id])
     except HTTPException:
         db.rollback()
         raise
@@ -251,6 +217,7 @@ def list_period_definitions(db: DbSession, claims: Claims) -> list[PeriodRespons
 
 @router.post("/periods", response_model=PeriodResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def create_period_definition(payload: PeriodCreate, db: DbSession, claims: Claims) -> PeriodResponse:
+    lock_timetable_configuration(db)
     target_id = payload.target_id or 0
     target_class = db.get(InstructionalClass, target_id) if payload.scope == "CLASS" else None
     target_cluster = db.get(ClassCluster, target_id) if payload.scope == "CLUSTER" else None
@@ -273,7 +240,9 @@ def create_period_definition(payload: PeriodCreate, db: DbSession, claims: Claim
     db.add(row)
     _flush_or_conflict(db, "A period override for this scope and slot already exists")
     try:
-        _validate_period_intervals(db, _affected_class_ids(db, payload.scope, target_id))
+        class_ids = _affected_class_ids(db, payload.scope, target_id)
+        _validate_period_intervals(db, class_ids)
+        validate_existing_class_lessons(db, class_ids)
     except HTTPException:
         db.rollback()
         raise
@@ -292,6 +261,7 @@ def create_period_definition(payload: PeriodCreate, db: DbSession, claims: Claim
 
 @router.patch("/periods/{period_id}", response_model=PeriodResponse, dependencies=[EDIT_ACCESS])
 def update_period_definition(period_id: int, payload: PeriodUpdate, db: DbSession, claims: Claims) -> PeriodResponse:
+    lock_timetable_configuration(db)
     row = db.get(PeriodDefinition, period_id)
     if row is None or not row.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Period definition not found")
@@ -310,7 +280,9 @@ def update_period_definition(period_id: int, payload: PeriodUpdate, db: DbSessio
         setattr(row, field, value.strip() if field == "label" else value.isoformat(timespec="minutes"))
     try:
         db.flush()
-        _validate_period_intervals(db, _affected_class_ids(db, row.scope, row.target_id))
+        class_ids = _affected_class_ids(db, row.scope, row.target_id)
+        _validate_period_intervals(db, class_ids)
+        validate_existing_class_lessons(db, class_ids)
     except HTTPException:
         db.rollback()
         raise
