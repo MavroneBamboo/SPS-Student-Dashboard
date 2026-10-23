@@ -9,7 +9,7 @@ The legacy source is `D:\RPA\TImeTables-legacy`, a .NET 9 Windows Forms applicat
 
 The latest supplied PDFs at `C:\Users\Prisuser\Downloads\` are treated as the current visual and content references for the replacement report renderer.
 
-The source documentation and changelog identify the latest operational behavior as five weekdays by five teaching periods. The 12:00–13:25 slot is Period 3; Period 5 is 15:10–16:55.
+The current timetable layout is five weekdays with four teaching periods and a lunch interval: `P1`, `P2`, `Lunch`, `P3`, `P4`. Period 3 is the lunch column in the displayed report layout; it is not a teaching slot.
 
 ## 2. Existing workflow
 
@@ -41,11 +41,13 @@ The scheduler cannot add a teacher implicitly. The operator or administrator mus
 3. **Instructional Classes** — name, short name and description/reporting order.
 4. **Lessons** — subject, teacher, instructional class, periods per week (`Count`) and block length (`Length`).
 
+Class setup also includes cluster membership and period configuration. Every class starts with the default period pattern (`P1`, `P2`, `Lunch`, `P3`, `P4`). A period created for a single class or cluster may override the matching default without changing unrelated classes. Period 3 remains the lunch interval and cannot be converted into a teaching period.
+
 The lesson editor should use controlled selectors populated from these profiles. It must reject a lesson that references a missing teacher, subject or instructional class. Teacher availability must be visible and editable before generation, and the scheduler plus Amend 4-up must use the same availability rules.
 
-The legacy source serialises availability as a colon-separated array and its current availability form contains 20 slots, while the latest scheduling behavior and Amend 4-up support five periods per day (25 weekly slots). Migration must normalize this mismatch explicitly and obtain business confirmation for the fifth period; the replacement system must use a versioned day/period availability model rather than an opaque positional string.
+The legacy source serialises availability as a colon-separated array of 20 teaching slots. The visual report has a lunch column for daily alignment, but lunch must remain non-schedulable. The replacement system must use a versioned day/period availability model rather than an opaque positional string.
 
-The clickable prototype now exposes this prerequisite through **Resource setup** before the Amend 4-up grid. It demonstrates teacher profile creation/editing, availability selection, subject and instructional-class references, lesson requirements, duplicate short-code validation, teacher-code cascade and availability checks during timetable amendments.
+The clickable prototype now exposes this prerequisite through **Resource setup** before the Amend 4-up grid. It demonstrates teacher profile creation/editing, availability selection, subject and instructional-class references, class clusters, default periods, class/cluster period overrides, lesson requirements, duplicate short-code validation, teacher-code cascade and availability checks during timetable amendments.
 
 ## 3. Why Amend 4-up is the key capability
 
@@ -66,7 +68,7 @@ The integrated system should make this the primary timetable workspace, with:
 - Save amendments directly to the draft timetable.
 - Audit event for every material change.
 
-The new implementation must retain the legacy fixes: Period 5 must render and accept moves, teacher double-booking must be blocked, Amend changes must sync back to Schedule, and editing after Day sorting must operate on the displayed weekday rather than a stale row index.
+The new implementation must retain the legacy fixes: the lunch column must render but reject moves, teacher double-booking must be blocked, Amend changes must sync back to Schedule, and editing after Day sorting must operate on the displayed weekday rather than a stale row index.
 
 ## 4. Integration with the dashboard system
 

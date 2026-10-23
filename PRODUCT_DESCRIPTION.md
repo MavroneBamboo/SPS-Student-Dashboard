@@ -225,7 +225,7 @@ The **Amend 4-up** workspace is the primary timetable function. It must support:
 - By Instructional Class and By Teacher views.
 - Four-up timetable review with configurable page density.
 - Previous/next page navigation and search.
-- Five weekdays and five teaching periods.
+- Five weekdays with four teaching periods and a lunch interval displayed as Period 3.
 - Double-click editing of a lesson.
 - Drag-and-drop movement with swap behavior where valid.
 - Right-click shift/remove actions.
@@ -242,6 +242,8 @@ Teacher profiles are separate from application login accounts. A teacher profile
 - Teacher short code, full name, adjunct status and day/period availability.
 - Subjects with name, short code and description.
 - Instructional classes with short name and description.
+- Class clusters that group instructional classes for shared scheduling changes.
+- A default period pattern inherited by every class, with controlled period overrides for an individual class or cluster.
 - Lesson requirements linking subject, teacher and instructional class, including weekly count and block length.
 
 The system must not allow a lesson to reference an unknown teacher. Teacher availability and teacher double-booking checks must apply both during draft generation and during Amend 4-up amendments. The prototype's Resource Setup view demonstrates this prerequisite workflow.

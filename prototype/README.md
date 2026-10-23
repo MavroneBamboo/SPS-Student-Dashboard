@@ -14,4 +14,4 @@ The prototype simulates:
 
 All data is in-memory demo data. Refreshing the page resets changes; no real authentication, JWT, database or report file is connected.
 
-The timetable walkthrough is available from the left navigation or directly at [`timetable.html`](timetable.html). It uses synthetic class, teacher and lesson data based on the legacy timetable workflow and the latest By Instructional Class/By Teacher report layouts.
+The timetable walkthrough is available from the left navigation or directly at [`timetable.html`](timetable.html). It uses synthetic class, teacher and lesson data based on the legacy timetable workflow and the latest By Instructional Class/By Teacher report layouts. It displays `P1`, `P2`, `Lunch`, `P3`, `P4`; Period 3 is lunch and is non-schedulable.
