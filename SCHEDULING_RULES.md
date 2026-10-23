@@ -34,7 +34,7 @@ Resolve using `POST /api/v1/timetable/rules/resolve`:
 {"academic_year":"2026","on_date":"2026-10-23","class_ids":[1,2]}
 ```
 
-Every class must exist and be active. Success returns one validated rule ID, edit version, target and definition per class in request order. Missing/ambiguous rules, inactive clusters, invalid stored definitions and applicable unresolved legacy rules return 409 for the whole request. There is no partial result or arbitrary choice. Future generation/manual-placement transactions must call this shared resolver and apply its constraints; those endpoints are not implemented yet.
+Every class must exist and be active. Success returns one validated rule ID, edit version, target and definition per class in request order. Missing/ambiguous rules, inactive clusters, invalid stored definitions and applicable unresolved legacy rules return 409 for the whole request. There is no partial result or arbitrary choice. Weekly draft creation and manual amendments now call this shared resolver for every teaching date and apply its constraints; see [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md). Automatic generation must use the same services in its future implementation.
 
 ## Legacy migration
 

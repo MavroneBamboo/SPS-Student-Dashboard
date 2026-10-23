@@ -47,6 +47,8 @@ Implementation note: the initial API foundation is present, with signed-in, role
 
 Scheduling-rule delivery now uses stable targets, validated definitions, atomic edit versions and shared resolution. Applicable unresolved legacy rules block planning pending explicit IT reconciliation. PostgreSQL enforces cross-scope overlap checks and serializes membership/rule writes. The scheduler and production UI must still consume this service; details are in [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 
+The timetable draft increment consumes that service for every weekday and amendment. It persists immutable configuration snapshots, block/cell placements, pending counts, locks and approval; actual-time conflicts and optimistic revisions protect manual edits. IT Administrators approve complete drafts and Executives read approved snapshots. Automatic generation, publishing coordination, production UI and exports remain subsequent work; see [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+
 ### 3.1 Bootstrap design
 
 The installation creates a single bootstrap identity in a setup state. It is not a normal shared account.

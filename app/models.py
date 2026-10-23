@@ -1,6 +1,19 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -162,6 +175,89 @@ class PeriodDefinition(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TimetableVersion(Base):
+    __tablename__ = "timetable_versions"
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="ck_timetable_revision"),
+        CheckConstraint(
+            "(status = 'DRAFT' AND approved_by IS NULL AND approved_at IS NULL) OR "
+            "(status = 'APPROVED' AND approved_by IS NOT NULL AND approved_at IS NOT NULL)",
+            name="ck_timetable_approval",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    academic_year: Mapped[str] = mapped_column(String(20), index=True)
+    week_start: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT", index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(Integer)
+    approved_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class TimetableVersionClass(Base):
+    __tablename__ = "timetable_version_classes"
+
+    version_id: Mapped[int] = mapped_column(ForeignKey("timetable_versions.id"), primary_key=True)
+    instructional_class_id: Mapped[int] = mapped_column(ForeignKey("instructional_classes.id"), primary_key=True)
+
+
+class TimetablePlacement(Base):
+    __tablename__ = "timetable_placements"
+    __table_args__ = (
+        UniqueConstraint("id", "version_id", "weekday", name="uq_placement_version_day"),
+        CheckConstraint("weekday IN ('MON','TUE','WED','THU','FRI')", name="ck_placement_weekday"),
+        CheckConstraint("start_period IN ('P1','P2','P3','P4') AND period_count BETWEEN 1 AND 4", name="ck_placement_block"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("timetable_versions.id"), index=True)
+    lesson_requirement_id: Mapped[int] = mapped_column(ForeignKey("lesson_requirements.id"), index=True)
+    weekday: Mapped[str] = mapped_column(String(3))
+    start_period: Mapped[str] = mapped_column(String(8))
+    period_count: Mapped[int] = mapped_column(Integer)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[int] = mapped_column(Integer)
+    updated_by: Mapped[int] = mapped_column(Integer)
+
+
+class TimetableSlot(Base):
+    __tablename__ = "timetable_slots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["placement_id", "version_id", "weekday"],
+            ["timetable_placements.id", "timetable_placements.version_id", "timetable_placements.weekday"],
+            name="fk_slot_placement",
+        ),
+        ForeignKeyConstraint(
+            ["version_id", "instructional_class_id"],
+            ["timetable_version_classes.version_id", "timetable_version_classes.instructional_class_id"],
+            name="fk_slot_version_class",
+        ),
+        UniqueConstraint("version_id", "instructional_class_id", "weekday", "slot_code", name="uq_slot_class_period"),
+        UniqueConstraint("placement_id", "slot_code", name="uq_slot_placement_period"),
+        CheckConstraint("slot_code IN ('P1','P2','P3','P4')", name="ck_slot_teaching_only"),
+        CheckConstraint("starts_at < ends_at", name="ck_slot_time_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    placement_id: Mapped[int] = mapped_column(Integer, index=True)
+    version_id: Mapped[int] = mapped_column(Integer, index=True)
+    instructional_class_id: Mapped[int] = mapped_column(Integer, index=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id"), index=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"))
+    weekday: Mapped[str] = mapped_column(String(3))
+    slot_code: Mapped[str] = mapped_column(String(8))
+    starts_at: Mapped[time] = mapped_column(Time)
+    ends_at: Mapped[time] = mapped_column(Time)
 
 
 class Student(Base):

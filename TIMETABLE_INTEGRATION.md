@@ -61,6 +61,8 @@ The clickable prototype now exposes this prerequisite through **Resource setup**
 
 ## 3. Why Amend 4-up is the key capability
 
+The production backend now persists weekly drafts and the operations required by this workspace: add/amend/move, atomic swap, remove and block lock/unlock. It snapshots rules, resource labels/availability and inherited period times, preserves approved history, and reports pending requirement blocks. Edits revalidate the complete resulting grid and current rules under the timetable transaction lock. Approval is IT Administrator-only and requires completeness; Executive reads are approved-only. This is an API delivery; automatic generation, the production browser workspace and report rendering still need implementation. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+
 Scheduling-rule resolution now has its own implementation slice: stable class/cluster IDs, inclusive effective dates, validated rule definitions and versioned edits. The resolver must find exactly one applicable rule for every planned class; a class rule and its cluster rule may not overlap. PostgreSQL guards and service validation also prevent membership changes from introducing conflicting scopes. Existing text-only rules remain unresolved until IT explicitly binds or archives them. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md). This supplies the prerequisite service for future generation and manual placement; those workflows still require implementation.
 
 Amend 4-up is the practical operational tool for finishing a generated timetable. It shows multiple mini-grids on one page and lets an operator inspect and correct the timetable in the same visual arrangement used by the printed reports.
