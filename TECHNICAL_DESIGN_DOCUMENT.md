@@ -174,7 +174,9 @@ Containers must use pinned versions, non-root users where supported, health chec
 
 ## 11. CI/CD and testing design
 
-Pull requests run formatting, linting, static analysis, unit tests, API/integration tests, end-to-end tests, migration tests, Compose startup checks, dependency scanning, container scanning, secret scanning and coverage thresholds. The exact artifact promoted to production must be the artifact tested in CI.
+The current pull-request workflow enforces Ruff lint/format checks, Bandit static analysis, `pip-audit`, API tests on isolated PostgreSQL, Alembic clean/repeat upgrade and model-parity checks, Python compilation, production-image build and Trivy scan, Compose configuration validation, and full-history Gitleaks scanning. Coverage is reported as an artifact while the baseline is established; no aggregate threshold is claimed yet. Dependabot proposes weekly Python and GitHub Actions updates, which must pass these same gates.
+
+This is the CI foundation, not the complete release pipeline. Frontend/browser end-to-end tests, timetable/import/report golden tests, Compose runtime smoke tests, backup/restore drills, artifact signing/publication, deployment approvals and performance/security testing remain feature- or release-phase gates. Add each gate with the feature it verifies; promote only the exact tested artifact once a release workflow exists.
 
 Tests are organised by unit, service/API, integration, end-to-end, security and migration/recovery suites. Every feature includes positive, negative, permission and audit tests where applicable. Critical workflows include bootstrap, all roles, duplicate detection, attendance correction, dashboard reconciliation and backup restore.
 

@@ -287,20 +287,18 @@ The following must be confirmed before implementation:
 
 ## 14. Mandatory CI/CD and quality gates
 
-CI/CD is part of the product build and must be established before production deployment. Every pull request should run a reproducible pipeline containing at least:
+The initial pull-request CI foundation is implemented. It runs Ruff lint/format checks, Bandit static analysis, `pip-audit`, API tests against disposable PostgreSQL, clean and repeat Alembic upgrades plus model/schema parity, Python compilation, production-container build and Trivy scanning, Compose configuration validation, and Gitleaks full-history scanning. It uploads coverage while the baseline is being established; aggregate coverage thresholds are intentionally deferred until they can be based on measured results. Dependabot is configured to propose weekly Python and GitHub Actions updates.
 
-1. Source checkout and dependency lock verification.
-2. Formatting, linting and static analysis.
-3. Unit tests for domain and service logic.
-4. API/integration tests against an isolated test database.
-5. End-to-end tests for login, role enforcement, intake, attendance and reporting.
-6. Migration tests against a clean database and an upgrade database.
-7. Container build and Docker Compose startup validation.
-8. Dependency, container and secret scanning.
-9. Test coverage and quality thresholds.
-10. Build artifact/version publication.
+The current workflow does not yet verify all of the release gates below. Add gates with the associated feature and keep the implementation status explicit:
 
-The pipeline must fail on test failures, migration failures, critical security findings, leaked secrets or a broken Compose deployment. Production deployment must require an approved change and must use the exact tested artifact. Environment-specific secrets must be injected by the deployment environment and must not be committed to the repository.
+1. Frontend unit, accessibility and browser end-to-end tests when the production UI exists.
+2. Timetable invariant/property and PDF golden-output tests with scheduling and Amend 4-up.
+3. Workbook import malformed-file, golden fixture and reconciliation tests with intake import.
+4. Report reconciliation fixtures with each approved business report.
+5. Disposable Compose full-stack startup/readiness/smoke tests and artifact publication before release deployment.
+6. Backup/restore, load, expanded penetration/security, signing and deployment approval gates before production readiness.
+
+The required workflow must fail on test failures, migration failures, critical/high container vulnerabilities, dependency advisories, secret detections or broken required behavior. Production deployment will require an approved change and the exact tested artifact once that release workflow is implemented. Environment-specific secrets must remain outside source control.
 
 ## 15. Living test policy
 
