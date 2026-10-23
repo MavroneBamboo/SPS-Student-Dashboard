@@ -25,10 +25,10 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int, username: str, role: str) -> str:
+def create_access_token(user_id: int, username: str, role: str, must_change_password: bool = False) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    payload = {"sub": str(user_id), "username": username, "role": role, "typ": "access", "iss": settings.jwt_issuer, "aud": settings.jwt_audience, "iat": now, "exp": now + timedelta(minutes=settings.access_token_minutes)}
+    payload = {"sub": str(user_id), "username": username, "role": role, "must_change_password": must_change_password, "typ": "access", "iss": settings.jwt_issuer, "aud": settings.jwt_audience, "iat": now, "exp": now + timedelta(minutes=settings.access_token_minutes)}
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
 

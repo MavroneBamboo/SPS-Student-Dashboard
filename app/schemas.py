@@ -13,6 +13,37 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     role: str
+    must_change_password: bool = False
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9._-]+$")
+    temporary_password: str = Field(min_length=12, max_length=200)
+    role: str = Field(pattern="^(Superuser|IT Administrator|Operator|Executive)$")
+
+
+class UserUpdate(BaseModel):
+    role: str | None = Field(default=None, pattern="^(Superuser|IT Administrator|Operator|Executive)$")
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set or any(value is None for value in self.model_dump(exclude_unset=True).values()):
+            raise ValueError("At least one user field must be provided")
+        return self
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+    is_active: bool
+    must_change_password: bool
 
 
 class RuleCreate(BaseModel):

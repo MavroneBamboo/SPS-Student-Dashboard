@@ -9,7 +9,25 @@ os.environ["BOOTSTRAP_PASSWORD"] = "test-bootstrap-password"
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.security import create_access_token
+INITIAL_BOOTSTRAP_PASSWORD = "test-bootstrap-password"
+ROTATED_BOOTSTRAP_PASSWORD = "test-bootstrap-password-rotated"
+
+
+def login_headers(client):
+    login = None
+    password = None
+    for candidate in (INITIAL_BOOTSTRAP_PASSWORD, ROTATED_BOOTSTRAP_PASSWORD):
+        response = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": candidate})
+        if response.status_code == 200:
+            login = response
+            password = candidate
+            break
+    assert login is not None
+    if login.json()["must_change_password"]:
+        changed = client.post("/api/v1/auth/change-password", json={"current_password": password, "new_password": ROTATED_BOOTSTRAP_PASSWORD}, headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+        assert changed.status_code == 200
+        login = changed
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 def test_live_health():
@@ -21,19 +39,33 @@ def test_live_health():
 
 def test_bootstrap_login_and_rule_validation():
     with TestClient(app) as client:
-        login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": "test-bootstrap-password"})
+        login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": INITIAL_BOOTSTRAP_PASSWORD})
         assert login.status_code == 200
+        assert login.json()["must_change_password"] is True
         token = login.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
         payload = {"academic_year": "2026", "target_type": "CLASS", "target_key": "A4 A", "effective_from": "2026-01-01", "rule": {"maxLessonsPerDay": 4}}
+        assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 403
+        changed = client.post("/api/v1/auth/change-password", json={"current_password": INITIAL_BOOTSTRAP_PASSWORD, "new_password": ROTATED_BOOTSTRAP_PASSWORD}, headers=headers)
+        assert changed.status_code == 200
+        assert changed.json()["must_change_password"] is False
+        headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
         assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 201
         assert client.post("/api/v1/timetable/rules", json=payload, headers=headers).status_code == 409
+        created_user = client.post("/api/v1/users", json={"username": "operator.one", "temporary_password": "operator-temporary-password", "role": "Operator"}, headers=headers)
+        assert created_user.status_code == 201
+        assert created_user.json()["must_change_password"] is True
+        assert client.post("/api/v1/users", json={"username": "OPERATOR.ONE", "temporary_password": "operator-temporary-password", "role": "Operator"}, headers=headers).status_code == 409
+        assert client.get("/api/v1/users", headers=headers).status_code == 200
+        assert client.patch(f"/api/v1/users/{created_user.json()['id']}", json={"role": "Executive"}, headers=headers).json()["role"] == "Executive"
+        admin_id = next(row["id"] for row in client.get("/api/v1/users", headers=headers).json() if row["username"] == "bootstrap-admin")
+        assert client.patch(f"/api/v1/users/{admin_id}", json={"is_active": False}, headers=headers).status_code == 422
+        assert client.patch(f"/api/v1/users/{admin_id}", json={"role": "Executive"}, headers=headers).status_code == 409
 
 
 def test_student_duplicate_identifier_and_encrypted_round_trip():
     with TestClient(app) as client:
-        login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": "test-bootstrap-password"})
-        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        headers = login_headers(client)
         payload = {"pris_no": "PS-TEST-001", "name": "Protected Test Name", "class_name": "A4 A", "category": "OP", "status": "ACTIVE", "date_of_birth": "2000-01-02"}
         created = client.post("/api/v1/students", json=payload, headers=headers)
         assert created.status_code == 201
@@ -51,16 +83,24 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         assert [entry["new_status"] for entry in history.json()] == ["ACTIVE", "INACTIVE"]
         assert client.patch(f"/api/v1/students/{student_id}", json={}, headers=headers).status_code == 422
 
-        executive_headers = {"Authorization": f"Bearer {create_access_token(2, 'executive-test', 'Executive')}"}
+        executive_created = client.post("/api/v1/users", json={"username": "executive.one", "temporary_password": "executive-temporary-password", "role": "Executive"}, headers=headers)
+        assert executive_created.status_code == 201
+        executive_login = client.post("/api/v1/auth/login", json={"username": "executive.one", "password": "executive-temporary-password"})
+        assert executive_login.status_code == 200
+        executive_changed = client.post("/api/v1/auth/change-password", json={"current_password": "executive-temporary-password", "new_password": "executive-permanent-password"}, headers={"Authorization": f"Bearer {executive_login.json()['access_token']}"})
+        assert executive_changed.status_code == 200
+        executive_headers = {"Authorization": f"Bearer {executive_changed.json()['access_token']}"}
         assert client.get("/api/v1/students", headers=executive_headers).status_code == 403
         assert client.get(f"/api/v1/students/{student_id}/status-history", headers=executive_headers).status_code == 403
         assert client.get("/api/v1/reports/dashboard", headers=executive_headers).status_code == 200
+        assert client.get("/api/v1/users", headers=executive_headers).status_code == 403
+        assert client.patch(f"/api/v1/users/{executive_created.json()['id']}", json={"is_active": False}, headers=headers).status_code == 200
+        assert client.get("/api/v1/reports/dashboard", headers=executive_headers).status_code == 401
 
 
 def test_attendance_session_record_duplicate_and_correction_reason():
     with TestClient(app) as client:
-        login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": "test-bootstrap-password"})
-        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        headers = login_headers(client)
         student = {"pris_no": "PS-ATT-001", "name": "Attendance Student", "class_name": "TM1 LNP 1", "category": "OP", "status": "ACTIVE"}
         assert client.post("/api/v1/students", json=student, headers=headers).status_code == 201
         session = client.post("/api/v1/attendance/sessions", json={"session_date": "2026-10-23", "session_type": "MORNING", "class_name": "TM1 LNP 1", "expected_count": 1}, headers=headers)
@@ -83,8 +123,7 @@ def test_attendance_session_record_duplicate_and_correction_reason():
 
 def test_dashboard_export_and_audit_are_committed_data_views():
     with TestClient(app) as client:
-        login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": "test-bootstrap-password"})
-        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        headers = login_headers(client)
         student = {"pris_no": "PS-REPORT-001", "name": "Report Student", "class_name": "REPORT CLASS", "category": "OP", "status": "ACTIVE"}
         client.post("/api/v1/students", json=student, headers=headers)
         session = client.post("/api/v1/attendance/sessions", json={"session_date": "2026-10-22", "session_type": "AFTERNOON", "class_name": "REPORT CLASS", "expected_count": 2}, headers=headers).json()

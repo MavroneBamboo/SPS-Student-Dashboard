@@ -21,6 +21,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.
 - Live/readiness health endpoints.
 - Bootstrap Superuser login with short-lived signed JWT access tokens.
+- Mandatory first-login password change; Superuser-only account creation and role assignment with account-activity checks on each authenticated request.
 - PBKDF2 password hashing.
 - Protected scheduling-rule API with duplicate/overlap rejection.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
