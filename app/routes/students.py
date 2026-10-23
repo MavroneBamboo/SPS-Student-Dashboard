@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 
 from app.crypto import decrypt_sensitive, encrypt_sensitive
+from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
 from app.models import Student
 from app.schemas import StudentCreate, StudentResponse
@@ -36,4 +37,6 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
     db.add(row)
     db.commit()
     db.refresh(row)
+    record_event(db, int(claims["sub"]), "student.created", "student", str(row.id), {"pris_no": row.pris_no})
+    db.commit()
     return response(row)

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine
 from app.models import User
-from app.routes import attendance, auth, health, rules, students
+from app.routes import attendance, auth, health, reports, rules, students
 from app.security import hash_password
 
 
@@ -26,6 +26,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(rules.router, prefix="/api/v1")
 app.include_router(students.router, prefix="/api/v1")
 app.include_router(attendance.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.crypto import decrypt_sensitive
+from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
 from app.models import AttendanceRecord, AttendanceSession, Student
 from app.schemas import AttendanceRecordCreate, AttendanceRecordResponse, AttendanceSessionCreate, AttendanceSessionResponse
@@ -25,6 +26,8 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
     db.add(row)
     db.commit()
     db.refresh(row)
+    record_event(db, int(claims["sub"]), "attendance.session.created", "attendance_session", str(row.id), {"class_name": row.class_name, "session_date": row.session_date.isoformat(), "session_type": row.session_type})
+    db.commit()
     return session_response(row)
 
 
@@ -51,6 +54,8 @@ def close_session(session_id: int, db: DbSession, claims: Claims) -> AttendanceS
     row.status = "CLOSED"
     db.commit()
     db.refresh(row)
+    record_event(db, int(claims["sub"]), "attendance.session.closed", "attendance_session", str(row.id))
+    db.commit()
     return session_response(row)
 
 
@@ -72,6 +77,8 @@ def create_record(session_id: int, payload: AttendanceRecordCreate, db: DbSessio
     db.add(row)
     db.commit()
     db.refresh(row)
+    record_event(db, int(claims["sub"]), "attendance.record.created", "attendance_record", str(row.id), {"session_id": session_id, "student_id": student.id, "attendance_status": row.attendance_status})
+    db.commit()
     return record_response(row, student)
 
 
@@ -86,9 +93,12 @@ def correct_record(record_id: int, payload: AttendanceRecordCreate, db: DbSessio
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attendance session is closed")
     if payload.attendance_status != row.attendance_status and not payload.correction_reason:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Correction reason is required when changing attendance")
+    previous_status = row.attendance_status
     row.attendance_status = payload.attendance_status
     row.correction_reason = payload.correction_reason
     row.updated_by = int(claims["sub"])
     db.commit()
     db.refresh(row)
+    record_event(db, int(claims["sub"]), "attendance.record.corrected", "attendance_record", str(row.id), {"from": previous_status, "to": row.attendance_status, "reason": payload.correction_reason})
+    db.commit()
     return record_response(row, student)
