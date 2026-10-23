@@ -11,6 +11,7 @@ The prototype simulates:
 - Attendance updates and report generation actions.
 - User administration and system-health views.
 - Timetable/Schedule navigation with By Class/By Teacher Amend 4-up editing, paging, density, drag/swap, lock, shift, remove and save-draft actions.
+- Click-to-add lesson placement from empty teaching cells, with validation for resources, lunch, availability and clashes.
 
 All data is in-memory demo data. Refreshing the page resets changes; no real authentication, JWT, database or report file is connected.
 
