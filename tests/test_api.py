@@ -287,7 +287,9 @@ def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
         lunch = resolved.json()[2]
         assert lunch["is_schedulable"] is False
         assert lunch["display_order"] == 3
-        assert client.patch(f"/api/v1/timetable/periods/{lunch['id']}", {"label": "Teaching Period"}, headers=headers).status_code == 422
+        assert (
+            client.patch(f"/api/v1/timetable/periods/{lunch['id']}", json={"label": "Teaching Period"}, headers=headers).status_code == 422
+        )
 
         cluster_period = {
             "scope": "CLUSTER",
