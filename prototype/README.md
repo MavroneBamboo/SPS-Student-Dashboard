@@ -13,6 +13,8 @@ The prototype simulates:
 - Timetable/Schedule navigation with By Class/By Teacher Amend 4-up editing, paging, density, drag/swap, lock, shift, remove and save-draft actions.
 - Click-to-add lesson placement from empty teaching cells, with validation for resources, lunch, availability and clashes.
 
+Production planning must also resolve exactly one scheduling rule for every class. Missing, duplicate or overlapping rules and duplicate placements must be rejected before scheduling.
+
 All data is in-memory demo data. Refreshing the page resets changes; no real authentication, JWT, database or report file is connected.
 
 The timetable walkthrough is available from the left navigation or directly at [`timetable.html`](timetable.html). It uses synthetic class, teacher and lesson data based on the legacy timetable workflow and the latest By Instructional Class/By Teacher report layouts. It displays `P1`, `P2`, `Lunch`, `P3`, `P4`; Period 3 is lunch and is non-schedulable.

@@ -247,4 +247,6 @@ Teacher profiles are separate from application login accounts. A teacher profile
 - A default period pattern inherited by every class, with controlled period overrides for an individual class or cluster.
 - Lesson requirements linking subject, teacher and instructional class, including weekly count and block length.
 
+Scheduling rules are mandatory planning data. Before a draft is generated or an Amend 4-up change is accepted, every planned class must resolve to exactly one applicable rule set. Missing, duplicate or overlapping rules are rejected; the system must not silently choose between rules or create duplicate schedule placements.
+
 The system must not allow a lesson to reference an unknown teacher. Teacher availability and teacher double-booking checks must apply both during draft generation and during Amend 4-up amendments. The prototype's Resource Setup view demonstrates this prerequisite workflow.
