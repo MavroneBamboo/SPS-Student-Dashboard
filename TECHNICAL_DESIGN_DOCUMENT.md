@@ -245,6 +245,7 @@ Required interactions:
 - Search class code, teacher code or teacher full name.
 - Previous/next page.
 - Double-click a cell to edit subject/teacher or class.
+- Click an empty teaching cell to create a placed lesson after validating subject, teacher, class, availability and clashes.
 - Drag a lesson to another slot; validate the destination and swap only when both moves are valid.
 - Right-click a lesson to shift or remove it.
 - Double-click a title to request a controlled rename.

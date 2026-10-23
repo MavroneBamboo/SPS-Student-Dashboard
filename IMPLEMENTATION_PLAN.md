@@ -344,6 +344,7 @@ Class-period exit criteria: every class resolves to the default period pattern u
 - Implement By Class and By Teacher modes.
 - Implement 2/4/6/8/12/16/24/32 table density, paging and search.
 - Implement double-click edit, drag/swap, shift, remove, lock and title rename.
+- Implement click-to-add on empty teaching cells with the same controlled resource and conflict validation as lesson requirements.
 - Validate all moves against teacher/class availability and double-booking.
 - Ensure sort order never changes the real day/period being edited.
 - Add draft save, audit events and return-to-schedule behavior.

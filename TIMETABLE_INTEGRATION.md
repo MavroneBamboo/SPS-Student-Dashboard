@@ -93,11 +93,12 @@ The HTML prototype should expose a Timetable/Schedule module with this walkthrou
 4. Change tables per page.
 5. Move between pages.
 6. Double-click a lesson to edit it.
-7. Drag a lesson to an empty slot or swap it with another valid lesson.
-8. Try a teacher clash and see the move rejected.
-9. Lock a slot and try to amend it.
-10. Save the amendment and return to the schedule.
-11. Download both report examples.
+7. Click an empty teaching cell to add a lesson after resource and conflict validation.
+8. Drag a lesson to an empty slot or swap it with another valid lesson.
+9. Try a teacher clash and see the move rejected.
+10. Lock a slot and try to amend it.
+11. Save the amendment and return to the schedule.
+12. Download both report examples.
 
 The prototype remains synthetic and in-memory. It demonstrates the workflow and information architecture; it does not implement the production scheduler, authentication, database or PDF renderer.
 
