@@ -77,6 +77,8 @@ def test_attendance_session_record_duplicate_and_correction_reason():
         assert client.get(f"/api/v1/attendance/sessions/{session_id}/records", headers=headers).json()[0]["attendance_status"] == "ABSENT"
         assert client.post(f"/api/v1/attendance/sessions/{session_id}/close", headers=headers).status_code == 200
         assert client.patch(f"/api/v1/attendance/records/{record.json()['id']}", json={"pris_no": "PS-ATT-001", "attendance_status": "PRESENT", "correction_reason": "Correction attempted after close"}, headers=headers).status_code == 409
+        actions = {event["action"] for event in client.get("/api/v1/reports/audit", headers=headers).json()}
+        assert {"attendance.session.created", "attendance.record.created", "attendance.record.corrected", "attendance.session.closed"} <= actions
 
 
 def test_dashboard_export_and_audit_are_committed_data_views():
@@ -99,4 +101,8 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         export = client.get("/api/v1/reports/attendance.csv?class_name=REPORT%20CLASS", headers=headers)
         assert export.status_code == 200
         assert list(csv.reader(io.StringIO(export.text)))[1][3:] == ["PS-REPORT-001", "Report Student", "PRESENT"]
-        assert client.get("/api/v1/reports/audit", headers=headers).status_code == 200
+        audit = client.get("/api/v1/reports/audit", headers=headers)
+        assert audit.status_code == 200
+        actions = {event["action"] for event in audit.json()}
+        assert {"student.created", "attendance.session.created", "attendance.record.created"} <= actions
+        assert all("pris_no" not in event["details"] for event in audit.json())

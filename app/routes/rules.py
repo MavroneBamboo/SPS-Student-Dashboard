@@ -4,6 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, or_, select
 
+from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
 from app.models import SchedulingRule
 from app.schemas import RuleCreate, RuleResponse
@@ -31,6 +32,8 @@ def create_rule(payload: RuleCreate, db: DbSession, claims: Claims) -> RuleRespo
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Duplicate or overlapping scheduling rule")
     row = SchedulingRule(academic_year=payload.academic_year, target_type=payload.target_type, target_key=payload.target_key, effective_from=payload.effective_from, effective_to=payload.effective_to, rule_json=json.dumps(payload.rule, separators=(",", ":"), sort_keys=True), created_by=int(claims["sub"]))
     db.add(row)
+    db.flush()
+    record_event(db, int(claims["sub"]), "timetable.rule.created", "scheduling_rule", str(row.id), {"target_type": row.target_type, "target_key": row.target_key, "effective_from": row.effective_from.isoformat()})
     db.commit()
     db.refresh(row)
     return RuleResponse(id=row.id, academic_year=row.academic_year, target_type=row.target_type, target_key=row.target_key, effective_from=row.effective_from, effective_to=row.effective_to, rule=payload.rule, is_active=row.is_active)

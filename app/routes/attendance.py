@@ -24,10 +24,10 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Class has no eligible active students")
     row = AttendanceSession(session_date=payload.session_date, session_type=payload.session_type, class_name=payload.class_name.strip(), expected_count=payload.expected_count, notes=payload.notes, created_by=int(claims["sub"]))
     db.add(row)
-    db.commit()
-    db.refresh(row)
+    db.flush()
     record_event(db, int(claims["sub"]), "attendance.session.created", "attendance_session", str(row.id), {"class_name": row.class_name, "session_date": row.session_date.isoformat(), "session_type": row.session_type})
     db.commit()
+    db.refresh(row)
     return session_response(row)
 
 
@@ -52,10 +52,9 @@ def close_session(session_id: int, db: DbSession, claims: Claims) -> AttendanceS
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance session not found")
     row.status = "CLOSED"
-    db.commit()
-    db.refresh(row)
     record_event(db, int(claims["sub"]), "attendance.session.closed", "attendance_session", str(row.id))
     db.commit()
+    db.refresh(row)
     return session_response(row)
 
 
@@ -75,10 +74,10 @@ def create_record(session_id: int, payload: AttendanceRecordCreate, db: DbSessio
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attendance record already exists")
     row = AttendanceRecord(session_id=session_id, student_id=student.id, attendance_status=payload.attendance_status, correction_reason=payload.correction_reason, created_by=int(claims["sub"]), updated_by=int(claims["sub"]))
     db.add(row)
-    db.commit()
-    db.refresh(row)
+    db.flush()
     record_event(db, int(claims["sub"]), "attendance.record.created", "attendance_record", str(row.id), {"session_id": session_id, "student_id": student.id, "attendance_status": row.attendance_status})
     db.commit()
+    db.refresh(row)
     return record_response(row, student)
 
 
@@ -97,8 +96,7 @@ def correct_record(record_id: int, payload: AttendanceRecordCreate, db: DbSessio
     row.attendance_status = payload.attendance_status
     row.correction_reason = payload.correction_reason
     row.updated_by = int(claims["sub"])
-    db.commit()
-    db.refresh(row)
     record_event(db, int(claims["sub"]), "attendance.record.corrected", "attendance_record", str(row.id), {"from": previous_status, "to": row.attendance_status, "reason": payload.correction_reason})
     db.commit()
+    db.refresh(row)
     return record_response(row, student)
