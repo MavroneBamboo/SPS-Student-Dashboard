@@ -33,3 +33,17 @@ class RuleCreate(BaseModel):
 class RuleResponse(RuleCreate):
     id: int
     is_active: bool
+
+
+class StudentCreate(BaseModel):
+    pris_no: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=240)
+    class_name: str = Field(min_length=1, max_length=120)
+    category: str = Field(min_length=1, max_length=40)
+    status: str = Field(default="ACTIVE", min_length=1, max_length=40)
+    status_effective: date | None = None
+    date_of_birth: date | None = None
+
+
+class StudentResponse(StudentCreate):
+    id: int

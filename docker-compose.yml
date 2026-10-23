@@ -23,6 +23,7 @@ services:
       ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
       BOOTSTRAP_USERNAME: ${BOOTSTRAP_USERNAME:-bootstrap-admin}
       BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:?set BOOTSTRAP_PASSWORD in .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
     depends_on:
       db:
         condition: service_healthy

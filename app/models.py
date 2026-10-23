@@ -32,3 +32,19 @@ class SchedulingRule(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Student(Base):
+    __tablename__ = "students"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pris_no: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    name_encrypted: Mapped[str] = mapped_column(Text)
+    class_name: Mapped[str] = mapped_column(String(120), index=True)
+    category: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(40), index=True)
+    status_effective: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_of_birth_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

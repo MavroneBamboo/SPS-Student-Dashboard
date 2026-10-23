@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine
 from app.models import User
-from app.routes import auth, health, rules
+from app.routes import auth, health, rules, students
 from app.security import hash_password
 
 
@@ -24,6 +24,7 @@ app = FastAPI(title="SPS Student Dashboard API", version="0.1.0", lifespan=lifes
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(rules.router, prefix="/api/v1")
+app.include_router(students.router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)

@@ -21,6 +21,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Bootstrap Superuser login with short-lived signed JWT access tokens.
 - PBKDF2 password hashing.
 - Protected scheduling-rule API with duplicate/overlap rejection.
+- Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
 - CI test workflow and container-based pytest suite.
 
 This is the foundation only. Student intake, attendance, reports, migrations, encrypted sensitive fields, worker jobs and the production frontend are delivered in subsequent vertical slices.
