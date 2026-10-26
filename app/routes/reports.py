@@ -55,7 +55,10 @@ def dashboard(
     expected = sum(session.expected_count for session in sessions)
     present = sum(values.get("PRESENT", 0) + values.get("LATE", 0) for values in counts.values())
     recorded = sum(sum(values.values()) for values in counts.values())
-    missing = sum(max(0, session.expected_count - sum(counts.get(session.id, {}).values())) for session in sessions)
+    missing = sum(
+        max(0, session.expected_count - sum(counts.get(session.id, {}).values())) + counts.get(session.id, {}).get("MISSING", 0)
+        for session in sessions
+    )
     trend = []
     for session in sessions:
         statuses = counts.get(session.id, {})

@@ -33,7 +33,7 @@
     </section>
     <section id="workspace" hidden>
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
-      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
+      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
         <form id="dashboard-filter" class="filters">
@@ -75,6 +75,50 @@
           <datalist id="student-statuses"><option value="ACTIVE"></option><option value="INACTIVE"></option></datalist>
           <p>Pris No. identifies the student and cannot be changed here. For existing profiles, the effective date is recorded when the status changes.</p>
           <h3>Status history</h3><div class="table-wrap"><table><thead><tr><th>Effective date</th><th>Previous status</th><th>New status</th><th>Changed by (user ID)</th></tr></thead><tbody id="profile-history"></tbody></table></div>
+        </section>
+      </section>
+      <section id="attendance-panel" hidden aria-labelledby="attendance-title">
+        <div class="section-bar"><h2 id="attendance-title">Attendance</h2><button id="new-attendance-session">New session</button></div>
+        <form id="attendance-search" class="filters">
+          <label>Session class filter<input name="class_name" maxlength="120"></label>
+          <label>Session from<input name="date_from" type="date"></label><label>Session to<input name="date_to" type="date"></label>
+          <button type="submit">Search sessions</button>
+        </form>
+        <p id="attendance-page"></p>
+        <div class="panel table-wrap"><table><thead><tr><th>Date</th><th>Class</th><th>Type</th><th>Expected</th><th>Status</th><th>Action</th></tr></thead><tbody id="attendance-session-rows"></tbody></table></div>
+        <div class="actions"><button id="attendance-previous" class="secondary">Previous sessions</button><button id="attendance-next" class="secondary">Next sessions</button></div>
+        <section id="new-session-panel" class="panel" hidden aria-labelledby="new-session-title">
+          <h3 id="new-session-title">Create attendance session</h3>
+          <p>Select a class with current active students. Check the expected count against the class register.</p>
+          <form id="new-session-form" class="profile-fields">
+            <label>Session date<input name="session_date" type="date" required></label>
+            <label><span id="session-class-label">Session class</span><select name="class_name" aria-labelledby="session-class-label" required></select></label>
+            <label><span id="session-type-label">Session type</span><select name="session_type" aria-labelledby="session-type-label"><option value="MORNING">Morning</option><option value="AFTERNOON">Afternoon</option><option value="FULL_DAY">Full day</option></select></label>
+            <label>Expected students<input name="expected_count" type="number" min="1" max="10000" required></label>
+            <label>Session notes<textarea name="notes" maxlength="1000"></textarea></label>
+            <div class="actions"><button type="submit">Create session</button><button id="cancel-new-session" type="button" class="secondary">Cancel new session</button></div>
+          </form>
+        </section>
+        <section id="attendance-editor" class="panel" hidden aria-labelledby="attendance-editor-title">
+          <div class="section-bar"><h3 id="attendance-editor-title">Session records</h3><button id="reload-attendance" class="secondary">Reload session</button></div>
+          <p id="attendance-summary"></p>
+          <p id="attendance-notes"></p>
+          <div class="table-wrap"><table><thead><tr><th>Pris No.</th><th>Student</th><th>Attendance</th><th>Correction reason</th><th>Action</th></tr></thead><tbody id="attendance-record-rows"></tbody></table></div>
+          <section id="attendance-write-panel">
+            <h3 id="record-editor-title">Record attendance</h3>
+            <form id="attendance-record-form" class="profile-fields">
+              <label>Attendance Pris No.<input name="pris_no" maxlength="40" required></label>
+              <label><span id="attendance-mark-label">Attendance status</span><select name="attendance_status" aria-labelledby="attendance-mark-label"><option value="PRESENT">Present</option><option value="ABSENT">Absent</option><option value="LATE">Late</option><option value="EXCUSED">Excused</option><option value="MISSING">Missing</option></select></label>
+              <label>Correction reason<textarea name="correction_reason" maxlength="1000"></textarea></label>
+              <div class="actions"><button type="submit">Save attendance</button><button id="cancel-correction" class="secondary" type="button" hidden>Cancel correction</button></div>
+            </form>
+            <h3>Find an eligible student</h3><p>This lookup uses current active class membership, not a historical roster. Refine your search if more than 25 students match.</p>
+            <form id="attendance-student-search" class="filters"><label>Eligible student identifier or name<input name="q" maxlength="120"></label><button type="submit">Find eligible students</button></form>
+            <p id="eligible-summary"></p><div class="table-wrap"><table><thead><tr><th>Pris No.</th><th>Student</th><th>Action</th></tr></thead><tbody id="eligible-student-rows"></tbody></table></div>
+            <h3>Adjust expected count</h3><form id="attendance-count-form" class="filters"><label>Revised expected count<input name="expected_count" type="number" min="1" max="10000" required></label><label>Count change reason<input name="reason" maxlength="1000" required></label><button type="submit">Update expected count</button></form>
+            <h3>Close session</h3><p>Closed sessions cannot be edited. Incomplete attendance requires an explicit decision and reason.</p>
+            <form id="attendance-close-form" class="filters"><label><input name="allow_incomplete" type="checkbox">Close incomplete attendance</label><label>Closure reason<input name="reason" maxlength="1000"></label><button type="submit">Close session</button></form>
+          </section>
         </section>
       </section>
       <section id="users-panel" hidden aria-labelledby="users-title">

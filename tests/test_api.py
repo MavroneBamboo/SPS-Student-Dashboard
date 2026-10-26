@@ -155,28 +155,42 @@ def test_attendance_session_record_duplicate_and_correction_reason():
         )
         assert session.status_code == 201
         session_id = session.json()["id"]
-        record_payload = {"pris_no": "PS-ATT-001", "attendance_status": "PRESENT"}
+        record_payload = {"pris_no": "PS-ATT-001", "attendance_status": "PRESENT", "expected_session_version": session.json()["version"]}
         record = client.post(f"/api/v1/attendance/sessions/{session_id}/records", json=record_payload, headers=headers)
         assert record.status_code == 201
         assert client.post(f"/api/v1/attendance/sessions/{session_id}/records", json=record_payload, headers=headers).status_code == 409
         correction = client.patch(
             f"/api/v1/attendance/records/{record.json()['id']}",
-            json={"pris_no": "PS-ATT-001", "attendance_status": "ABSENT"},
+            json={"pris_no": "PS-ATT-001", "attendance_status": "ABSENT", "expected_version": 1, "expected_session_version": 2},
             headers=headers,
         )
         assert correction.status_code == 422
         correction = client.patch(
             f"/api/v1/attendance/records/{record.json()['id']}",
-            json={"pris_no": "PS-ATT-001", "attendance_status": "ABSENT", "correction_reason": "Verified against paper register"},
+            json={
+                "pris_no": "PS-ATT-001",
+                "attendance_status": "ABSENT",
+                "correction_reason": "Verified against paper register",
+                "expected_version": 1,
+                "expected_session_version": 2,
+            },
             headers=headers,
         )
         assert correction.status_code == 200
         assert client.get(f"/api/v1/attendance/sessions/{session_id}/records", headers=headers).json()[0]["attendance_status"] == "ABSENT"
-        assert client.post(f"/api/v1/attendance/sessions/{session_id}/close", headers=headers).status_code == 200
+        assert (
+            client.post(f"/api/v1/attendance/sessions/{session_id}/close", json={"expected_version": 3}, headers=headers).status_code == 200
+        )
         assert (
             client.patch(
                 f"/api/v1/attendance/records/{record.json()['id']}",
-                json={"pris_no": "PS-ATT-001", "attendance_status": "PRESENT", "correction_reason": "Correction attempted after close"},
+                json={
+                    "pris_no": "PS-ATT-001",
+                    "attendance_status": "PRESENT",
+                    "correction_reason": "Correction attempted after close",
+                    "expected_version": 2,
+                    "expected_session_version": 4,
+                },
                 headers=headers,
             ).status_code
             == 409
@@ -202,7 +216,7 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         ).json()
         client.post(
             f"/api/v1/attendance/sessions/{session['id']}/records",
-            json={"pris_no": "PS-REPORT-001", "attendance_status": "PRESENT"},
+            json={"pris_no": "PS-REPORT-001", "attendance_status": "PRESENT", "expected_session_version": session["version"]},
             headers=headers,
         )
 

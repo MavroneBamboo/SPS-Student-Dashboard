@@ -365,6 +365,7 @@ class StudentStatusHistoryResponse(BaseModel):
 
 
 class AttendanceSessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     session_date: date
     session_type: str = Field(pattern="^(MORNING|AFTERNOON|FULL_DAY)$")
     class_name: str = Field(min_length=1, max_length=120)
@@ -374,17 +375,47 @@ class AttendanceSessionCreate(BaseModel):
 
 class AttendanceSessionResponse(AttendanceSessionCreate):
     id: int
+    version: int
     status: str
 
 
 class AttendanceRecordCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_session_version: int = Field(ge=1)
     pris_no: str = Field(min_length=1, max_length=40)
     attendance_status: str = Field(pattern="^(PRESENT|ABSENT|LATE|EXCUSED|MISSING)$")
-    correction_reason: str | None = Field(default=None, max_length=1000)
+    correction_reason: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class AttendanceRecordCorrection(AttendanceRecordCreate):
+    expected_version: int = Field(ge=1)
+    correction_reason: str = Field(min_length=1, max_length=1000)
+
+
+class AttendanceSessionClose(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_version: int = Field(ge=1)
+    allow_incomplete: bool = False
+    reason: str | None = Field(default=None, min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def explain_incomplete(self):
+        if self.allow_incomplete and not self.reason:
+            raise ValueError("A reason is required to close incomplete attendance")
+        return self
+
+
+class AttendanceSessionCount(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_version: int = Field(ge=1)
+    expected_count: int = Field(ge=1, le=10000)
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class AttendanceRecordResponse(BaseModel):
     id: int
+    version: int
+    session_version: int
     session_id: int
     pris_no: str
     student_name: str
