@@ -322,6 +322,7 @@ class PeriodUpdate(BaseModel):
 
 
 class StudentCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     pris_no: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=240)
     class_name: str = Field(min_length=1, max_length=120)
@@ -333,9 +334,12 @@ class StudentCreate(BaseModel):
 
 class StudentResponse(StudentCreate):
     id: int
+    version: int
 
 
 class StudentUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    expected_version: int = Field(ge=1)
     name: str | None = Field(default=None, min_length=1, max_length=240)
     class_name: str | None = Field(default=None, min_length=1, max_length=120)
     category: str | None = Field(default=None, min_length=1, max_length=40)
@@ -345,8 +349,11 @@ class StudentUpdate(BaseModel):
 
     @model_validator(mode="after")
     def require_change(self):
-        if not self.model_fields_set:
+        if not self.model_fields_set - {"expected_version"}:
             raise ValueError("At least one student field must be provided")
+        for field in ("name", "class_name", "category", "status"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
         return self
 
 

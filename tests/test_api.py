@@ -102,7 +102,12 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         student_id = created.json()["id"]
         updated = client.patch(
             f"/api/v1/students/{student_id}",
-            json={"name": "Updated Protected Name", "status": "INACTIVE", "status_effective": "2026-10-23"},
+            json={
+                "name": "Updated Protected Name",
+                "status": "INACTIVE",
+                "status_effective": "2026-10-23",
+                "expected_version": created.json()["version"],
+            },
             headers=headers,
         )
         assert updated.status_code == 200

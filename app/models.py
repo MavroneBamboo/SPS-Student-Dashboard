@@ -264,6 +264,7 @@ class Student(Base):
     __tablename__ = "students"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     pris_no: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     name_encrypted: Mapped[str] = mapped_column(Text)
     class_name: Mapped[str] = mapped_column(String(120), index=True)

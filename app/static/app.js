@@ -1,3 +1,5 @@
+import {createStudentWorkspace} from "./students.js";
+
 const $ = (id) => document.getElementById(id);
 const roles = ["Superuser", "IT Administrator", "Operator", "Executive"];
 let token = null;
@@ -9,6 +11,7 @@ let dashboardRequest = 0;
 
 function notice(message = "") { $("notice").textContent = message; }
 function clearData() {
+  students.clear();
   for (const id of ["user-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
@@ -50,11 +53,15 @@ async function api(path, method = "GET", body) {
     if (error.name === "AbortError") throw error;
     throw new Error("Unable to reach the server. Check your connection and try again.");
   }
-  const data = await response.json();
+  const data = await response.json().catch(() => ({detail: "The server could not complete the request. Try again."}));
   if (started !== epoch) throw new DOMException("Session changed", "AbortError");
   if (response.status === 401 && token) {
     signedOut("Your session ended. Sign in again.");
     throw new DOMException("Session ended", "AbortError");
+  }
+  if (response.status === 403 && token && data.detail === "Insufficient permissions") {
+    signedOut("Your access changed. Sign in again.");
+    throw new DOMException("Access changed", "AbortError");
   }
   if (!response.ok) throw new Error(validationMessage(data.detail));
   return data;
@@ -88,6 +95,7 @@ async function acceptSession(session) {
   $("identity").textContent = `${identity.username} · ${identity.role}`;
   $("users-nav").hidden = identity.role !== "Superuser";
   $("dashboard-nav").hidden = identity.role === "Superuser";
+  $("profiles-nav").hidden = identity.role !== "Operator";
   if (identity.role === "Superuser") await showUsers();
   else await showDashboard();
 }
@@ -101,7 +109,8 @@ function cell(row, value) {
 function showPanel(name) {
   $("dashboard-panel").hidden = name !== "dashboard";
   $("users-panel").hidden = name !== "users";
-  $("workspace-title").textContent = name === "users" ? "Account setup" : "Dashboard";
+  $("profiles-panel").hidden = name !== "profiles";
+  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles"}[name];
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -195,6 +204,9 @@ async function showUsers() {
     $("user-rows").append(row);
   }
 }
+
+const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
+$("profiles-nav").addEventListener("click", () => run($("profiles-nav"), students.show));
 
 $("login-form").addEventListener("submit", (event) => {
   event.preventDefault();
