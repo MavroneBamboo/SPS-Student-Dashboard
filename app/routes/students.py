@@ -1,7 +1,8 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
 from app.crypto import decrypt_sensitive, encrypt_sensitive
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/students", tags=["students"])
 def response(row: Student) -> StudentResponse:
     return StudentResponse(
         id=row.id,
+        version=row.version,
         pris_no=row.pris_no,
         name=decrypt_sensitive(row.name_encrypted) or "",
         class_name=row.class_name,
@@ -32,17 +34,29 @@ def list_students(
     q: str | None = Query(default=None, max_length=120),
     class_name: str | None = Query(default=None, max_length=120),
     student_status: str | None = Query(default=None, alias="status", max_length=40),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
 ) -> list[StudentResponse]:
     query = select(Student).order_by(Student.pris_no)
     if class_name:
-        query = query.where(Student.class_name == class_name)
+        query = query.where(Student.class_name == class_name.strip())
     if student_status:
-        query = query.where(Student.status == student_status)
+        query = query.where(Student.status == student_status.strip().upper())
     rows = db.scalars(query).all()
     if q:
-        q_lower = q.lower()
+        q_lower = q.strip().lower()
         rows = [row for row in rows if q_lower in row.pris_no.lower() or q_lower in (decrypt_sensitive(row.name_encrypted) or "").lower()]
-    return [response(row) for row in rows]
+    return [response(row) for row in rows[offset : offset + limit]]
+
+
+@router.get(
+    "/{student_id}", response_model=StudentResponse, dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))]
+)
+def get_student(student_id: int, db: DbSession, claims: Claims) -> StudentResponse:
+    row = db.get(Student, student_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return response(row)
 
 
 @router.post(
@@ -66,7 +80,11 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
         created_by=int(claims["sub"]),
     )
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Pris No. already exists") from exc
     db.add(
         StudentStatusHistory(
             student_id=row.id,
@@ -89,41 +107,63 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     row = db.get(Student, student_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
-    changes = payload.model_dump(exclude_unset=True)
+    changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
     previous_status = row.status
+    if row.version != payload.expected_version:
+        raise HTTPException(status_code=409, detail="Student profile changed; reload before saving")
+    values = {"version": Student.version + 1}
     for field in ("class_name", "category"):
         if changes.get(field) is not None:
-            setattr(row, field, changes[field].strip())
+            values[field] = changes[field].strip()
     if "name" in changes and changes["name"] is not None:
-        row.name_encrypted = encrypt_sensitive(changes["name"].strip())
+        values["name_encrypted"] = encrypt_sensitive(changes["name"].strip())
     if "date_of_birth" in changes:
-        row.date_of_birth_encrypted = encrypt_sensitive(changes["date_of_birth"].isoformat() if changes["date_of_birth"] else None)
-    if "status" in changes and changes["status"] is not None:
-        row.status = changes["status"].strip().upper()
-        if row.status != previous_status:
-            effective = changes.get("status_effective") or date.today()
-            db.add(
-                StudentStatusHistory(
-                    student_id=row.id,
-                    previous_status=previous_status,
-                    new_status=row.status,
-                    effective_date=effective,
-                    changed_by=int(claims["sub"]),
-                )
+        values["date_of_birth_encrypted"] = encrypt_sensitive(changes["date_of_birth"].isoformat() if changes["date_of_birth"] else None)
+    new_status = changes.get("status", previous_status).upper()
+    status_changed = new_status != previous_status
+    if status_changed:
+        values["status"] = new_status
+        values["status_effective"] = changes.get("status_effective") or date.today()
+    elif "status_effective" in changes and changes["status_effective"] != row.status_effective:
+        raise HTTPException(status_code=422, detail="An effective date change requires a status change")
+    changed = db.execute(
+        update(Student)
+        .where(Student.id == student_id, Student.version == payload.expected_version)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Student profile changed; reload before saving")
+    if status_changed:
+        db.add(
+            StudentStatusHistory(
+                student_id=row.id,
+                previous_status=previous_status,
+                new_status=new_status,
+                effective_date=values["status_effective"],
+                changed_by=int(claims["sub"]),
             )
-    if "status_effective" in changes:
-        row.status_effective = changes["status_effective"]
+        )
     record_event(
         db,
         int(claims["sub"]),
         "student.updated",
         "student",
         str(row.id),
-        {"fields": sorted(changes), "status_from": previous_status, "status_to": row.status},
+        {
+            "fields": sorted(changes),
+            "status_from": previous_status,
+            "status_to": new_status,
+            "previous_version": payload.expected_version,
+            "version": payload.expected_version + 1,
+        },
     )
-    db.commit()
+    db.flush()
     db.refresh(row)
-    return response(row)
+    result = response(row)
+    db.commit()
+    return result
 
 
 @router.get("/{student_id}/status-history", dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))])

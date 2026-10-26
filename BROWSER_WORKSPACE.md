@@ -1,5 +1,7 @@
 # Production browser workspace increment
 
+The subsequent profile increment adds the Operator **Student profiles** screen, with paged search, create/edit, status history and version-checked saves. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md). Earlier delivery boundaries below describe the initial shell; attendance/resource/timetable browser screens, full intake schema and permission hardening remain outstanding.
+
 Start the Compose stack using the configured deployment secrets, then open `http://localhost:8080/` (redirects to `/ui/`). The approved synthetic prototype remains separately available at `/prototype/index.html`. The root now opens the actual application, with no prototype fallback. Deployments must supply approved HTTPS termination before operational use; the current development Compose listener remains HTTP.
 
 ## Delivered workflow

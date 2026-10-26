@@ -82,6 +82,7 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
             upgraded = MetaData()
             upgraded.reflect(bind=connection)
             legacy_rule = connection.execute(select(upgraded.tables["scheduling_rules"])).mappings().one()
+            assert connection.execute(select(upgraded.tables["students"].c.version)).scalar_one() == 1
             assert legacy_rule["binding_state"] == "UNRESOLVED"
             assert legacy_rule["instructional_class_id"] is None
             assert legacy_rule["cluster_id"] is None

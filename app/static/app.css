@@ -27,6 +27,8 @@ button:hover { background: #1748bb; } button:disabled { opacity: .55; cursor: wa
 .metric, .panel { background: white; border: 1px solid #dce4ef; border-radius: 12px; padding: 22px; margin-bottom: 20px; }
 .metric strong { display: block; font-size: 30px; margin-top: 14px; }.metric span { color: #52657b; }
 .columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.profile-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 16px; }
+#profile-editor { margin-top: 24px; }
 dl { display: grid; grid-template-columns: 1fr auto; gap: 12px; } dd { margin: 0; font-weight: 700; }
 .table-wrap { overflow-x: auto; } table { width: 100%; border-collapse: collapse; text-align: left; }
 th, td { padding: 14px 12px; border-bottom: 1px solid #e1e8f1; } th { color: #52657b; font-size: 13px; } td select { max-width: 210px; }

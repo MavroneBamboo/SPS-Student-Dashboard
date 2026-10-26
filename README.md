@@ -18,6 +18,8 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 
 ## Current implemented slice
 
+- Operator student profile browser: filtered/paged search, create/edit, status history, duplicate detection and version-checked saves. `PATCH /students/{id}` now requires `expected_version`; see [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+
 - Production browser sign-in, forced password rotation, Superuser account administration and committed-data dashboard with real Chromium CI acceptance tests. Browser assets run locally without CDNs; tokens remain only in memory. The remaining production screens and security/deployment gates are documented in [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.

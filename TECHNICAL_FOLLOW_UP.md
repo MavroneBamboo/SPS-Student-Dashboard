@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Profile follow-up (26 October 2026): the Operator browser now supports core profile search/create/edit/history with encrypted sensitive fields and stale-write protection. Clients must send `expected_version` for PATCH. Full intake fields/catalogs, workbook reconciliation, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+
 Browser follow-up (26 October 2026): `/ui/` provides real sign-in, mandatory password change, Superuser account administration and committed-data dashboard workflows. CI uses Chromium against the live API and disposable database, while the production image contains only local browser assets. Profile/attendance/reference/timetable screens, imports/exports, complete setup/recovery, IT account management, HTTPS and session hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
 Generation follow-up (26 October 2026): the weekly draft API now provides deterministic generation with bounded repair, preserved manual/locked blocks, explicit replace-unlocked mode and atomic grid/revision/audit reports. Shared manual-placement validation remains authoritative. Partial results expose every pending block and cannot pass approval. Production UI, fixed events, composite teachers, publishing, exports, import reconciliation and load/recovery validation remain follow-up work. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).

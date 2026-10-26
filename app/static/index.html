@@ -33,7 +33,7 @@
     </section>
     <section id="workspace" hidden>
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
-      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
+      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
         <form id="dashboard-filter" class="filters">
@@ -47,6 +47,35 @@
         <div class="metrics" id="metrics"></div>
         <div class="columns"><section class="panel"><h3>Active students by class</h3><div id="class-counts"></div></section><section class="panel"><h3>Active students by category</h3><div id="category-counts"></div></section></div>
         <section class="panel"><h3>Attendance sessions</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Class</th><th>Session</th><th>Present / late</th><th>Recorded</th><th>Expected</th><th>Rate</th></tr></thead><tbody id="attendance-trend"></tbody></table></div></section>
+      </section>
+      <section id="profiles-panel" hidden aria-labelledby="profiles-title">
+        <div class="section-bar"><h2 id="profiles-title">Student profiles</h2><button id="new-student">New student</button></div>
+        <form id="profile-search" class="filters">
+          <label>Search identifier or name<input name="q" maxlength="120"></label>
+          <label>Profile class filter<input name="class_name" maxlength="120"></label>
+          <label>Profile status filter<input name="status" maxlength="40" list="student-statuses"></label>
+          <button type="submit">Search profiles</button>
+        </form>
+        <p id="profile-page"></p>
+        <div class="panel table-wrap"><table><thead><tr><th>Pris No.</th><th>Name</th><th>Class</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody id="profile-rows"></tbody></table></div>
+        <div class="actions"><button id="profiles-previous" class="secondary">Previous profiles</button><button id="profiles-next" class="secondary">Next profiles</button></div>
+        <section id="profile-editor" class="panel" hidden aria-labelledby="profile-editor-title">
+          <div class="section-bar"><h3 id="profile-editor-title">New student profile</h3><button id="cancel-profile" class="secondary">Close profile</button></div>
+          <p id="profile-version"></p>
+          <form id="profile-form" class="profile-fields">
+            <label>Pris No.<input name="pris_no" maxlength="40" required autocomplete="off"></label>
+            <label>Student name<input name="name" maxlength="240" required autocomplete="off"></label>
+            <label>Student class<input name="class_name" maxlength="120" required></label>
+            <label>Student category<input name="category" maxlength="40" required></label>
+            <label>Student status<input name="status" maxlength="40" list="student-statuses" required></label>
+            <label>Status effective date<input name="status_effective" type="date" required></label>
+            <label>Date of birth<input name="date_of_birth" type="date" autocomplete="off"></label>
+            <div class="actions"><button type="submit">Save profile</button><button id="reload-profile" type="button" class="secondary" hidden>Reload saved profile</button></div>
+          </form>
+          <datalist id="student-statuses"><option value="ACTIVE"></option><option value="INACTIVE"></option></datalist>
+          <p>Pris No. identifies the student and cannot be changed here. For existing profiles, the effective date is recorded when the status changes.</p>
+          <h3>Status history</h3><div class="table-wrap"><table><thead><tr><th>Effective date</th><th>Previous status</th><th>New status</th><th>Changed by (user ID)</th></tr></thead><tbody id="profile-history"></tbody></table></div>
+        </section>
       </section>
       <section id="users-panel" hidden aria-labelledby="users-title">
         <h2 id="users-title">User administration</h2>
