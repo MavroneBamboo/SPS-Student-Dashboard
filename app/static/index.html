@@ -168,7 +168,7 @@
               <h3>Create class cluster</h3><label>Cluster code<input name="code" maxlength="24" required></label><label>Cluster name<input name="name" maxlength="120" required></label><button type="submit">Create cluster</button>
             </form>
             <form id="timetable-cluster-member-form" class="profile-fields">
-              <h3>Add class to cluster</h3><label>Cluster<select name="cluster_id" required></select></label><label>Class<select name="instructional_class_id" required></select></label><button type="submit">Add class to cluster</button>
+              <h3>Add class to cluster</h3><label>Cluster<select name="cluster_id" required></select></label><label>Instructional class<select name="instructional_class_id" required></select></label><button type="submit">Add class to cluster</button>
             </form>
             <form id="timetable-period-form" class="profile-fields">
               <h3>Override a default period</h3><label>Scope<select name="scope"><option>CLASS</option><option>CLUSTER</option></select></label><label>Class or cluster<select name="target_id" required></select></label><label>Period<select name="slot_code"><option>P1</option><option>P2</option><option>P3</option><option>P4</option></select></label><label>Display label<input name="label" maxlength="80" required></label><label>Starts at<input name="starts_at" type="time" required></label><label>Ends at<input name="ends_at" type="time" required></label><button type="submit">Save period override</button>
@@ -186,7 +186,7 @@
           </div>
         </details>
         <form id="timetable-lesson-form" class="panel profile-fields">
-          <h3>Create weekly lesson requirement</h3><label>Academic year<input name="academic_year" maxlength="20" required></label><label>Class<select name="instructional_class_id" required></select></label><label>Teacher<select name="teacher_id" required></select></label><label>Subject<select name="subject_id" required></select></label><label>Periods per week<input name="weekly_count" type="number" min="1" max="20" value="1" required></label><label>Preferred block length<input name="block_length" type="number" min="1" max="4" value="1" required></label><button type="submit">Save lesson requirement</button>
+          <h3>Create weekly lesson requirement</h3><label>Academic year<input name="academic_year" maxlength="20" required></label><label>Instructional class<select name="instructional_class_id" required></select></label><label>Teacher<select name="teacher_id" required></select></label><label>Subject<select name="subject_id" required></select></label><label>Periods per week<input name="weekly_count" type="number" min="1" max="20" value="1" required></label><label>Preferred block length<input name="block_length" type="number" min="1" max="4" value="1" required></label><button type="submit">Save lesson requirement</button>
         </form>
         <div class="section-bar"><h3>Saved timetables</h3><button id="new-timetable" hidden>Create weekly draft</button></div>
         <div class="panel table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Week</th><th>Status</th><th>Revision</th><th>Action</th></tr></thead><tbody id="timetable-version-rows"></tbody></table></div>
