@@ -410,7 +410,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   function addPlacement(classItem, weekday, startPeriod) {
     const pending = current.pending.filter((item) =>
-      current.snapshot.requirements[String(item.lesson_requirement_id)].instructional_class_id === classItem.id);
+      String(current.snapshot.requirements[String(item.lesson_requirement_id)].instructional_class_id) === String(classItem.id));
     if (!pending.length) {
       notice(`No unplaced requirements remain for ${classItem.name}.`);
       return;

@@ -70,6 +70,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     expect(page.get_by_role("heading", name="C" + suffix + " · Browser Timetable Class", exact=True)).to_be_visible()
     expect(page.locator(".amend-grid .lunch-cell").first).to_contain_text("Lunch")
     expect(page.locator("#timetable-pending")).to_contain_text("Browser Timetable Subject")
+    expect(page.locator("#timetable-pending")).to_contain_text("Browser Timetable Class")
     assert page.locator(".amend-grid thead tr").inner_text().index("P2") < page.locator(".amend-grid thead tr").inner_text().index("Lunch")
     assert page.locator(".amend-grid thead tr").inner_text().index("Lunch") < page.locator(".amend-grid thead tr").inner_text().index("P3")
 
