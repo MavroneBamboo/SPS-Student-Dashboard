@@ -1,10 +1,14 @@
 import csv
 import io
 import os
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.db import SessionLocal
 from app.main import app
+from app.models import User
+from app.security import hash_password
 
 INITIAL_BOOTSTRAP_PASSWORD = os.environ["BOOTSTRAP_PASSWORD"]
 ROTATED_BOOTSTRAP_PASSWORD = "test-bootstrap-password-rotated"
@@ -28,6 +32,17 @@ def login_headers(client):
         )
         assert changed.status_code == 200
         login = changed
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def operator_headers(client):
+    username = f"api-operator-{uuid4().hex[:12]}"
+    password = "api-operator-test-password"
+    with SessionLocal() as db:
+        db.add(User(username=username, password_hash=hash_password(password), role="Operator", must_change_password=False, is_active=True))
+        db.commit()
+    login = client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert login.status_code == 200
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
@@ -82,7 +97,8 @@ def test_bootstrap_login_password_change_and_user_administration():
 
 def test_student_duplicate_identifier_and_encrypted_round_trip():
     with TestClient(app) as client:
-        headers = login_headers(client)
+        admin_headers = login_headers(client)
+        headers = operator_headers(client)
         payload = {
             "pris_no": "PS-TEST-001",
             "name": "Protected Test Name",
@@ -121,7 +137,7 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         executive_created = client.post(
             "/api/v1/users",
             json={"username": "executive.one", "temporary_password": "executive-temporary-password", "role": "Executive"},
-            headers=headers,
+            headers=admin_headers,
         )
         assert executive_created.status_code == 201
         executive_login = client.post("/api/v1/auth/login", json={"username": "executive.one", "password": "executive-temporary-password"})
@@ -138,14 +154,16 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         assert client.get("/api/v1/reports/dashboard", headers=executive_headers).status_code == 200
         assert client.get("/api/v1/users", headers=executive_headers).status_code == 403
         assert (
-            client.patch(f"/api/v1/users/{executive_created.json()['id']}", json={"is_active": False}, headers=headers).status_code == 200
+            client.patch(f"/api/v1/users/{executive_created.json()['id']}", json={"is_active": False}, headers=admin_headers).status_code
+            == 200
         )
         assert client.get("/api/v1/reports/dashboard", headers=executive_headers).status_code == 401
 
 
 def test_attendance_session_record_duplicate_and_correction_reason():
     with TestClient(app) as client:
-        headers = login_headers(client)
+        admin_headers = login_headers(client)
+        headers = operator_headers(client)
         student = {"pris_no": "PS-ATT-001", "name": "Attendance Student", "class_name": "TM1 LNP 1", "category": "OP", "status": "ACTIVE"}
         assert client.post("/api/v1/students", json=student, headers=headers).status_code == 201
         session = client.post(
@@ -195,7 +213,7 @@ def test_attendance_session_record_duplicate_and_correction_reason():
             ).status_code
             == 409
         )
-        actions = {event["action"] for event in client.get("/api/v1/reports/audit", headers=headers).json()}
+        actions = {event["action"] for event in client.get("/api/v1/reports/audit", headers=admin_headers).json()}
         assert {
             "attendance.session.created",
             "attendance.record.created",
@@ -206,7 +224,8 @@ def test_attendance_session_record_duplicate_and_correction_reason():
 
 def test_dashboard_export_and_audit_are_committed_data_views():
     with TestClient(app) as client:
-        headers = login_headers(client)
+        admin_headers = login_headers(client)
+        headers = operator_headers(client)
         student = {"pris_no": "PS-REPORT-001", "name": "Report Student", "class_name": "REPORT CLASS", "category": "OP", "status": "ACTIVE"}
         client.post("/api/v1/students", json=student, headers=headers)
         session = client.post(
@@ -233,7 +252,7 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         export = client.get("/api/v1/reports/attendance.csv?class_name=REPORT%20CLASS", headers=headers)
         assert export.status_code == 200
         assert list(csv.reader(io.StringIO(export.text)))[1][3:] == ["PS-REPORT-001", "Report Student", "PRESENT"]
-        audit = client.get("/api/v1/reports/audit", headers=headers)
+        audit = client.get("/api/v1/reports/audit", headers=admin_headers)
         assert audit.status_code == 200
         actions = {event["action"] for event in audit.json()}
         assert {"student.created", "attendance.session.created", "attendance.record.created"} <= actions

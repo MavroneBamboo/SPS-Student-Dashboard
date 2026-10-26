@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Operational role increment (26 October 2026): student and attendance APIs now require Operator, dashboards/attendance CSV require Operator or Executive, and audit remains with Superuser/IT Administrator. The Superuser browser remains for setup and account recovery. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md) for the current matrix and unresolved export policy.
+
 Identity increment (26 October 2026): IT Administrators can manage named non-Superuser accounts and reset temporary passwords. Password change, role/status change, reset and explicit logout revoke existing account tokens; the browser clears credentials on sign-out. Setup/recovery, complete API permission separation and deployment hardening remain required. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).
 
 Attendance browser increment (26 October 2026): Operators can create/review sessions, record and correct attendance, adjust expected counts with reasons and close complete or explicitly acknowledged incomplete sessions. Versioned transactions protect concurrent work and dashboard refresh reads committed changes. Historical roster/class reconciliation and monthly workbook parity remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).

@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Operational permissions follow-up (26 October 2026): the server now restricts student/attendance reads and writes to Operators; only Operators/Executives can read the dashboard or attendance CSV, and only Superuser/IT Administrator can read audit. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md). Timetable permissions, setup/recovery and export policy remain separate release checks.
+
 Identity follow-up (26 October 2026): API and browser now support account-wide token revocation on password changes, role/status changes, reset and explicit logout. IT Administrators can manage named users but cannot access Superuser accounts. Migration `0008` adds token versions and lowercase username uniqueness, with an explicit duplicate reconciliation gate. Full role separation, setup/recovery, sign-in abuse controls and deployment security are still required. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).
 
 Attendance follow-up (26 October 2026): Operator browser and APIs now support versioned daily sessions/records, corrections, missing review, count controls and closure with audit and row locking. Existing API clients must adopt expected versions and a close request body. Historical roster rules, full-day granularity policy, reopening/corrections, monthly Excel reconciliation and complete permissions remain to implement. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).

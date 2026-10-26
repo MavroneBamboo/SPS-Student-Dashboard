@@ -10,7 +10,7 @@ from app.deps import Claims, DbSession, require_roles
 from app.models import Student, StudentStatusHistory
 from app.schemas import StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
 
-router = APIRouter(prefix="/students", tags=["students"])
+router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator"))])
 
 
 def response(row: Student) -> StudentResponse:
@@ -27,7 +27,7 @@ def response(row: Student) -> StudentResponse:
     )
 
 
-@router.get("", response_model=list[StudentResponse], dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))])
+@router.get("", response_model=list[StudentResponse])
 def list_students(
     db: DbSession,
     claims: Claims,
@@ -49,9 +49,7 @@ def list_students(
     return [response(row) for row in rows[offset : offset + limit]]
 
 
-@router.get(
-    "/{student_id}", response_model=StudentResponse, dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))]
-)
+@router.get("/{student_id}", response_model=StudentResponse)
 def get_student(student_id: int, db: DbSession, claims: Claims) -> StudentResponse:
     row = db.get(Student, student_id)
     if row is None:
@@ -63,7 +61,6 @@ def get_student(student_id: int, db: DbSession, claims: Claims) -> StudentRespon
     "",
     response_model=StudentResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))],
 )
 def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> StudentResponse:
     pris_no = payload.pris_no.strip().upper()
@@ -100,9 +97,7 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
     return response(row)
 
 
-@router.patch(
-    "/{student_id}", response_model=StudentResponse, dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))]
-)
+@router.patch("/{student_id}", response_model=StudentResponse)
 def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claims: Claims) -> StudentResponse:
     row = db.get(Student, student_id)
     if row is None:
@@ -166,7 +161,7 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     return result
 
 
-@router.get("/{student_id}/status-history", dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))])
+@router.get("/{student_id}/status-history")
 def status_history(student_id: int, db: DbSession, claims: Claims) -> list[StudentStatusHistoryResponse]:
     if db.get(Student, student_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
