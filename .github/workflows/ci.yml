@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload synthetic browser screenshots
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: browser-screenshots
           path: browser-artifacts/*.png
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: python-coverage
           path: coverage.xml
@@ -162,7 +162,7 @@ jobs:
 
       - name: Upload container scan report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-container-scan-${{ github.run_id }}
           path: trivy-results.json
