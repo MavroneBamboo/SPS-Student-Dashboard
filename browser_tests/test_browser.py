@@ -1,0 +1,171 @@
+from datetime import date
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+from playwright.sync_api import expect
+
+from app.crypto import encrypt_sensitive
+from app.db import SessionLocal
+from app.models import AttendanceRecord, AttendanceSession, Student, User
+
+
+def login(page, account):
+    page.get_by_label("Username", exact=True).fill(account["username"])
+    page.get_by_label("Password", exact=True).fill(account["password"])
+    page.get_by_role("button", name="Sign in", exact=True).click()
+
+
+def screenshot(page, name):
+    Path("browser-artifacts").mkdir(exist_ok=True)
+    page.screenshot(path=f"browser-artifacts/{name}.png", full_page=True)
+
+
+def test_first_login_rotation_account_creation_role_change_disable_and_reload(page, make_account, live_url):
+    account = make_account("Superuser", must_change=True)
+    login(page, {**account, "password": "incorrect-password"})
+    expect(page.get_by_role("status")).to_contain_text("Invalid username or password")
+    login(page, account)
+    expect(page.get_by_role("heading", name="Change your password", exact=True)).to_be_visible()
+    expect(page.locator("#workspace")).to_be_hidden()
+    page.get_by_label("Current password", exact=True).fill(account["password"])
+    page.get_by_label("New password", exact=True).fill("browser-new-password")
+    page.get_by_label("Confirm new password", exact=True).fill("different-new-password")
+    page.get_by_role("button", name="Save new password").click()
+    expect(page.get_by_role("status")).to_contain_text("do not match")
+    page.get_by_label("Confirm new password", exact=True).fill("browser-new-password")
+    page.get_by_role("button", name="Save new password").click()
+    expect(page.get_by_role("heading", name="User administration", exact=True)).to_be_visible()
+    expect(page.locator("#dashboard-nav")).to_be_hidden()
+    assert page.evaluate("Object.keys(localStorage).length + Object.keys(sessionStorage).length") == 0
+    assert page.context.cookies() == []
+
+    username = f"new-{uuid4().hex[:10]}"
+    page.get_by_label("New username", exact=True).fill(username)
+    page.get_by_label("Temporary password", exact=True).fill("browser-temporary-password")
+    page.get_by_label("Assigned role", exact=True).select_option("Operator")
+    page.get_by_role("button", name="Create account").click()
+    expect(page.get_by_role("status")).to_contain_text(f"Created {username}")
+    expect(page.get_by_label("Temporary password", exact=True)).to_have_value("")
+    row = page.locator("#user-rows tr").filter(has_text=username)
+    expect(row).to_contain_text("Required")
+    row.get_by_label(f"Role for {username}", exact=True).select_option("Executive")
+    row.get_by_role("button", name=f"Save {username}", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text(f"Updated {username}")
+    expect(row.get_by_label(f"Role for {username}", exact=True)).to_have_value("Executive")
+    row.get_by_label(f"Active for {username}", exact=True).uncheck()
+    row.get_by_role("button", name=f"Save {username}", exact=True).click()
+    expect(row.get_by_label(f"Active for {username}", exact=True)).not_to_be_checked()
+    expect(page.get_by_role("status")).to_contain_text(f"Updated {username}")
+    response = page.request.post(live_url + "/api/v1/auth/login", data={"username": username, "password": "browser-temporary-password"})
+    assert response.status == 401
+    screenshot(page, "superuser-administration")
+    page.reload()
+    expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+    expect(page.locator("#user-rows")).to_be_empty()
+    assert page.request.get(live_url + "/api/v1/auth/me").status == 401
+
+
+@pytest.mark.parametrize("role", ["IT Administrator", "Operator", "Executive"])
+def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(page, make_account, role):
+    account = make_account(role)
+    class_name = f"C-{uuid4().hex[:6]} <img src=x onerror=alert(1)>"
+    with SessionLocal() as db:
+        student = Student(
+            pris_no=f"B-{uuid4().hex[:12]}",
+            name_encrypted=encrypt_sensitive("Browser Test Student"),
+            class_name=class_name,
+            category="OP",
+            status="ACTIVE",
+            created_by=account["id"],
+        )
+        session = AttendanceSession(
+            session_date=date(2026, 10, 20),
+            session_type="MORNING",
+            class_name=class_name,
+            expected_count=1,
+            created_by=account["id"],
+        )
+        db.add_all([student, session])
+        db.flush()
+        student_id = student.id
+        db.add(
+            AttendanceRecord(
+                session_id=session.id,
+                student_id=student.id,
+                attendance_status="PRESENT",
+                created_by=account["id"],
+                updated_by=account["id"],
+            )
+        )
+        db.commit()
+    login(page, account)
+    expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
+    expect(page.locator("#users-nav")).to_be_hidden()
+    page.get_by_label("Class", exact=True).fill(class_name)
+    page.get_by_label("Attendance from", exact=True).fill("2026-10-20")
+    page.get_by_label("Attendance to", exact=True).fill("2026-10-20")
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students1")
+    expect(page.locator("#metrics .metric").nth(1)).to_have_text("Attendance100%")
+    expect(page.locator("#attendance-trend")).to_contain_text(class_name)
+    assert page.locator("#class-counts img").count() == 0
+    with SessionLocal() as db:
+        db.get(Student, student_id).status = "INACTIVE"
+        db.commit()
+    page.get_by_role("button", name="Refresh data").click()
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students0")
+    screenshot(page, role.lower().replace(" ", "-") + "-dashboard")
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+    expect(page.locator("#metrics")).to_be_empty()
+    expect(page.locator("#attendance-trend")).to_be_empty()
+
+
+def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):
+    account = make_account()
+    login(page, account)
+    expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
+    with SessionLocal() as db:
+        db.get(User, account["id"]).is_active = False
+        db.commit()
+    page.get_by_role("button", name="Refresh data").click()
+    expect(page.get_by_role("status")).to_contain_text("Your session ended")
+    expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+    expect(page.locator("#metrics")).to_be_empty()
+
+
+def test_expiry_timer_clears_in_memory_session(page, make_account):
+    account = make_account()
+
+    def shorten_response(route):
+        response = route.fetch()
+        payload = response.json()
+        route.fulfill(response=response, json={**payload, "expires_in": 1})
+
+    page.route("**/api/v1/auth/login", shorten_response)
+    login(page, account)
+    expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
+    expect(page.get_by_role("status")).to_contain_text("Your session expired", timeout=5000)
+    expect(page.locator("#metrics")).to_be_empty()
+
+
+def test_late_response_from_signed_out_session_cannot_restore_dashboard(page, make_account):
+    account = make_account()
+    with page.expect_response("**/api/v1/reports/dashboard?*") as dashboard_response:
+        login(page, account)
+    data = dashboard_response.value.json()
+    expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
+    # Simulate a transport that delivers an already fetched response after abort.
+    page.evaluate("""() => {
+        const original = window.fetch;
+        window.fetch = (url, options) => String(url).includes('/reports/dashboard?')
+            ? new Promise(resolve => { window.lateResponse = resolve; }) : original(url, options);
+    }""")
+    page.get_by_role("button", name="Refresh data").click()
+    page.wait_for_function("typeof window.lateResponse === 'function'")
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    page.evaluate("payload => window.lateResponse(new Response(JSON.stringify(payload), {status: 200}))", data)
+    expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+    expect(page.locator("#metrics")).to_be_empty()
+    expect(page.locator("#attendance-trend")).to_be_empty()

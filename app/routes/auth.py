@@ -11,6 +11,11 @@ from app.security import create_access_token, hash_password, verify_password
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
+@router.get("/me")
+def current_identity(claims: CurrentClaims) -> dict:
+    return {key: claims[key] for key in ("sub", "username", "role", "must_change_password")}
+
+
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
     user = db.scalar(select(User).where(User.username == payload.username, User.is_active.is_(True)))

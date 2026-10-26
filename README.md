@@ -12,11 +12,13 @@ docker compose up --build
 
 Compose waits for PostgreSQL and applies the versioned schema migration before starting the API. To apply migrations manually during development, run `docker compose run --rm migrate`. The initial migration intentionally refuses downgrade because dropping its tables could destroy operational data; recover through a verified backup or a forward migration.
 
-Open `http://localhost:8080/prototype/index.html` for the prototype or `http://localhost:8080/docs` for the API documentation.
+Open `http://localhost:8080/` for the actual sign-in, account administration and committed-data dashboard. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) for the delivered workflow and limitations. The synthetic prototype remains at `http://localhost:8080/prototype/index.html`, and API documentation is at `http://localhost:8080/docs`.
 
 The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTSTRAP_PASSWORD`. It is seeded as a Superuser in setup state and must be changed/rotated before operational use. PostgreSQL is on a private Compose network and has no published host port.
 
 ## Current implemented slice
+
+- Production browser sign-in, forced password rotation, Superuser account administration and committed-data dashboard with real Chromium CI acceptance tests. Browser assets run locally without CDNs; tokens remain only in memory. The remaining production screens and security/deployment gates are documented in [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.
 - Live/readiness health endpoints.

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPS Student Dashboard</title>
+  <link rel="stylesheet" href="/ui/app.css">
+  <script type="module" src="/ui/app.js"></script>
+</head>
+<body>
+  <header class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>SPS Student Dashboard</strong><small>Internal operations</small></div></header>
+  <main>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <section id="signin" class="auth-card" aria-labelledby="signin-title">
+      <p class="eyebrow">SPS WORKSPACE</p><h1 id="signin-title">Sign in</h1>
+      <p>Use your assigned network application account.</p>
+      <form id="login-form">
+        <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="200" required></label>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+    <section id="password-screen" class="auth-card" aria-labelledby="password-title" hidden>
+      <h1 id="password-title">Change your password</h1>
+      <p id="password-help">Choose a new password with at least 12 characters.</p>
+      <form id="password-form">
+        <label>Current password<input name="current_password" type="password" autocomplete="current-password" maxlength="200" required></label>
+        <label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
+        <label>Confirm new password<input name="confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
+        <button type="submit">Save new password</button>
+      </form>
+      <button id="password-cancel" class="secondary" type="button">Sign out</button>
+    </section>
+    <section id="workspace" hidden>
+      <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
+      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
+      <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
+        <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
+        <form id="dashboard-filter" class="filters">
+          <label>Class<input name="class_name" maxlength="120" placeholder="All classes"></label>
+          <label>Attendance from<input name="date_from" type="date"></label>
+          <label>Attendance to<input name="date_to" type="date"></label>
+          <button type="submit">Apply filters</button>
+        </form>
+        <p id="dashboard-freshness"></p>
+        <p>Student totals show current active profiles. Date filters apply to attendance sessions.</p>
+        <div class="metrics" id="metrics"></div>
+        <div class="columns"><section class="panel"><h3>Active students by class</h3><div id="class-counts"></div></section><section class="panel"><h3>Active students by category</h3><div id="category-counts"></div></section></div>
+        <section class="panel"><h3>Attendance sessions</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Class</th><th>Session</th><th>Present / late</th><th>Recorded</th><th>Expected</th><th>Rate</th></tr></thead><tbody id="attendance-trend"></tbody></table></div></section>
+      </section>
+      <section id="users-panel" hidden aria-labelledby="users-title">
+        <h2 id="users-title">User administration</h2>
+        <p>Create named accounts and assign roles. New users must change their temporary password before accessing the application.</p>
+        <form id="create-user-form" class="panel filters">
+          <label>New username<input name="username" autocomplete="off" minlength="3" maxlength="120" pattern="[A-Za-z0-9._-]+" required></label>
+          <label>Temporary password<input name="temporary_password" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
+          <label><span id="assigned-role-label">Assigned role</span><select name="role" aria-labelledby="assigned-role-label"><option>IT Administrator</option><option>Operator</option><option>Executive</option><option>Superuser</option></select></label>
+          <button type="submit">Create account</button>
+        </form>
+        <div class="section-bar"><h3>Accounts</h3><button id="refresh-users" class="secondary">Refresh accounts</button></div>
+        <div class="panel table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Active</th><th>Password change</th><th>Action</th></tr></thead><tbody id="user-rows"></tbody></table></div>
+      </section>
+    </section>
+    <noscript>JavaScript is required to use the SPS Student Dashboard.</noscript>
+  </main>
+</body>
+</html>

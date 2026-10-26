@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (23 October 2026)
 
+- Browser increment (26 October): deliver sign-in/rotation, Superuser accounts and live dashboard as the first actual frontend, with local assets and Chromium CI against the API/PostgreSQL. Profile/attendance/resource/timetable forms, full setup/recovery, IT account-management permissions and deployment hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
+
 - PR #18 established the initial encrypted student/API foundation and is merged.
 - PR #19 established CI quality, security, PostgreSQL migration, production-image and Compose validation gates and is merged.
 - PR #28 is merged and includes the resource setup, persistent lesson requirements and stable-target rule-resolution foundations originally submitted through #26/#27/#28. The earlier #26/#27 PRs are superseded by that merged code.

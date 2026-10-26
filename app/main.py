@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.db import SessionLocal
@@ -37,8 +40,24 @@ app.include_router(students.router, prefix="/api/v1")
 app.include_router(attendance.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
+app.mount("/ui", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="browser")
+
+
+@app.middleware("http")
+async def browser_security_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith(("/ui", "/api/")):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+            "img-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        )
+    return response
 
 
 @app.get("/", include_in_schema=False)
-def root() -> dict:
-    return {"service": "sps-student-dashboard", "status": "ok"}
+def root() -> RedirectResponse:
+    return RedirectResponse("/ui/", status_code=303)
