@@ -84,10 +84,58 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
             upgraded.reflect(bind=connection)
             legacy_rule = connection.execute(select(upgraded.tables["scheduling_rules"])).mappings().one()
             assert connection.execute(select(upgraded.tables["students"].c.version)).scalar_one() == 1
+            assert connection.execute(select(upgraded.tables["users"].c.token_version)).scalar_one() == 0
             assert legacy_rule["binding_state"] == "UNRESOLVED"
             assert legacy_rule["instructional_class_id"] is None
             assert legacy_rule["cluster_id"] is None
             assert legacy_rule["version"] == 1
+    finally:
+        database.dispose()
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_identity_upgrade_preserves_users_or_refuses_casefold_duplicates(tmp_path, duplicate):
+    database_url = f"sqlite:///{(tmp_path / 'identity-upgrade.db').as_posix()}"
+    environment = {**os.environ, "DATABASE_URL": database_url}
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    assert migrate("20261026_0007").returncode == 0
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        users = metadata.tables["users"]
+        with database.begin() as connection:
+            connection.execute(
+                users.insert().values(
+                    username="Identity.User", password_hash="preserved-hash", role="Operator", must_change_password=False, is_active=True
+                )
+            )
+            if duplicate:
+                connection.execute(
+                    users.insert().values(
+                        username="identity.user", password_hash="other-hash", role="Executive", must_change_password=True, is_active=True
+                    )
+                )
+            original = list(connection.execute(select(users)))
+        upgraded = migrate("head")
+        if duplicate:
+            assert upgraded.returncode != 0 and "explicit IT reconciliation" in upgraded.stderr
+            assert "token_version" not in {column["name"] for column in inspect(database).get_columns("users")}
+        else:
+            assert upgraded.returncode == 0, upgraded.stderr
+            assert migrate("head").returncode == 0
+        with database.connect() as connection:
+            assert list(connection.execute(select(users))) == original
+            if not duplicate:
+                current = MetaData()
+                current.reflect(bind=connection)
+                assert connection.execute(select(current.tables["users"].c.token_version)).scalar_one() == 0
     finally:
         database.dispose()
 

@@ -25,7 +25,7 @@ def authenticated_claims(credentials: Annotated[HTTPAuthorizationCredentials | N
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token") from exc
     user = db.get(User, user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or token_claims["ver"] != user.token_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is unavailable")
     return {
         **token_claims,

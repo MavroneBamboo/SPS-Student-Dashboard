@@ -66,7 +66,40 @@ def test_first_login_rotation_account_creation_role_change_disable_and_reload(pa
     assert page.request.get(live_url + "/api/v1/auth/me").status == 401
 
 
-@pytest.mark.parametrize("role", ["IT Administrator", "Operator", "Executive"])
+def test_it_admin_named_account_reset_and_server_logout(page, make_account, live_url):
+    admin = make_account("IT Administrator")
+    login(page, admin)
+    expect(page.get_by_role("heading", name="User administration", exact=True)).to_be_visible()
+    expect(page.locator("#dashboard-nav")).to_be_hidden()
+    assert "Superuser" not in page.get_by_label("Assigned role", exact=True).locator("option:not([hidden])").all_text_contents()
+    username = f"it-created-{uuid4().hex[:10]}"
+    page.get_by_label("New username", exact=True).fill(username)
+    page.get_by_label("Temporary password", exact=True).fill("initial-temporary-password")
+    page.get_by_role("button", name="Create account").click()
+    row = page.locator("#user-rows tr").filter(has_text=username)
+    expect(row).to_contain_text("Required")
+    row.get_by_role("button", name=f"Reset password for {username}").click()
+    expect(page.get_by_role("heading", name=f"Reset password for {username}")).to_be_visible()
+    page.get_by_label("New temporary password", exact=True).fill("replacement-temporary-password")
+    page.get_by_role("button", name="Set temporary password").click()
+    expect(page.get_by_role("status")).to_contain_text("Temporary password set")
+    assert (
+        page.request.post(live_url + "/api/v1/auth/login", data={"username": username, "password": "initial-temporary-password"}).status
+        == 401
+    )
+    replaced = page.request.post(live_url + "/api/v1/auth/login", data={"username": username, "password": "replacement-temporary-password"})
+    assert replaced.status == 200 and replaced.json()["must_change_password"]
+    with page.expect_response("**/api/v1/auth/logout") as logout:
+        page.get_by_role("button", name="Sign out", exact=True).click()
+    expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+    assert logout.value.status == 204
+    assert (
+        page.request.get(live_url + "/api/v1/auth/me", headers={"Authorization": logout.value.request.headers["authorization"]}).status
+        == 401
+    )
+
+
+@pytest.mark.parametrize("role", ["Operator", "Executive"])
 def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(page, make_account, role):
     account = make_account(role)
     class_name = f"C-{uuid4().hex[:6]} <img src=x onerror=alert(1)>"

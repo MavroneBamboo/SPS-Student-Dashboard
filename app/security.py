@@ -25,7 +25,7 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int, username: str, role: str, must_change_password: bool = False) -> str:
+def create_access_token(user_id: int, username: str, role: str, must_change_password: bool = False, token_version: int = 0) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
     payload = {
@@ -34,6 +34,8 @@ def create_access_token(user_id: int, username: str, role: str, must_change_pass
         "role": role,
         "must_change_password": must_change_password,
         "typ": "access",
+        "ver": token_version,
+        "jti": secrets.token_hex(16),
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
         "iat": now,
@@ -44,7 +46,14 @@ def create_access_token(user_id: int, username: str, role: str, must_change_pass
 
 def decode_access_token(token: str) -> dict:
     settings = get_settings()
-    claims = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"], issuer=settings.jwt_issuer, audience=settings.jwt_audience)
-    if claims.get("typ") != "access":
+    claims = jwt.decode(
+        token,
+        settings.jwt_secret,
+        algorithms=["HS256"],
+        issuer=settings.jwt_issuer,
+        audience=settings.jwt_audience,
+        options={"require": ["sub", "iat", "exp", "iss", "aud", "typ", "ver", "jti"]},
+    )
+    if claims.get("typ") != "access" or type(claims.get("ver")) is not int or claims["ver"] < 0:
         raise jwt.InvalidTokenError("invalid token type")
     return claims

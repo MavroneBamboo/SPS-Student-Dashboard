@@ -131,7 +131,14 @@
           <button type="submit">Create account</button>
         </form>
         <div class="section-bar"><h3>Accounts</h3><button id="refresh-users" class="secondary">Refresh accounts</button></div>
-        <div class="panel table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Active</th><th>Password change</th><th>Action</th></tr></thead><tbody id="user-rows"></tbody></table></div>
+        <div class="panel table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Active</th><th>Password change</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>
+        <form id="reset-user-form" class="panel filters" hidden>
+          <h3 id="reset-user-title">Reset password</h3>
+          <input name="user_id" type="hidden">
+          <label>New temporary password<input name="temporary_password" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
+          <button type="submit">Set temporary password</button>
+          <button id="cancel-reset-user" class="secondary" type="button">Cancel</button>
+        </form>
       </section>
     </section>
     <noscript>JavaScript is required to use the SPS Student Dashboard.</noscript>

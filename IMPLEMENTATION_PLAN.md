@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (23 October 2026)
 
+- Identity increment (26 October): versioned account-wide token revocation, explicit logout, IT management of non-Superuser accounts, administrator reset, case-insensitive unique usernames and preserved last administrators. Verify migration, API and browser cases in CI. Complete least-privilege permissions, setup/recovery and deployment controls in later slices. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).
+
 - Attendance browser increment (26 October): session create/search, eligible lookup, mark/correct/review, reasoned count adjustment and complete/explicit incomplete closure. Add version/lock/duplicate/migration-race tests and browser acceptance with the feature. Current-profile eligibility is not historical roster parity; granularity, roster snapshots, historical reconciliation, monthly output and full permissions remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
 - Profile browser increment (26 October): core Operator profile forms, status history, paged search, atomic version-checked saves and API/Chromium race/privacy/lifecycle checks. Existing-row version migration is additive and covered by preservation rehearsal. Extended schema, imports/reconciliation, catalogs, historical corrections and permission-matrix hardening remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).

@@ -26,10 +26,14 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(256))
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     role: Mapped[str] = mapped_column(String(40), default="Operator")
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+Index("uq_users_username_lower", func.lower(User.username), unique=True)
 
 
 class SchedulingRule(Base):
