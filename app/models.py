@@ -33,6 +33,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+Index("uq_users_username_lower", func.lower(User.username), unique=True)
+
+
 class SchedulingRule(Base):
     __tablename__ = "scheduling_rules"
     __table_args__ = (
