@@ -1,4 +1,5 @@
 from copy import deepcopy
+from itertools import product
 
 import pytest
 from fastapi import HTTPException
@@ -136,3 +137,32 @@ def test_preserves_manual_blocks_by_default_and_locked_blocks_in_replace_mode():
     broken = [{**before[0], "period_count": 2, "start_period": "P2"}]
     with pytest.raises(HTTPException):
         generate_plan(snapshot, broken, "REPLACE_UNLOCKED", 2000)
+
+
+def test_repair_matches_exhaustive_small_problem_optima():
+    # Independent cardinality oracle: three teachers compete for one class's three cells.
+    domains = (("P1", "P2"), ("P1", "P3"), ("P2", "P3"))
+    for availability in product(domains, repeat=3):
+        snapshot = _snapshot([{"id": index, "teacher_id": index} for index in (1, 2, 3)])
+        for teacher_id, periods in enumerate(availability, start=1):
+            snapshot["teachers"][str(teacher_id)]["availability"] = {day: list(periods) if day == "MON" else [] for day in WEEKDAYS}
+        optimum = max(
+            len(placed)
+            for assignment in product(*[(None, *periods) for periods in availability])
+            if len(placed := [period for period in assignment if period]) == len(set(placed))
+        )
+        result, report = generate_plan(snapshot, [], "FILL_PENDING", 10000)
+        assert len(result) == optimum, availability
+        assert report["complete"] == (optimum == 3)
+        assert not report["search_limit_reached"]
+        validate_plan(snapshot, result)
+
+
+def test_repair_handles_more_than_a_thousand_pending_blocks_without_recursion():
+    snapshot = _snapshot([{"id": index, "teacher_id": index} for index in range(1, 1006)])
+    for teacher in snapshot["teachers"].values():
+        teacher["availability"] = {day: ["P1"] if day == "MON" else [] for day in WEEKDAYS}
+    result, report = generate_plan(snapshot, [], "FILL_PENDING", 2100)
+    assert len(result) == 1 and len(report["unplaced"]) == 1004
+    assert not report["complete"] and report["search_limit_reached"]
+    assert report["search_attempts"] == 2100
