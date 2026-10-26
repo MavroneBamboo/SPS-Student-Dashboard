@@ -1,6 +1,6 @@
 # Timetable generation API
 
-This backend increment generates a weekly draft using its frozen configuration. The production browser workflow, publishing coordination, fixed events, composite teacher groups and exports remain future work.
+Weekly drafts can be generated from their frozen configuration in both the API and the production timetable browser. Operators can fill pending lessons or explicitly replace unlocked lessons; the browser displays completion and unplaced requirements. Publishing coordination, fixed events, composite teacher groups and exports remain future work.
 
 ## Generate
 
@@ -32,4 +32,4 @@ Operators can resolve partial results with manual amendments, revised reference 
 
 ## Verification
 
-Pure planner tests cover deterministic repair beyond first-fit, explicit search exhaustion, full/remainder blocks, lunch/gaps, rules/daily limits, no legal availability, actual-time clashes across different period labels and manual/lock preservation. API tests cover saved reports/grid/revision, repeat runs, explicit replacement, approval restrictions, permissions, invalid inputs, stale revisions/configuration, damaged grids, simultaneous generation and rollback after a database failure. CI also runs the existing manual placement, migration, security and container checks. Production-scale runtime measurements and browser tests remain outstanding.
+Pure planner tests cover deterministic repair beyond first-fit, explicit search exhaustion, full/remainder blocks, lunch/gaps, rules/daily limits, no legal availability, actual-time clashes across different period labels and manual/lock preservation. API tests cover saved reports/grid/revision, repeat runs, explicit replacement, approval restrictions, permissions, invalid inputs, stale revisions/configuration, damaged grids, simultaneous generation and rollback after a database failure. Chromium browser acceptance tests now cover manual placement, editing, locking, generation and approval, plus IT resource setup. Production-scale runtime measurements, teacher-oriented views and report exports remain outstanding.
