@@ -420,7 +420,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     }
     const ids = pending.map((item) => item.lesson_requirement_id);
     const lengths = pending.flatMap((item) => item.remaining_blocks);
-    openPlacement(ids, {class_code: classItem.code, weekday, start_period, allowed_lengths: lengths});
+    openPlacement(ids, {class_code: classItem.code, weekday, start_period: startPeriod, allowed_lengths: lengths});
   }
 
   function editPlacement(placement, weekday, startPeriod) {
