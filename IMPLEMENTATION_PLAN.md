@@ -12,7 +12,7 @@ Build the system in vertical increments. Each increment must produce a deployabl
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
 
-### Current delivery checkpoint (23 October 2026)
+### Current delivery checkpoint (26 October 2026)
 
 - Operational role increment (26 October): students and attendance require Operator access. Dashboards and exports allow Operator or Executive; audit allows Superuser or IT. Tests use named Operator identities and cover all four roles. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
@@ -30,6 +30,7 @@ The initial release should be delivered in phases over approximately 16–20 wee
 - Rule resolution includes typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 - The timetable-draft increment adds weekly snapshots, persistent block/cell placement, full-grid validation for manual changes, revision guards, approval and executive reads of approved versions. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 - The generation increment adds deterministic first-fit plus bounded repair, default preservation of existing lessons, explicit replacement of unlocked blocks and persisted per-revision reports. It uses the manual validator and transactional placement services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Publishing coordination, resource editing, the production Amend 4-up UI, exports and end-to-end tests remain outstanding.
+- The timetable browser increment adds IT forms for teachers/subjects/classes/clusters/membership/period overrides/rules and lesson requirements. Operators create weekly drafts, page through 4/8/12/16 class grids, add/amend/remove/lock lessons by clicking cells and run generation. IT Administrators approve complete drafts. Chromium acceptance tests cover editing, lunch placement, generation, approval and resource setup. Teacher-oriented grids, drag/swap, publishing, legacy reconciliation and report exports remain outstanding.
 - The next defensive validation increment compares persisted cells with validated blocks before every amendment and approval. Regression tests cover missing cells, extra cells and changed block anchors, requiring rejection without revision, grid or audit changes.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
 - Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
@@ -108,6 +109,8 @@ Exit criteria: a clean checkout can start the Compose stack, run tests and produ
 ### Phase 2 — Identity, bootstrap and security baseline
 
 **Estimated duration:** 2–3 weeks
+
+Browser workspace delivery update (26 October 2026): the initial production timetable screen is being added as the next implementation slice. It connects the existing version, requirement, generation, placement, lock and approval APIs. Operators can create weekly drafts, page through 4/8/12/16 class grids, add/amend/remove/lock lesson blocks by clicking cells, and generate pending requirements. IT Administrators can create teacher, subject, class, cluster, membership, period override and rule records, and approve complete drafts. Period 3 is rendered as a non-clickable Lunch column. This slice includes Chromium acceptance tests for these workflows. Drag-and-drop, teacher-oriented grids, swap controls, exports and broader legacy parity remain follow-up work.
 
 Activities:
 
@@ -376,6 +379,8 @@ Class-period exit criteria: every class resolves to the default period pattern u
 Scheduling-rule exit criteria: no planning run or manual placement can proceed without exactly one applicable rule per class, and no duplicate or overlapping rule/placement is accepted.
 
 ### Timetable phase C — Amend 4-up
+
+The first browser increment covers class-oriented Amend 4-up editing. It is not yet full legacy parity; subsequent increments should add teacher-oriented views, drag/swap and other parity actions.
 
 **Estimated duration:** 2–3 weeks
 

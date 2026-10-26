@@ -1,5 +1,6 @@
 import {createStudentWorkspace} from "./students.js";
 import {createAttendanceWorkspace} from "./attendance.js";
+import {createTimetableWorkspace} from "./timetable.js";
 
 const $ = (id) => document.getElementById(id);
 const roles = ["Superuser", "IT Administrator", "Operator", "Executive"];
@@ -13,6 +14,7 @@ let dashboardRequest = 0;
 function notice(message = "") { $("notice").textContent = message; }
 function clearData() {
   attendance.clear();
+  timetable.clear();
   students.clear();
   for (const id of ["user-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
@@ -115,6 +117,7 @@ async function acceptSession(session) {
   $("dashboard-nav").hidden = ["Superuser", "IT Administrator"].includes(identity.role);
   $("profiles-nav").hidden = identity.role !== "Operator";
   $("attendance-nav").hidden = identity.role !== "Operator";
+  $("timetable-nav").hidden = identity.role === "Superuser";
   if (["Superuser", "IT Administrator"].includes(identity.role)) await showUsers();
   else await showDashboard();
 }
@@ -130,7 +133,8 @@ function showPanel(name) {
   $("users-panel").hidden = name !== "users";
   $("profiles-panel").hidden = name !== "profiles";
   $("attendance-panel").hidden = name !== "attendance";
-  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance"}[name];
+  $("timetable-panel").hidden = name !== "timetable";
+  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule"}[name];
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -244,8 +248,10 @@ async function showUsers() {
 
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
+const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role});
 $("profiles-nav").addEventListener("click", () => run($("profiles-nav"), students.show));
 $("attendance-nav").addEventListener("click", () => run($("attendance-nav"), attendance.show));
+$("timetable-nav").addEventListener("click", () => run($("timetable-nav"), timetable.show));
 
 $("login-form").addEventListener("submit", (event) => {
   event.preventDefault();
