@@ -148,3 +148,24 @@ def test_expiry_timer_clears_in_memory_session(page, make_account):
     expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
     expect(page.get_by_role("status")).to_contain_text("Your session expired", timeout=5000)
     expect(page.locator("#metrics")).to_be_empty()
+
+
+def test_late_response_from_signed_out_session_cannot_restore_dashboard(page, make_account):
+    account = make_account()
+    with page.expect_response("**/api/v1/reports/dashboard?*") as dashboard_response:
+        login(page, account)
+    data = dashboard_response.value.json()
+    expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
+    # Simulate a transport that delivers an already fetched response after abort.
+    page.evaluate("""() => {
+        const original = window.fetch;
+        window.fetch = (url, options) => String(url).includes('/reports/dashboard?')
+            ? new Promise(resolve => { window.lateResponse = resolve; }) : original(url, options);
+    }""")
+    page.get_by_role("button", name="Refresh data").click()
+    page.wait_for_function("typeof window.lateResponse === 'function'")
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    page.evaluate("payload => window.lateResponse(new Response(JSON.stringify(payload), {status: 200}))", data)
+    expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+    expect(page.locator("#metrics")).to_be_empty()
+    expect(page.locator("#attendance-trend")).to_be_empty()
