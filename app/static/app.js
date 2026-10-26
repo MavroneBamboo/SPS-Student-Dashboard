@@ -187,7 +187,7 @@ async function showUsers() {
   if (!["Superuser", "IT Administrator"].includes(identity.role)) throw new Error("User administration is not available for this role.");
   showPanel("users");
   const users = await api("/users");
-  $("create-user-form").elements.role.querySelector('option[value="Superuser"]').hidden = identity.role !== "Superuser";
+  [...$("create-user-form").elements.role.options].find((option) => option.value === "Superuser").hidden = identity.role !== "Superuser";
   $("user-rows").replaceChildren();
   for (const user of users) {
     const row = document.createElement("tr");
