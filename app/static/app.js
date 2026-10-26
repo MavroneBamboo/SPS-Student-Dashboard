@@ -18,6 +18,7 @@ function clearData() {
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
+  $("reset-user-form").hidden = true;
 }
 function signedOut(message = "") {
   epoch += 1;
@@ -32,6 +33,21 @@ function signedOut(message = "") {
   $("signin").hidden = false;
   notice(message);
   $("login-form").elements.username.focus();
+}
+
+async function explicitSignOut() {
+  const oldToken = token;
+  signedOut("Signed out.");
+  if (!oldToken) return;
+  try {
+    const response = await fetch("/api/v1/auth/logout", {
+      method: "POST", headers: {Authorization: `Bearer ${oldToken}`}, cache: "no-store",
+      credentials: "omit", keepalive: true, signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok && response.status !== 401 && token === null) notice("Signed out here. Server sign-out could not be confirmed.");
+  } catch {
+    if (token === null) notice("Signed out here. Server sign-out could not be confirmed.");
+  }
 }
 
 function validationMessage(detail) {
@@ -95,11 +111,11 @@ async function acceptSession(session) {
   $("password-screen").hidden = true;
   $("workspace").hidden = false;
   $("identity").textContent = `${identity.username} · ${identity.role}`;
-  $("users-nav").hidden = identity.role !== "Superuser";
-  $("dashboard-nav").hidden = identity.role === "Superuser";
+  $("users-nav").hidden = !["Superuser", "IT Administrator"].includes(identity.role);
+  $("dashboard-nav").hidden = ["Superuser", "IT Administrator"].includes(identity.role);
   $("profiles-nav").hidden = identity.role !== "Operator";
   $("attendance-nav").hidden = identity.role !== "Operator";
-  if (identity.role === "Superuser") await showUsers();
+  if (["Superuser", "IT Administrator"].includes(identity.role)) await showUsers();
   else await showDashboard();
 }
 
@@ -168,16 +184,17 @@ async function showDashboard() {
   $("dashboard-freshness").textContent = `Committed data refreshed ${new Date(data.refreshed_at).toLocaleString()}`;
 }
 async function showUsers() {
-  if (identity.role !== "Superuser") throw new Error("User administration is not available for this role.");
+  if (!["Superuser", "IT Administrator"].includes(identity.role)) throw new Error("User administration is not available for this role.");
   showPanel("users");
   const users = await api("/users");
+  $("create-user-form").elements.role.querySelector('option[value="Superuser"]').hidden = identity.role !== "Superuser";
   $("user-rows").replaceChildren();
   for (const user of users) {
     const row = document.createElement("tr");
     cell(row, user.username);
     const role = document.createElement("select");
     role.setAttribute("aria-label", `Role for ${user.username}`);
-    for (const value of roles) {
+    for (const value of roles.filter((value) => identity.role === "Superuser" || value !== "Superuser")) {
       const option = document.createElement("option");
       option.textContent = value;
       option.value = value;
@@ -197,14 +214,30 @@ async function showUsers() {
     save.addEventListener("click", () => run(save, async () => {
       await api(`/users/${user.id}`, "PATCH", {role: role.value, is_active: active.checked});
       identity = await api("/auth/me");
-      if (identity.role !== "Superuser") {
+      if (!["Superuser", "IT Administrator"].includes(identity.role)) {
         signedOut("Your role changed. Sign in again to load your workspace.");
         return;
       }
       await showUsers();
       notice(`Updated ${user.username}.`);
     }));
-    cell(row, "").append(save);
+    const actions = cell(row, "");
+    actions.append(save);
+    if (user.id !== Number(identity.sub)) {
+      const reset = document.createElement("button");
+      reset.className = "secondary";
+      reset.textContent = "Reset password";
+      reset.setAttribute("aria-label", `Reset password for ${user.username}`);
+      reset.addEventListener("click", () => {
+        const form = $("reset-user-form");
+        form.reset();
+        form.elements.user_id.value = user.id;
+        $("reset-user-title").textContent = `Reset password for ${user.username}`;
+        form.hidden = false;
+        form.elements.temporary_password.focus();
+      });
+      actions.append(reset);
+    }
     $("user-rows").append(row);
   }
 }
@@ -246,10 +279,26 @@ $("create-user-form").addEventListener("submit", (event) => {
     } finally { $("create-user-form").elements.temporary_password.value = ""; }
   });
 });
+$("reset-user-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  run(event.currentTarget, async () => {
+    const form = $("reset-user-form");
+    const userId = form.elements.user_id.value;
+    const temporaryPassword = form.elements.temporary_password.value;
+    try {
+      await api(`/users/${userId}/reset-password`, "POST", {temporary_password: temporaryPassword});
+      form.reset();
+      form.hidden = true;
+      await showUsers();
+      notice("Temporary password set. Supply it through your approved secure channel.");
+    } finally { form.elements.temporary_password.value = ""; }
+  });
+});
+$("cancel-reset-user").addEventListener("click", () => { $("reset-user-form").reset(); $("reset-user-form").hidden = true; });
 $("dashboard-filter").addEventListener("submit", (event) => { event.preventDefault(); run(event.currentTarget, showDashboard); });
 for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener("click", () => run($(id), showDashboard));
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
-for (const id of ["signout", "password-cancel"]) $(id).addEventListener("click", () => signedOut("Signed out."));
+for (const id of ["signout", "password-cancel"]) $(id).addEventListener("click", explicitSignOut);
 $("change-password").addEventListener("click", () => {
   $("workspace").hidden = true;
   $("password-screen").hidden = false;

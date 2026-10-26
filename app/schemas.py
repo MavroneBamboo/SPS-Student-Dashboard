@@ -40,6 +40,10 @@ class UserUpdate(BaseModel):
         return self
 
 
+class UserPasswordReset(BaseModel):
+    temporary_password: str = Field(min_length=12, max_length=200)
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
