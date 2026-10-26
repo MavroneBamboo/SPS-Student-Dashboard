@@ -68,7 +68,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     class_select.select_option(str(class_item["id"]))
     form.get_by_role("button", name="Create draft", exact=True).click()
     expect(page.get_by_role("heading", name="C" + suffix + " · Browser Timetable Class", exact=True)).to_be_visible()
-    expect(page.locator(".amend-grid .lunch-cell")).to_contain_text("Lunch")
+    expect(page.locator(".amend-grid .lunch-cell").first).to_contain_text("Lunch")
     assert page.locator(".amend-grid thead tr").inner_text().index("P2") < page.locator(".amend-grid thead tr").inner_text().index("Lunch")
     assert page.locator(".amend-grid thead tr").inner_text().index("Lunch") < page.locator(".amend-grid thead tr").inner_text().index("P3")
 
@@ -131,7 +131,7 @@ def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(pa
     expect(page.get_by_role("status")).to_contain_text("Class added to cluster")
     period_form = page.locator("#timetable-period-form")
     period_form.locator('select[name="target_id"]').select_option(label=f"C{suffix} · Setup Workspace Class")
-    page.get_by_label("Period", exact=True).select_option("P1")
+    period_form.locator('select[name="slot_code"]').select_option("P1")
     page.get_by_label("Display label", exact=True).fill("Early start")
     page.get_by_label("Starts at", exact=True).fill("08:00")
     page.get_by_label("Ends at", exact=True).fill("09:00")
