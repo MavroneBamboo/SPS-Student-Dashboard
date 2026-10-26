@@ -45,4 +45,6 @@ Each version is a self-contained planning/reporting unit. Clash checks apply wit
 
 ## Verification
 
+Every mutation expands the stored blocks through the shared validator and compares the complete expected cell multiset with persisted cells, including parent block, resources, weekday, period and actual times. Missing, extra or mismatched cells return 409 before any write or audit event. This protects approval from an incomplete grid following direct database maintenance. Reads remain available for IT investigation; the API does not silently repair damaged data. Repair must restore consistency or use a replacement draft. Regression tests exercise missing cells, extra cells and changed block anchors, checking that rejected requests preserve the grid, revision and audit history.
+
 CI runs PostgreSQL migration/model parity, full API lifecycle tests, revision races, two-direction swap rollback, actual-time conflicts under overrides, rule/availability/lunch/block checks, remainder counts, approval permissions, snapshot history and direct database immutability checks. Migration `0005` only adds timetable tables/guards; existing student/profile/rule data is preserved, with the existing upgrade rehearsal exercising the complete migration chain.

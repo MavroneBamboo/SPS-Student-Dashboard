@@ -414,3 +414,51 @@ def test_postgresql_snapshots_locked_blocks_and_approved_versions_are_protected(
         with pytest.raises(IntegrityError):
             db.execute(delete(TimetableVersionClass).where(TimetableVersionClass.version_id == version["id"]))
         db.rollback()
+
+
+@pytest.mark.parametrize("damage", ["missing_cell", "extra_cell", "changed_block"])
+def test_inconsistent_stored_cells_block_approval_and_all_amendments(timetable_context, damage):
+    ctx = timetable_context
+    _single_requirement(ctx, count=1)
+    version = _place(ctx, _draft(ctx), period_count=1).json()
+    block_id = version["placements"][0]["id"]
+    path = f"{BASE}/versions/{version['id']}"
+    with SessionLocal() as db:
+        if damage == "missing_cell":
+            db.execute(delete(TimetableSlot).where(TimetableSlot.placement_id == block_id))
+        elif damage == "extra_cell":
+            # A valid snapshotted cell can still be outside its parent's declared block.
+            db.add(
+                TimetableSlot(
+                    placement_id=block_id,
+                    version_id=version["id"],
+                    instructional_class_id=ctx["lesson"]["instructional_class_id"],
+                    teacher_id=ctx["lesson"]["teacher_id"],
+                    subject_id=ctx["lesson"]["subject_id"],
+                    weekday="MON",
+                    slot_code="P2",
+                    starts_at=time(10, 15),
+                    ends_at=time(12),
+                )
+            )
+        else:
+            db.get(TimetablePlacement, block_id).start_period = "P3"
+        db.commit()
+        audit_ids = list(db.scalars(select(AuditEvent.id).where(AuditEvent.entity_id == str(version["id"]))).all())
+
+    before = ctx["client"].get(path, headers=ctx["headers"]["operator"]).json()
+    revision = {"expected_revision": version["revision"]}
+    responses = [
+        ctx["client"].post(path + "/approve", json=revision, headers=ctx["headers"]["admin"]),
+        ctx["client"].patch(
+            path + f"/placements/{block_id}/lock", json={**revision, "is_locked": True}, headers=ctx["headers"]["operator"]
+        ),
+        ctx["client"].delete(path + f"/placements/{block_id}?expected_revision={version['revision']}", headers=ctx["headers"]["operator"]),
+        _place(ctx, version, weekday="TUE", period_count=1),
+        ctx["client"].put(path + f"/placements/{block_id}", json=_body(ctx, version, period_count=1), headers=ctx["headers"]["operator"]),
+    ]
+    assert all(response.status_code == 409 for response in responses)
+    assert all("Stored timetable cells" in response.json()["detail"] for response in responses)
+    assert ctx["client"].get(path, headers=ctx["headers"]["operator"]).json() == before
+    with SessionLocal() as db:
+        assert list(db.scalars(select(AuditEvent.id).where(AuditEvent.entity_id == str(version["id"]))).all()) == audit_ids

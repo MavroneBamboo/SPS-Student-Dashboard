@@ -20,6 +20,7 @@ The initial release should be delivered in phases over approximately 16–20 wee
 - Rule resolution includes typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 - The timetable-draft increment adds weekly snapshots, persistent block/cell placement, full-grid validation for manual changes, revision guards, approval and executive reads of approved versions. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 - Automatic generation, publishing coordination, resource editing, the production Amend 4-up UI, exports and end-to-end tests remain outstanding. Future generation must use the same rule and placement services.
+- The next defensive validation increment compares persisted cells with validated blocks before every amendment and approval. Regression tests cover missing cells, extra cells and changed block anchors, requiring rejection without revision, grid or audit changes.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
 - Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
 
