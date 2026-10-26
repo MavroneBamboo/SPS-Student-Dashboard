@@ -1,5 +1,7 @@
 # Identity and account administration increment
 
+The subsequent operational role slice enforces the student, attendance, dashboard and audit boundaries in [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md). The remaining release controls listed below still apply.
+
 This increment follows the attendance browser branch and requires Alembic `20261026_0008` before the new application code starts. The migration preserves users, sets `token_version = 0`, and adds a unique index on lowercase usernames. It stops with a reconciliation error if existing usernames differ only by case. No account is silently renamed or deleted. Tokens issued by the earlier implementation lack the new required version claim and require a fresh login after deployment.
 
 ## Current API contract

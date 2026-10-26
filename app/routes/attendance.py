@@ -18,9 +18,7 @@ from app.schemas import (
     AttendanceSessionResponse,
 )
 
-router = APIRouter(
-    prefix="/attendance", tags=["attendance"], dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))]
-)
+router = APIRouter(prefix="/attendance", tags=["attendance"], dependencies=[Depends(require_roles("Operator"))])
 
 
 def session_response(row: AttendanceSession) -> AttendanceSessionResponse:
