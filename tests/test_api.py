@@ -90,6 +90,7 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
             "category": "OP",
             "status": "ACTIVE",
             "date_of_birth": "2000-01-02",
+            "status_effective": "2026-10-22",
         }
         created = client.post("/api/v1/students", json=payload, headers=headers)
         assert created.status_code == 201
@@ -109,6 +110,7 @@ def test_student_duplicate_identifier_and_encrypted_round_trip():
         history = client.get(f"/api/v1/students/{student_id}/status-history", headers=headers)
         assert history.status_code == 200
         assert [entry["new_status"] for entry in history.json()] == ["ACTIVE", "INACTIVE"]
+        assert [entry["effective_date"] for entry in history.json()] == ["2026-10-22", "2026-10-23"]
         assert client.patch(f"/api/v1/students/{student_id}", json={}, headers=headers).status_code == 422
 
         executive_created = client.post(
