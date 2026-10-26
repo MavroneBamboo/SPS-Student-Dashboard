@@ -1,6 +1,6 @@
 # Timetable drafts and manual amendments
 
-The timetable API now persists weekly drafts, immutable configuration snapshots, lesson blocks and their occupied grid cells. It supports the server operations needed by Amend 4-up. The production browser workspace, automatic generation, copy/rebase of drafts and timetable exports remain subsequent work.
+The timetable API now persists weekly drafts, immutable configuration snapshots, lesson blocks and their occupied grid cells. It supports the server operations needed by Amend 4-up. Automatic generation is documented in [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). The production browser workspace, copy/rebase of drafts and timetable exports remain subsequent work.
 
 ## Create and inspect a draft
 
@@ -41,7 +41,7 @@ Every edit and approval re-resolves rules for all five dates and compares the li
 
 IT Administrators approve a complete, valid draft using `POST /versions/{id}/approve` with `expected_revision`. Approval fails while any requirement remains unplaced or configuration has changed. Approval records the actor/time and increments the revision. Approved header, blocks, cells and selected classes are immutable; replacements use a new version. Operators cannot approve. Executives can list/read approved versions only, while bootstrap Superusers have no timetable-planning access.
 
-Each version is a self-contained planning/reporting unit. Clash checks apply within that version; a current-published-version pointer and coordination of separate published plans remain part of the future publishing workflow. This increment does not implement automatic generation, the production Amend 4-up browser, combined-teacher groups, fixed school events or PDF rendering.
+Each version is a self-contained planning/reporting unit. Clash checks apply within that version; a current-published-version pointer and coordination of separate published plans remain part of the future publishing workflow. The generation API fills pending blocks or explicitly replaces unlocked blocks using the same validations. The production Amend 4-up browser, combined-teacher groups, fixed school events and PDF rendering remain outstanding.
 
 ## Verification
 
