@@ -26,6 +26,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Stable-ID scheduling rules with effective dates, edit versions, class/cluster overlap prevention and exactly-one-rule bulk resolution. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md) for the API and legacy binding process.
 - Teacher, subject, instructional-class and cluster resource APIs, with inherited period definitions and a non-schedulable third lunch column.
 - Lesson requirements linked to resource IDs, with duplicate prevention, availability/block checks, versioned edits, archive/restore and audit events. Operators and IT Administrators can maintain requirements.
+- Persistent weekly timetable drafts and configuration snapshots, with validated add/move/swap/remove/lock operations, pending requirements and immutable approval. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) for the actual API and remaining UI/generation work.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
 - Student profile updates with append-only status history and audit events.
 - Attendance session and record API with class eligibility checks, duplicate prevention, correction reasons, record review and session close control.

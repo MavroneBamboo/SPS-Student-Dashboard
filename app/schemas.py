@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from datetime import time as time_value
 from typing import Literal
 
@@ -124,6 +124,56 @@ class ResolvedRule(BaseModel):
     target_type: str
     target_id: int
     rule: RuleDefinition
+
+
+class TimetableDraftCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=120)
+    academic_year: str = Field(min_length=1, max_length=20)
+    week_start: date
+    class_ids: list[int] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def valid_week(self):
+        if self.week_start.weekday() != 0:
+            raise ValueError("week_start must be a Monday")
+        try:
+            self.week_start + timedelta(days=4)
+        except OverflowError as exc:
+            raise ValueError("The complete teaching week must be representable") from exc
+        if any(class_id < 1 for class_id in self.class_ids) or len(self.class_ids) != len(set(self.class_ids)):
+            raise ValueError("class_ids must be unique positive IDs")
+        self.academic_year = self.academic_year.upper()
+        return self
+
+
+class TimetableRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+
+
+class TimetablePlacementWrite(TimetableRevisionRequest):
+    lesson_requirement_id: int = Field(gt=0)
+    weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
+    start_period: Literal["P1", "P2", "P3", "P4"]
+    period_count: int = Field(default=1, ge=1, le=4)
+    note: str = Field(default="", max_length=500)
+
+
+class TimetableSwapRequest(TimetableRevisionRequest):
+    first_placement_id: int = Field(gt=0)
+    second_placement_id: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def different_blocks(self):
+        if self.first_placement_id == self.second_placement_id:
+            raise ValueError("Swap requires two different blocks")
+        return self
+
+
+class TimetableLockRequest(TimetableRevisionRequest):
+    is_locked: bool
 
 
 WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI")
