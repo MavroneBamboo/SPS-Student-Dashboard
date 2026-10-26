@@ -10,7 +10,14 @@ from app.deps import Claims, DbSession, require_roles
 from app.models import TimetablePlacement, TimetableSlot, TimetableVersion, TimetableVersionClass
 from app.schemas import TimetableDraftCreate, TimetableLockRequest, TimetablePlacementWrite, TimetableRevisionRequest, TimetableSwapRequest
 from app.timetable_lock import lock_timetable_configuration
-from app.timetable_planning import assert_current_snapshot, build_snapshot, load_blocks, pending_requirements, validate_plan
+from app.timetable_planning import (
+    assert_current_snapshot,
+    assert_stored_plan,
+    build_snapshot,
+    load_blocks,
+    pending_requirements,
+    validate_plan,
+)
 
 router = APIRouter(
     prefix="/timetable/versions",
@@ -75,7 +82,10 @@ def _mutation(db: DbSession, version_id: int, expected_revision: int, claims: di
         raise HTTPException(status_code=409, detail="Approved timetables are immutable; create a replacement draft")
     if row.revision != expected_revision:
         raise HTTPException(status_code=409, detail="Timetable changed since it was loaded; reload before saving")
-    return row, assert_current_snapshot(db, row), load_blocks(db, row.id)
+    snapshot = assert_current_snapshot(db, row)
+    blocks = load_blocks(db, row.id)
+    assert_stored_plan(db, row.id, snapshot, blocks)
+    return row, snapshot, blocks
 
 
 def _block(blocks: list[dict], block_id: int, *, require_unlocked: bool = True) -> dict:

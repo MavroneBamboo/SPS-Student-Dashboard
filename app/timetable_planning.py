@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.lesson_validation import validate_lesson_resources
-from app.models import InstructionalClass, LessonRequirement, Subject, Teacher, TimetablePlacement, TimetableVersion
+from app.models import InstructionalClass, LessonRequirement, Subject, Teacher, TimetablePlacement, TimetableSlot, TimetableVersion
 from app.scheduling_rules import resolve_rules
 from app.schemas import WEEKDAYS, LessonRequirementResponse, RuleResolutionRequest
 from app.timetable_periods import resolve_period_rows, validate_period_intervals
@@ -112,6 +112,22 @@ def load_blocks(db: Session, version_id: int) -> list[dict]:
 def required_blocks(requirement: dict) -> Counter:
     full, remainder = divmod(requirement["weekly_count"], requirement["block_length"])
     return Counter([requirement["block_length"]] * full + ([remainder] if remainder else []))
+
+
+def assert_stored_plan(db: Session, version_id: int, snapshot: dict, blocks: list[dict]) -> None:
+    """Fail closed when stored cells no longer represent the validated lesson blocks."""
+    expanded = validate_plan(snapshot, blocks)
+    fields = ("instructional_class_id", "teacher_id", "subject_id", "weekday", "slot_code", "starts_at", "ends_at")
+    expected = Counter((block_id, *(slot[field] for field in fields)) for block_id, slots in expanded.items() for slot in slots)
+    actual = Counter(
+        (slot.placement_id, *(getattr(slot, field) for field in fields))
+        for slot in db.scalars(select(TimetableSlot).where(TimetableSlot.version_id == version_id)).all()
+    )
+    if actual != expected:
+        raise HTTPException(
+            status_code=409,
+            detail="Stored timetable cells do not match lesson blocks; IT must reconcile the draft before further changes or approval",
+        )
 
 
 def pending_requirements(snapshot: dict, blocks: list[dict]) -> list[dict]:
