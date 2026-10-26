@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Attendance follow-up (26 October 2026): Operator browser and APIs now support versioned daily sessions/records, corrections, missing review, count controls and closure with audit and row locking. Existing API clients must adopt expected versions and a close request body. Historical roster rules, full-day granularity policy, reopening/corrections, monthly Excel reconciliation and complete permissions remain to implement. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
+
 Profile follow-up (26 October 2026): the Operator browser now supports core profile search/create/edit/history with encrypted sensitive fields and stale-write protection. Clients must send `expected_version` for PATCH. Full intake fields/catalogs, workbook reconciliation, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
 Browser follow-up (26 October 2026): `/ui/` provides real sign-in, mandatory password change, Superuser account administration and committed-data dashboard workflows. CI uses Chromium against the live API and disposable database, while the production image contains only local browser assets. Profile/attendance/reference/timetable screens, imports/exports, complete setup/recovery, IT account management, HTTPS and session hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).

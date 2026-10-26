@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Attendance browser increment (26 October 2026): Operators can create/review sessions, record and correct attendance, adjust expected counts with reasons and close complete or explicitly acknowledged incomplete sessions. Versioned transactions protect concurrent work and dashboard refresh reads committed changes. Historical roster/class reconciliation and monthly workbook parity remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
+
 Profile browser increment (26 October 2026): Operators can search, create and edit the current core student fields, inspect status history and refresh the committed dashboard. Unique identifiers, encryption and version-checked saves protect records. Extended intake fields, catalogs and workbook reconciliation remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
 Browser increment (26 October 2026): the actual application now opens at the server root with sign-in, mandatory temporary-password change, Superuser account/role administration and committed-data dashboards for operational roles. The approved prototype remains separate. Profile/attendance entry, timetable/Amend 4-up, reference editors, exports and complete setup/recovery screens are still required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).

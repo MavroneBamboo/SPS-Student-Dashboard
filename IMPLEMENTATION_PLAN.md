@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (23 October 2026)
 
+- Attendance browser increment (26 October): session create/search, eligible lookup, mark/correct/review, reasoned count adjustment and complete/explicit incomplete closure. Add version/lock/duplicate/migration-race tests and browser acceptance with the feature. Current-profile eligibility is not historical roster parity; granularity, roster snapshots, historical reconciliation, monthly output and full permissions remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
+
 - Profile browser increment (26 October): core Operator profile forms, status history, paged search, atomic version-checked saves and API/Chromium race/privacy/lifecycle checks. Existing-row version migration is additive and covered by preservation rehearsal. Extended schema, imports/reconciliation, catalogs, historical corrections and permission-matrix hardening remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
 - Browser increment (26 October): deliver sign-in/rotation, Superuser accounts and live dashboard as the first actual frontend, with local assets and Chromium CI against the API/PostgreSQL. Profile/attendance/resource/timetable forms, full setup/recovery, IT account-management permissions and deployment hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).

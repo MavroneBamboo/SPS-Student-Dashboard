@@ -1,5 +1,7 @@
 # Production browser workspace increment
 
+The attendance increment adds the Operator **Attendance** screen for real daily sessions, records/corrections, count controls, missing review and closure. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md), including version contracts and the current-profile eligibility boundary. Timetable/resource screens, full intake/import/export and deployment hardening remain outstanding.
+
 The subsequent profile increment adds the Operator **Student profiles** screen, with paged search, create/edit, status history and version-checked saves. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md). Earlier delivery boundaries below describe the initial shell; attendance/resource/timetable browser screens, full intake schema and permission hardening remain outstanding.
 
 Start the Compose stack using the configured deployment secrets, then open `http://localhost:8080/` (redirects to `/ui/`). The approved synthetic prototype remains separately available at `/prototype/index.html`. The root now opens the actual application, with no prototype fallback. Deployments must supply approved HTTPS termination before operational use; the current development Compose listener remains HTTP.

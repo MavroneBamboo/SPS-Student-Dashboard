@@ -1,5 +1,7 @@
 # Timetable Integration Notes
 
+Attendance boundary (26 October 2026): the browser supports daily attendance sessions/records but does not create them from unpublished timetable drafts. Published timetable-to-attendance mapping, instructional/student class reconciliation and historical roster policies remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
+
 Profile boundary (26 October 2026): the production browser now supports core student profile processing and status history. Student class names still need an explicit mapping to instructional timetable class IDs during reconciliation; this increment does not infer that mapping or create timetable memberships. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
 Browser delivery boundary (26 October 2026): the production browser shell now supports actual sign-in/rotation, account setup and live dashboard. The timetable APIs remain available, but timetable generation, resources and Amend 4-up are not yet connected to production screens. The approved timetable prototype remains synthetic and separate. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).

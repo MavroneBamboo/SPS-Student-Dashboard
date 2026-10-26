@@ -1,4 +1,5 @@
 import {createStudentWorkspace} from "./students.js";
+import {createAttendanceWorkspace} from "./attendance.js";
 
 const $ = (id) => document.getElementById(id);
 const roles = ["Superuser", "IT Administrator", "Operator", "Executive"];
@@ -11,6 +12,7 @@ let dashboardRequest = 0;
 
 function notice(message = "") { $("notice").textContent = message; }
 function clearData() {
+  attendance.clear();
   students.clear();
   for (const id of ["user-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
@@ -96,6 +98,7 @@ async function acceptSession(session) {
   $("users-nav").hidden = identity.role !== "Superuser";
   $("dashboard-nav").hidden = identity.role === "Superuser";
   $("profiles-nav").hidden = identity.role !== "Operator";
+  $("attendance-nav").hidden = identity.role !== "Operator";
   if (identity.role === "Superuser") await showUsers();
   else await showDashboard();
 }
@@ -110,7 +113,8 @@ function showPanel(name) {
   $("dashboard-panel").hidden = name !== "dashboard";
   $("users-panel").hidden = name !== "users";
   $("profiles-panel").hidden = name !== "profiles";
-  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles"}[name];
+  $("attendance-panel").hidden = name !== "attendance";
+  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance"}[name];
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -206,7 +210,9 @@ async function showUsers() {
 }
 
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
+const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
 $("profiles-nav").addEventListener("click", () => run($("profiles-nav"), students.show));
+$("attendance-nav").addEventListener("click", () => run($("attendance-nav"), attendance.show));
 
 $("login-form").addEventListener("submit", (event) => {
   event.preventDefault();

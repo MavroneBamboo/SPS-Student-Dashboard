@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -291,8 +292,10 @@ class StudentStatusHistory(Base):
 
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
+    __table_args__ = (Index("uq_session_class_date_type", "class_name", "session_date", "session_type", unique=True),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     session_date: Mapped[date] = mapped_column(Date, index=True)
     session_type: Mapped[str] = mapped_column(String(30))
     class_name: Mapped[str] = mapped_column(String(120), index=True)
@@ -309,6 +312,7 @@ class AttendanceRecord(Base):
     __table_args__ = (UniqueConstraint("session_id", "student_id", name="uq_attendance_session_student"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     session_id: Mapped[int] = mapped_column(ForeignKey("attendance_sessions.id"), index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True)
     attendance_status: Mapped[str] = mapped_column(String(20))
