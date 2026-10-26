@@ -311,7 +311,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             ? `${classItem.code} ${day} ${periodLabels[period]} ${labelFor(placement)}`
             : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
           if (placement) button.addEventListener("click", () => editPlacement(placement, day, period));
-          else if (editableDraft()) button.addEventListener("click", () => addPlacement(classItem, day, period));
+          else if (editableDraft()) button.addEventListener("click", () => run(button, () => addPlacement(classItem, day, period)));
           td.append(button);
         }
         body.append(row);
@@ -409,8 +409,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   function addPlacement(classItem, weekday, startPeriod) {
-    const pending = current.pending.filter((item) =>
-      String(current.snapshot.requirements[String(item.lesson_requirement_id)].instructional_class_id) === String(classItem.id));
+    const pending = current.pending.filter((item) => {
+      const requirement = current.snapshot.requirements[String(item.lesson_requirement_id)];
+      const requirementClass = current.snapshot.classes[String(requirement?.instructional_class_id)];
+      return requirementClass?.code === classItem.code;
+    });
     if (!pending.length) {
       notice(`No unplaced requirements remain for ${classItem.name}.`);
       return;

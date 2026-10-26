@@ -75,6 +75,11 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     assert page.locator(".amend-grid thead tr").inner_text().index("Lunch") < page.locator(".amend-grid thead tr").inner_text().index("P3")
 
     page.get_by_role("button", name=f"Add lesson to C{suffix} MON Period 1", exact=True).click()
+    placement_form = page.locator("#timetable-placement-form")
+    try:
+        expect(placement_form).to_be_visible()
+    except AssertionError as error:
+        raise AssertionError(f"Lesson form did not open; UI status: {page.get_by_role('status').inner_text()}") from error
     expect(page.get_by_role("heading", name="Add lesson block", exact=True)).to_be_visible()
     page.get_by_role("button", name="Save lesson", exact=True).click()
     expect(page.locator(".amend-grid")).to_contain_text(f"S{suffix} · T{suffix}")
