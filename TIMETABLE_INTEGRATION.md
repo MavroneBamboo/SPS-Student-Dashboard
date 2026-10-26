@@ -1,5 +1,7 @@
 # Timetable Integration Notes
 
+Browser delivery boundary (26 October 2026): the production browser shell now supports actual sign-in/rotation, account setup and live dashboard. The timetable APIs remain available, but timetable generation, resources and Amend 4-up are not yet connected to production screens. The approved timetable prototype remains synthetic and separate. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
+
 Generation increment (26 October 2026): the backend supports deterministic weekly generation with bounded iterative repair, shared manual validations, per-block unplaced explanations and persisted revision-linked reports. Fill-pending preserves existing blocks; explicit replace-unlocked retains all locked blocks. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Browser Amend 4-up, fixed events, composite teacher mapping, legacy reconciliation, publishing and PDF rendering remain outstanding; earlier increment descriptions below record their delivery sequence.
 
 ## 1. Source system reviewed
