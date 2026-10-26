@@ -54,7 +54,7 @@
         <form id="create-user-form" class="panel filters">
           <label>New username<input name="username" autocomplete="off" minlength="3" maxlength="120" pattern="[A-Za-z0-9._-]+" required></label>
           <label>Temporary password<input name="temporary_password" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
-          <label>Assigned role<select name="role"><option>IT Administrator</option><option>Operator</option><option>Executive</option><option>Superuser</option></select></label>
+          <label><span id="assigned-role-label">Assigned role</span><select name="role" aria-labelledby="assigned-role-label"><option>IT Administrator</option><option>Operator</option><option>Executive</option><option>Superuser</option></select></label>
           <button type="submit">Create account</button>
         </form>
         <div class="section-bar"><h3>Accounts</h3><button id="refresh-users" class="secondary">Refresh accounts</button></div>
