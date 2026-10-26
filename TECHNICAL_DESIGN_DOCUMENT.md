@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Implementation integrity update (26 October 2026): every timetable mutation must verify that persisted occupied cells exactly match the shared validator's expansion of stored lesson blocks. Compare block ownership, class, teacher, subject, day, teaching period and actual start/end times under the timetable transaction lock. Reject inconsistent drafts with 409 before writes or audit changes; do not approve a block-complete but cell-incomplete timetable. Keep reads available for investigation and require explicit reconciliation or replacement. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+
 ## Technical Design Document
 
 **Version:** 1.0  
