@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Generation delivery note (26 October 2026): the backend supports generating a weekly draft while preserving existing lessons by default. Operators can explicitly regenerate unlocked lessons; locked lessons and approved timetables are protected. Each run saves a report of unplaced blocks and reasons, and incomplete schedules cannot be approved. This is an API increment; the production browser generation/Amend 4-up experience is still to be built. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
+
 ## Product Description Document
 
 **Version:** 1.0  

@@ -7,8 +7,16 @@ from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
-from app.models import TimetablePlacement, TimetableSlot, TimetableVersion, TimetableVersionClass
-from app.schemas import TimetableDraftCreate, TimetableLockRequest, TimetablePlacementWrite, TimetableRevisionRequest, TimetableSwapRequest
+from app.models import AuditEvent, TimetablePlacement, TimetableSlot, TimetableVersion, TimetableVersionClass
+from app.schemas import (
+    TimetableDraftCreate,
+    TimetableGenerateRequest,
+    TimetableLockRequest,
+    TimetablePlacementWrite,
+    TimetableRevisionRequest,
+    TimetableSwapRequest,
+)
+from app.timetable_generation import generate_plan
 from app.timetable_lock import lock_timetable_configuration
 from app.timetable_planning import (
     assert_current_snapshot,
@@ -119,8 +127,10 @@ def _finish(
         str(version.id),
         {"previous_revision": expected_revision, "revision": expected_revision + 1, **details},
     )
+    db.flush()
+    result = _view(db, version)
     db.commit()
-    return _view(db, version)
+    return result
 
 
 def _persist_plan(
@@ -133,6 +143,8 @@ def _persist_plan(
     actor_id: int,
     expected_revision: int,
     action: str,
+    *,
+    details: dict | None = None,
 ) -> dict:
     expanded = validate_plan(snapshot, after)
     actual_ids = {}
@@ -167,6 +179,7 @@ def _persist_plan(
             expected_revision,
             action,
             {
+                **(details or {}),
                 "before": [block for block in before if block["id"] in touched],
                 "after": [{**block, "id": actual_ids.get(block["id"], block["id"])} for block in after if block["id"] in touched],
             },
@@ -327,3 +340,55 @@ def approve_version(version_id: int, payload: TimetableRevisionRequest, db: DbSe
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Timetable approval conflicts with stored data") from exc
+
+
+@router.post("/{version_id}/generate", dependencies=[EDIT_ACCESS])
+def generate_version(version_id: int, payload: TimetableGenerateRequest, db: DbSession, claims: Claims) -> dict:
+    version, snapshot, before = _mutation(db, version_id, payload.expected_revision, claims)
+    after, report = generate_plan(snapshot, before, payload.mode, payload.search_budget)
+    report.update(version_id=version_id, previous_revision=payload.expected_revision, revision=payload.expected_revision + 1)
+    touched = set(report["removed_placement_ids"]) | {block["id"] for block in after if block["id"] < 0}
+    timetable = _persist_plan(
+        db,
+        version,
+        snapshot,
+        before,
+        after,
+        touched,
+        int(claims["sub"]),
+        payload.expected_revision,
+        "timetable.generated",
+        details={"generation": report},
+    )
+    return {"timetable": timetable, "generation": report}
+
+
+@router.get("/{version_id}/generation-reports")
+def generation_reports(
+    version_id: int,
+    db: DbSession,
+    claims: Claims,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[dict]:
+    _get(db, version_id, claims)
+    events = db.scalars(
+        select(AuditEvent)
+        .where(
+            AuditEvent.entity_type == "timetable_version",
+            AuditEvent.entity_id == str(version_id),
+            AuditEvent.action == "timetable.generated",
+        )
+        .order_by(AuditEvent.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "audit_event_id": event.id,
+            "actor_id": event.actor_id,
+            "created_at": event.created_at,
+            "generation": json.loads(event.details_json)["generation"],
+        }
+        for event in events
+    ]

@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Generation increment (26 October 2026): `POST /api/v1/timetable/versions/{id}/generate` uses the shared validator for deterministic first-fit and bounded iterative repair. Default fill preserves every existing block; explicit replace-unlocked preserves all locks. The complete resulting grid, revision and report commit atomically. Reports are retained in audit events and exposed through a paginated version-scoped API. Incomplete runs remain drafts with per-block reasons and an explicit search-limit flag. Response grids are captured under the transaction lock before commit. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md) for contracts, verification and remaining scope.
+
 Implementation integrity update (26 October 2026): every timetable mutation must verify that persisted occupied cells exactly match the shared validator's expansion of stored lesson blocks. Compare block ownership, class, teacher, subject, day, teaching period and actual start/end times under the timetable transaction lock. Reject inconsistent drafts with 409 before writes or audit changes; do not approve a block-complete but cell-incomplete timetable. Keep reads available for investigation and require explicit reconciliation or replacement. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 
 ## Technical Design Document

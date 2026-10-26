@@ -1,5 +1,7 @@
 # Timetable Integration Notes
 
+Generation increment (26 October 2026): the backend supports deterministic weekly generation with bounded iterative repair, shared manual validations, per-block unplaced explanations and persisted revision-linked reports. Fill-pending preserves existing blocks; explicit replace-unlocked retains all locked blocks. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Browser Amend 4-up, fixed events, composite teacher mapping, legacy reconciliation, publishing and PDF rendering remain outstanding; earlier increment descriptions below record their delivery sequence.
+
 ## 1. Source system reviewed
 
 The legacy source is `D:\RPA\TImeTables-legacy`, a .NET 9 Windows Forms application called **Prison School Timetables**. It schedules instructional class groups, teachers, subjects and weekly lesson requirements, then generates two reports:

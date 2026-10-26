@@ -201,7 +201,6 @@ def validate_plan(snapshot: dict, blocks: list[dict], *, require_complete: bool 
                 }
             )
         expanded[block["id"]] = slots
-    pending = pending_requirements(snapshot, blocks)
-    if require_complete and pending:
+    if require_complete and (pending := pending_requirements(snapshot, blocks)):
         raise HTTPException(status_code=409, detail={"message": "Timetable has unplaced lesson requirements", "pending": pending})
     return expanded
