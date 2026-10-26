@@ -1,5 +1,7 @@
 # Timetable Integration Notes
 
+Generation increment (26 October 2026): the backend supports deterministic weekly generation with bounded iterative repair, shared manual validations, per-block unplaced explanations and persisted revision-linked reports. Fill-pending preserves existing blocks; explicit replace-unlocked retains all locked blocks. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Browser Amend 4-up, fixed events, composite teacher mapping, legacy reconciliation, publishing and PDF rendering remain outstanding; earlier increment descriptions below record their delivery sequence.
+
 ## 1. Source system reviewed
 
 The legacy source is `D:\RPA\TImeTables-legacy`, a .NET 9 Windows Forms application called **Prison School Timetables**. It schedules instructional class groups, teachers, subjects and weekly lesson requirements, then generates two reports:
@@ -61,7 +63,7 @@ The clickable prototype now exposes this prerequisite through **Resource setup**
 
 ## 3. Why Amend 4-up is the key capability
 
-The production backend now persists weekly drafts and the operations required by this workspace: add/amend/move, atomic swap, remove and block lock/unlock. It snapshots rules, resource labels/availability and inherited period times, preserves approved history, and reports pending requirement blocks. Edits revalidate the complete resulting grid and current rules under the timetable transaction lock. Approval is IT Administrator-only and requires completeness; Executive reads are approved-only. This is an API delivery; automatic generation, the production browser workspace and report rendering still need implementation. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+The production backend now persists weekly drafts and the operations required by this workspace: add/amend/move, atomic swap, remove and block lock/unlock. It snapshots rules, resource labels/availability and inherited period times, preserves approved history, and reports pending requirement blocks. Edits revalidate the complete resulting grid and current rules under the timetable transaction lock. Approval is IT Administrator-only and requires completeness; Executive reads are approved-only. Generation uses these services and saves revision-linked planning reports. The production browser workspace and report rendering still need implementation. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) and [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
 
 Scheduling-rule resolution now has its own implementation slice: stable class/cluster IDs, inclusive effective dates, validated rule definitions and versioned edits. The resolver must find exactly one applicable rule for every planned class; a class rule and its cluster rule may not overlap. PostgreSQL guards and service validation also prevent membership changes from introducing conflicting scopes. Existing text-only rules remain unresolved until IT explicitly binds or archives them. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md). This supplies the prerequisite service for future generation and manual placement; those workflows still require implementation.
 

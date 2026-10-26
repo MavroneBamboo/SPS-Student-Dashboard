@@ -462,3 +462,141 @@ def test_inconsistent_stored_cells_block_approval_and_all_amendments(timetable_c
     assert ctx["client"].get(path, headers=ctx["headers"]["operator"]).json() == before
     with SessionLocal() as db:
         assert list(db.scalars(select(AuditEvent.id).where(AuditEvent.entity_id == str(version["id"]))).all()) == audit_ids
+
+
+def _generate(ctx, version, **changes):
+    return ctx["client"].post(
+        f"{BASE}/versions/{version['id']}/generate",
+        json={"expected_revision": version["revision"], **changes},
+        headers=ctx["headers"]["operator"],
+    )
+
+
+def test_generation_persists_complete_grid_report_and_preserves_manual_and_locked_blocks(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    version = _place(ctx, _draft(ctx), weekday="FRI").json()
+    path = f"{BASE}/versions/{version['id']}"
+    manual = version["placements"][0]
+    generated = _generate(ctx, version)
+    assert generated.status_code == 200, generated.text
+    data = generated.json()
+    version, report = data["timetable"], data["generation"]
+    assert report["complete"] and report["revision"] == version["revision"] == 3
+    assert version["pending"] == [] and len(version["placements"]) == 2
+    assert next(block for block in version["placements"] if block["id"] == manual["id"]) == manual
+    assert report["preserved_placement_ids"] == [manual["id"]]
+    history = client.get(path + "/generation-reports", headers=headers["operator"])
+    assert history.status_code == 200 and history.json()[0]["generation"] == report
+    assert client.get(path + "/generation-reports", headers=headers["executive"]).status_code == 404
+    assert client.get(path + "/generation-reports", headers=headers["superuser"]).status_code == 403
+    assert client.get(path + "/generation-reports?offset=1", headers=headers["operator"]).json() == []
+    no_op = _generate(ctx, version).json()
+    assert no_op["generation"]["generated_blocks"] == 0
+    assert no_op["timetable"]["placements"] == version["placements"]
+    assert no_op["generation"]["revision"] == 4
+    version = client.patch(
+        path + f"/placements/{manual['id']}/lock", json={"expected_revision": 4, "is_locked": True}, headers=headers["operator"]
+    ).json()
+    locked = next(block for block in version["placements"] if block["id"] == manual["id"])
+    removed_ids = [block["id"] for block in version["placements"] if not block["is_locked"]]
+    replaced = _generate(ctx, version, mode="REPLACE_UNLOCKED")
+    assert replaced.status_code == 200, replaced.text
+    data = replaced.json()
+    assert data["generation"]["removed_placement_ids"] == removed_ids
+    assert next(block for block in data["timetable"]["placements"] if block["id"] == manual["id"]) == locked
+    version = data["timetable"]
+    approved = client.post(path + "/approve", json={"expected_revision": version["revision"]}, headers=headers["admin"])
+    assert approved.status_code == 200
+    assert client.get(path + "/generation-reports", headers=headers["executive"]).status_code == 200
+    assert _generate(ctx, approved.json()).status_code == 409
+
+
+def test_generation_partial_result_cannot_be_approved_and_is_reproducible(timetable_context):
+    ctx = timetable_context
+    rule = ctx["client"].put(
+        f"{BASE}/rules/{ctx['rule_id']}",
+        json={**ctx["rule"], "rule": {"allowed_days": ["MON"], "max_lessons_per_day": 2}, "expected_version": 1, "is_active": True},
+        headers=ctx["headers"]["admin"],
+    )
+    assert rule.status_code == 200, rule.text
+    results = []
+    for _ in range(2):
+        generated = _generate(ctx, _draft(ctx))
+        assert generated.status_code == 200, generated.text
+        results.append(generated.json())
+    first, second = results
+    assert not first["generation"]["complete"] and len(first["generation"]["unplaced"]) == 1
+    assert first["generation"]["unplaced"] == second["generation"]["unplaced"]
+    assert [(row["weekday"], row["start_period"]) for row in first["timetable"]["placements"]] == [
+        (row["weekday"], row["start_period"]) for row in second["timetable"]["placements"]
+    ]
+    assert first["timetable"]["pending"][0]["remaining_periods"] == 2
+    version = first["timetable"]
+    assert (
+        ctx["client"]
+        .post(f"{BASE}/versions/{version['id']}/approve", json={"expected_revision": version["revision"]}, headers=ctx["headers"]["admin"])
+        .status_code
+        == 409
+    )
+
+
+def test_generation_rejects_invalid_access_stale_clients_configuration_and_damaged_grids(timetable_context):
+    ctx = timetable_context
+    version = _draft(ctx)
+    path = f"{BASE}/versions/{version['id']}"
+    for role in ("executive", "superuser"):
+        assert ctx["client"].post(path + "/generate", json={"expected_revision": 1}, headers=ctx["headers"][role]).status_code == 403
+    for changes in ({"search_budget": 0}, {"search_budget": 10001}, {"mode": "REPLACE_ALL"}, {"overwrite_locked": True}):
+        assert _generate(ctx, version, **changes).status_code == 422
+    generated = _generate(ctx, version)
+    assert generated.status_code == 200
+    assert _generate(ctx, version).status_code == 409
+    version = generated.json()["timetable"]
+    with SessionLocal() as db:
+        db.execute(delete(TimetableSlot).where(TimetableSlot.placement_id == version["placements"][0]["id"]))
+        db.commit()
+    assert "Stored timetable cells" in _generate(ctx, version).json()["detail"]
+    replacement = _draft(ctx)
+    with SessionLocal() as db:
+        db.get(Teacher, ctx["lesson"]["teacher_id"]).full_name = "Changed since snapshot"
+        db.commit()
+    response = _generate(ctx, replacement)
+    assert response.status_code == 409 and "configuration changed" in response.json()["detail"]
+    assert ctx["client"].get(f"{BASE}/versions/{replacement['id']}/generation-reports", headers=ctx["headers"]["operator"]).json() == []
+
+
+def test_generation_concurrent_requests_commit_one_grid_and_one_report(timetable_context):
+    ctx = timetable_context
+    version = _draft(ctx)
+    barrier = Barrier(2)
+
+    def run(_):
+        barrier.wait(timeout=10)
+        return _generate(ctx, version)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(run, range(2)))
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    winner = next(response.json() for response in responses if response.status_code == 200)
+    path = f"{BASE}/versions/{version['id']}"
+    assert ctx["client"].get(path, headers=ctx["headers"]["operator"]).json() == winner["timetable"]
+    reports = ctx["client"].get(path + "/generation-reports", headers=ctx["headers"]["operator"]).json()
+    assert len(reports) == 1 and reports[0]["generation"] == winner["generation"]
+
+
+def test_generation_database_failure_rolls_back_replacement_grid_revision_and_report(timetable_context, monkeypatch):
+    from app.routes import timetables
+
+    ctx = timetable_context
+    version = _place(ctx, _draft(ctx), weekday="FRI").json()
+
+    def fail_commit(*args, **kwargs):
+        raise IntegrityError("injected generation failure", {}, Exception("test database conflict"))
+
+    monkeypatch.setattr(timetables, "_finish", fail_commit)
+    response = _generate(ctx, version, mode="REPLACE_UNLOCKED")
+    assert response.status_code == 409
+    path = f"{BASE}/versions/{version['id']}"
+    assert ctx["client"].get(path, headers=ctx["headers"]["operator"]).json() == version
+    assert ctx["client"].get(path + "/generation-reports", headers=ctx["headers"]["operator"]).json() == []

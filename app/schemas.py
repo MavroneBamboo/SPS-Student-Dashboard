@@ -176,6 +176,11 @@ class TimetableLockRequest(TimetableRevisionRequest):
     is_locked: bool
 
 
+class TimetableGenerateRequest(TimetableRevisionRequest):
+    mode: Literal["FILL_PENDING", "REPLACE_UNLOCKED"] = "FILL_PENDING"
+    search_budget: int = Field(default=2000, ge=1, le=10000)
+
+
 WEEKDAYS = ("MON", "TUE", "WED", "THU", "FRI")
 TEACHING_PERIODS = ("P1", "P2", "P3", "P4")
 
