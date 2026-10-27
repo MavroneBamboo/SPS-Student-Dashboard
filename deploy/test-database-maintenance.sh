@@ -49,7 +49,7 @@ export BACKUP_AGE_RECIPIENT="$(docker run --rm --volume "$test_root:/keys:ro" \
 "${compose[@]}" up --detach db
 ready=false
 for attempt in $(seq 1 30); do
-  if "${compose[@]}" exec --no-TTY db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+  if "${compose[@]}" exec --no-TTY db pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
     ready=true
     break
   fi

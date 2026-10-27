@@ -3,7 +3,6 @@ import subprocess
 import time
 from pathlib import Path
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MAINTENANCE_SCRIPT = REPOSITORY_ROOT / "deploy" / "database-maintenance.sh"
 
