@@ -2,7 +2,7 @@
 
 Operators sign in at the production root and select **Student profiles**. Search by identifier/name, class and status; results show 25 records per page with explicit previous/next controls. Open a record to load its current saved values and status history, or select **New student** to create one. No synthetic profile data is loaded into this workflow.
 
-The form covers the profile fields from the supported student intake workbook plus a year-bound age snapshot. The identifier is normalized to uppercase on creation, unique across students and read-only on edit. Category/status remain validated text rather than a hard-coded workbook vocabulary; ACTIVE/INACTIVE are suggestions. `INSTN CLASS` is retained verbatim as `class_name` until controlled institution/class catalogs and their mapping are delivered. Operators can stage, preview and explicitly commit supported 2023 intake workbooks; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md) for file controls and update behavior.
+The form covers the profile fields from the supported student intake workbook plus a year-bound age snapshot. The identifier is normalized to uppercase on creation, unique across students and read-only on edit. Category/status remain validated text rather than a hard-coded workbook vocabulary; ACTIVE/INACTIVE are suggestions. Manual profile edits retain the entered `class_name` until general student catalogs are delivered. Workbook imports resolve source `INSTN CLASS` labels through the IT-managed 2023 class crosswalk and store the target instructional-class name; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
 ## Workbook field mapping
 
@@ -15,7 +15,7 @@ The supplied `Student Intake 2023` header row contains 38 columns. The worksheet
 | EDR/ROS | `edr_ros` | Text |
 | IC | `ic_number` | Application-encrypted |
 | NAME | `name` | Application-encrypted |
-| INSTN CLASS | `class_name` | Source label retained verbatim |
+| INSTN CLASS | `class_name` | Workbook imports use the IT-managed crosswalk's active instructional-class name; manual profile edits remain free text |
 | STATUS | `status` | Validated text with status history |
 | STATUS EFFECTIVE | `status_effective` | Date with status history |
 | ADM TYPE | `admission_type` | Text |

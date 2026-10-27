@@ -221,6 +221,9 @@
             <form id="timetable-class-form" class="profile-fields">
               <h3>Create instructional class</h3><label>Class code<input name="code" maxlength="24" required></label><label>Class name<input name="name" maxlength="120" required></label><button type="submit">Create class</button>
             </form>
+            <form id="student-class-mapping-form" class="profile-fields">
+              <h3>Map intake class label</h3><p>Link an exact class label from the 2023 intake workbook to an active instructional class. Unmapped labels block that import batch.</p><label>Workbook class label<input name="source_label" maxlength="120" required></label><label>Instructional class<select name="instructional_class_id" required></select></label><button type="submit">Save class mapping</button>
+            </form>
             <form id="timetable-cluster-form" class="profile-fields">
               <h3>Create class cluster</h3><label>Cluster code<input name="code" maxlength="24" required></label><label>Cluster name<input name="name" maxlength="120" required></label><button type="submit">Create cluster</button>
             </form>
@@ -242,6 +245,10 @@
             <section><h3>Period definitions</h3><div class="table-wrap"><table><thead><tr><th>Scope</th><th>Target</th><th>Slot</th><th>Label</th><th>Start</th><th>End</th></tr></thead><tbody id="timetable-period-rows"></tbody></table></div></section>
           </div>
         </details>
+        <section id="student-class-mapping-section" class="panel" hidden aria-labelledby="student-class-mapping-title">
+          <h3 id="student-class-mapping-title">Student intake class mappings</h3><p>Operators can review how 2023 workbook class labels map to timetable classes. IT Administrators can change these mappings in Scheduling setup.</p>
+          <div class="table-wrap"><table><thead><tr><th>Workbook</th><th>Source label</th><th>Instructional class</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="student-class-mapping-rows"></tbody></table></div>
+        </section>
         <form id="timetable-lesson-form" class="panel profile-fields">
           <h3>Create weekly lesson requirement</h3><label>Academic year<input name="academic_year" maxlength="20" required></label><label>Instructional class<select name="instructional_class_id" required></select></label><label>Teacher<select name="teacher_id" required></select></label><label>Subject<select name="subject_id" required></select></label><label>Periods per week<input name="weekly_count" type="number" min="1" max="20" value="1" required></label><label>Preferred block length<input name="block_length" type="number" min="1" max="4" value="1" required></label><button type="submit">Save lesson requirement</button>
         </form>

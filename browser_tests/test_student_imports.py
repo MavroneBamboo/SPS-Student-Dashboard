@@ -7,20 +7,21 @@ from sqlalchemy import select
 
 from app.crypto import decrypt_sensitive
 from app.db import SessionLocal
-from app.models import Student
+from app.models import InstructionalClass, Student, StudentClassMapping
+from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 
 from .test_browser import login
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def _workbook(pris_no, *, name, ic_number):
+def _workbook(pris_no, *, name, ic_number, class_label="Browser Intake Class"):
     output = BytesIO()
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Student Intake 2023"
     sheet.append(["S/N", "Pris No.", "CAT", "IC", "NAME", "INSTN CLASS", "STATUS", "STATUS EFFECTIVE"])
-    sheet.append([1, pris_no, "OP", ic_number, name, "Browser Intake Class", "ACTIVE", "2026-01-02"])
+    sheet.append([1, pris_no, "OP", ic_number, name, class_label, "ACTIVE", "2026-01-02"])
     workbook.save(output)
     return output.getvalue()
 
@@ -30,18 +31,50 @@ def _upload(page, *, name, data):
     page.get_by_role("button", name="Upload and preview", exact=True).click()
 
 
+def _create_class_mapping(account, source_label):
+    label, source_key = normalize_source_class_label(source_label)
+    with SessionLocal() as db:
+        instructional_class = InstructionalClass(
+            code="B" + uuid4().hex[:10].upper(),
+            name=f"Canonical {label}",
+            created_by=account["id"],
+        )
+        db.add(instructional_class)
+        db.flush()
+        db.add(
+            StudentClassMapping(
+                source_workbook=STUDENT_INTAKE_2023,
+                source_label=label,
+                source_key=source_key,
+                instructional_class_id=instructional_class.id,
+                created_by=account["id"],
+            )
+        )
+        db.commit()
+
+
 def test_operator_import_preview_create_and_explicit_update_preserves_blank_cells(page, make_account):
     account = make_account()
     pris_no = "BROWSER-IMPORT-" + uuid4().hex[:8].upper()
+    source_class = "Browser Intake " + uuid4().hex[:8]
+    _create_class_mapping(account, source_class)
     login(page, account)
     page.get_by_role("button", name="Student profiles", exact=True).click()
-    _upload(page, name="synthetic-intake.xlsx", data=_workbook(pris_no, name="Original import name", ic_number="SYNTH-BROWSER-IC"))
+    _upload(
+        page,
+        name="synthetic-intake.xlsx",
+        data=_workbook(pris_no, name="Original import name", ic_number="SYNTH-BROWSER-IC", class_label=source_class),
+    )
     expect(page.locator("#student-import-summary")).to_contain_text("1 rows; 1 valid; 0 invalid")
     page.get_by_role("button", name="Create new profiles only", exact=True).click()
     expect(page.locator("#student-import-summary")).to_contain_text("Status: COMMITTED")
     expect(page.get_by_role("status")).to_contain_text("1 created")
 
-    _upload(page, name="updated-intake.xlsx", data=_workbook(pris_no, name="Updated import name", ic_number=None))
+    _upload(
+        page,
+        name="updated-intake.xlsx",
+        data=_workbook(pris_no, name="Updated import name", ic_number=None, class_label=source_class),
+    )
     expect(page.locator("#student-import-summary")).to_contain_text("1 match existing profiles; 0 new identifiers")
     expect(page.get_by_role("button", name="Create new profiles only", exact=True)).to_be_disabled()
     expect(page.get_by_role("button", name="Update existing profiles", exact=True)).to_be_enabled()
@@ -76,9 +109,15 @@ def test_invalid_workbook_preview_shows_field_and_row_without_values(page, make_
 def test_numeric_identity_warning_requires_operator_acknowledgement(page, make_account):
     account = make_account()
     pris_no = "NUMERIC-WARNING-" + uuid4().hex[:8].upper()
+    source_class = "Browser Numeric " + uuid4().hex[:8]
+    _create_class_mapping(account, source_class)
     login(page, account)
     page.get_by_role("button", name="Student profiles", exact=True).click()
-    _upload(page, name="numeric-intake.xlsx", data=_workbook(pris_no, name="Numeric warning student", ic_number=12345678))
+    _upload(
+        page,
+        name="numeric-intake.xlsx",
+        data=_workbook(pris_no, name="Numeric warning student", ic_number=12345678, class_label=source_class),
+    )
     expect(page.locator("#student-import-summary")).to_contain_text("1 data warnings")
     expect(page.locator("#student-import-warning-panel")).to_contain_text("may already have removed leading zeroes")
     expect(page.locator("#student-import-warnings")).to_contain_text(
@@ -92,3 +131,55 @@ def test_numeric_identity_warning_requires_operator_acknowledgement(page, make_a
     with SessionLocal() as db:
         saved = db.scalar(select(Student).where(Student.pris_no == pris_no))
         assert decrypt_sensitive(saved.ic_number_encrypted) == "12345678"
+
+
+def test_it_admin_can_create_and_revise_intake_class_mappings(page, make_account):
+    account = make_account("IT Administrator")
+    source_label = "Legacy Intake " + uuid4().hex[:8]
+    class_code = "IT" + uuid4().hex[:8].upper()
+    login(page, account)
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    setup = page.locator("#timetable-setup")
+    expect(setup).to_be_visible()
+    setup.locator("summary").click()
+    class_form = page.locator("#timetable-class-form")
+    class_form.locator('[name="code"]').fill(class_code)
+    class_form.locator('[name="name"]').fill("Canonical Intake Class")
+    class_form.get_by_role("button", name="Create class").click()
+    expect(page.get_by_role("status")).to_contain_text("Instructional class created")
+
+    mapping_form = page.locator("#student-class-mapping-form")
+    expect(mapping_form).to_be_visible()
+    mapping_form.locator('[name="source_label"]').fill(source_label)
+    mapping_form.locator('[name="instructional_class_id"]').select_option(label=f"{class_code} · Canonical Intake Class")
+    mapping_form.get_by_role("button", name="Save class mapping").click()
+    mapping_row = page.locator("#student-class-mapping-rows tr").filter(has=page.get_by_text(source_label, exact=True))
+    expect(mapping_row).to_contain_text("Canonical Intake Class")
+    expect(mapping_row).to_contain_text("1")
+
+    second_code = "IT" + uuid4().hex[:8].upper()
+    class_form.locator('[name="code"]').fill(second_code)
+    class_form.locator('[name="name"]').fill("Replacement Intake Class")
+    class_form.get_by_role("button", name="Create class").click()
+    mapping_row.get_by_role("combobox", name=f"Target class for {source_label}").select_option(
+        label=f"{second_code} · Replacement Intake Class"
+    )
+    mapping_row.get_by_role("button", name=f"Save mapping for {source_label}").click()
+    expect(mapping_row).to_contain_text("Replacement Intake Class")
+    expect(mapping_row).to_contain_text("2")
+
+
+def test_operator_can_review_but_not_edit_intake_class_mappings(page, make_account):
+    account = make_account()
+    source_label = "Operator Read Only " + uuid4().hex[:8]
+    _create_class_mapping(account, source_label)
+    login(page, account)
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    mapping_section = page.locator("#student-class-mapping-section")
+    expect(mapping_section).to_be_visible()
+    mapping_row = page.locator("#student-class-mapping-rows tr").filter(has=page.get_by_text(source_label, exact=True))
+    expect(mapping_row).to_contain_text(f"Canonical {source_label}")
+    expect(mapping_row.get_by_role("combobox")).to_be_disabled()
+    expect(mapping_row.get_by_role("checkbox")).to_be_disabled()
+    expect(mapping_row.get_by_role("button", name=f"Save mapping for {source_label}")).to_be_disabled()
+    expect(page.locator("#student-class-mapping-form")).to_be_hidden()

@@ -124,6 +124,26 @@ class InstructionalClass(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class StudentClassMapping(Base):
+    __tablename__ = "student_class_mappings"
+    __table_args__ = (
+        UniqueConstraint("source_workbook", "source_key", name="uq_student_class_mapping_source"),
+        CheckConstraint("source_workbook IN ('STUDENT_INTAKE_2023')", name="ck_student_class_mapping_source"),
+        CheckConstraint("version >= 1", name="ck_student_class_mapping_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_workbook: Mapped[str] = mapped_column(String(40))
+    source_label: Mapped[str] = mapped_column(String(120))
+    source_key: Mapped[str] = mapped_column(String(120))
+    instructional_class_id: Mapped[int] = mapped_column(ForeignKey("instructional_classes.id"), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class ClassCluster(Base):
     __tablename__ = "class_clusters"
 

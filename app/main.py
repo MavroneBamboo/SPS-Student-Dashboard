@@ -8,7 +8,20 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import User
-from app.routes import attendance, auth, health, lessons, reports, rules, student_imports, students, timetable_resources, timetables, users
+from app.routes import (
+    attendance,
+    auth,
+    health,
+    lessons,
+    reports,
+    rules,
+    student_imports,
+    student_reference,
+    students,
+    timetable_resources,
+    timetables,
+    users,
+)
 from app.security import hash_password
 
 
@@ -37,6 +50,7 @@ app.include_router(timetable_resources.router, prefix="/api/v1")
 app.include_router(lessons.router, prefix="/api/v1")
 app.include_router(timetables.router, prefix="/api/v1")
 app.include_router(students.router, prefix="/api/v1")
+app.include_router(student_reference.router, prefix="/api/v1")
 app.include_router(student_imports.router, prefix="/api/v1")
 app.include_router(attendance.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
