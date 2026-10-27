@@ -62,11 +62,13 @@ async function api(path, method = "GET", body) {
   const started = epoch;
   const headers = {Accept: "application/json"};
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const rawFile = typeof Blob !== "undefined" && body instanceof Blob;
+  if (rawFile) headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  else if (body !== undefined) headers["Content-Type"] = "application/json";
   let response;
   try {
     response = await fetch(`/api/v1${path}`, {
-      method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+      method, headers, body: body === undefined ? undefined : rawFile ? body : JSON.stringify(body),
       cache: "no-store", credentials: "omit", signal: requests.signal,
     });
   } catch (error) {

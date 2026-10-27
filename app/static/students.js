@@ -4,6 +4,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   let listRequest = 0;
   let detailRequest = 0;
   let hasMore = false;
+  let importBatch = null;
   const pageSize = 25;
   const form = $("profile-form");
   const profileFields = [
@@ -33,6 +34,14 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     listRequest += 1;
     $("profile-rows").replaceChildren();
     $("profile-page").textContent = "";
+    importBatch = null;
+    $("student-import-form").reset();
+    $("student-import-preview").hidden = true;
+    $("student-import-summary").textContent = "";
+    $("student-import-errors").replaceChildren();
+    $("student-import-warnings").replaceChildren();
+    $("student-import-warning-panel").hidden = true;
+    $("student-import-warnings-confirm").checked = false;
   }
   async function list() {
     const request = ++listRequest;
@@ -98,6 +107,82 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     showPanel("profiles");
     await list();
   }
+  function importIssueText(item) {
+    const messages = {
+      duplicate_in_workbook: "duplicate Pris No. within the workbook",
+      excel_error_value: "Excel contains an error value",
+      formula_not_allowed: "formula is not supported in this field",
+      formula_value_missing: "formula has no saved result",
+      identifier_must_be_text: "Pris No. must be stored as text",
+      invalid_date: "use a valid date",
+      invalid_integer: "must be a whole number",
+      invalid_value: "value is invalid",
+      numeric_cell_may_lose_leading_zeros: "numeric Excel cell; leading zeroes or long digits may be lost",
+      numeric_identifier_must_be_integer: "must be a whole number",
+      numeric_identifier_must_be_nonnegative: "must be zero or greater",
+      out_of_range: "must be from 0 to 120",
+      required: "required",
+      required_for_new_profile: "required for a new profile",
+    };
+    return `Workbook row ${item.row_number}, ${item.field}: ${messages[item.code] ?? "check this value"}`;
+  }
+  function renderImport(batch) {
+    importBatch = batch;
+    $("student-import-preview").hidden = false;
+    $("student-import-summary").textContent = `Batch ${batch.id}: ${batch.row_count} rows; ${batch.valid_count} valid; ${batch.invalid_count} invalid; ${batch.warning_count} data warnings; ${batch.existing_count} match existing profiles; ${batch.new_count} new identifiers. Status: ${batch.status}.`;
+    const errors = $("student-import-errors");
+    errors.replaceChildren();
+    for (const item of batch.row_errors) {
+      const line = document.createElement("li");
+      line.textContent = importIssueText(item);
+      errors.append(line);
+    }
+    const warningPanel = $("student-import-warning-panel");
+    warningPanel.hidden = batch.warning_count === 0;
+    const warnings = $("student-import-warnings");
+    warnings.replaceChildren();
+    for (const item of batch.row_warnings) {
+      const line = document.createElement("li");
+      line.textContent = importIssueText(item);
+      warnings.append(line);
+    }
+    $("student-import-warnings-confirm").checked = false;
+    updateImportButtons();
+  }
+  function updateImportButtons() {
+    const confirmed = !importBatch || importBatch.warning_count === 0 || $("student-import-warnings-confirm").checked;
+    $("student-import-create").disabled = !importBatch || importBatch.status !== "PREVIEW" || importBatch.invalid_count > 0 || importBatch.existing_count > 0 || !confirmed;
+    $("student-import-update").disabled = !importBatch || importBatch.status !== "PREVIEW" || importBatch.invalid_count > 0 || importBatch.existing_count === 0 || !confirmed;
+  }
+  $("student-import-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(event.currentTarget, async () => {
+      const file = event.currentTarget.elements.workbook.files[0];
+      if (!file) throw new Error("Choose an .xlsx workbook first.");
+      if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("Only .xlsx workbooks are supported.");
+      if (file.size > 10 * 1024 * 1024) throw new Error("The workbook exceeds the 10 MiB upload limit.");
+      importBatch = null;
+      $("student-import-preview").hidden = true;
+      $("student-import-warnings-confirm").checked = false;
+      renderImport(await api("/student-imports", "POST", file));
+    });
+  });
+  async function commitImport(button, mode) {
+    if (!importBatch) return;
+    await run(button, async () => {
+      const committed = await api(`/student-imports/${importBatch.id}/commit`, "POST", {
+        mode,
+        confirm_data_warnings: $("student-import-warnings-confirm").checked,
+      });
+      renderImport(committed);
+      await list();
+      notice(`Import ${committed.status.toLowerCase()}: ${committed.result?.created ?? 0} created, ${committed.result?.updated ?? 0} updated, ${committed.result?.unchanged ?? 0} unchanged.`);
+    });
+    updateImportButtons();
+  }
+  $("student-import-warnings-confirm").addEventListener("change", updateImportButtons);
+  $("student-import-create").addEventListener("click", (event) => commitImport(event.currentTarget, "CREATE_ONLY"));
+  $("student-import-update").addEventListener("click", (event) => commitImport(event.currentTarget, "UPDATE_EXISTING"));
   $("new-student").addEventListener("click", () => { detailRequest += 1; render(null); notice(); });
   $("cancel-profile").addEventListener("click", close);
   $("reload-profile").addEventListener("click", () => run($("reload-profile"), () => load(selected.id)));

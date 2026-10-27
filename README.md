@@ -22,6 +22,8 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 
 - Operator student profile browser: filtered/paged search, create/edit, status history, duplicate detection and version-checked saves. `PATCH /students/{id}` now requires `expected_version`; see [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
+- Operator intake workbook import: encrypted staging, sanitized preview, row validation, create-only or explicit update-existing mode and atomic version-checked commit. See [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
+
 - Production browser sign-in, forced password rotation, Superuser account administration and committed-data dashboard with real Chromium CI acceptance tests. Browser assets run locally without CDNs; tokens remain only in memory. The remaining production screens and security/deployment gates are documented in [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.
@@ -40,7 +42,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Versioned Alembic schema migrations run as an explicit Compose startup dependency and CI gate.
 - CI test workflow and container-based pytest suite.
 
-This remains an early foundation, not a production-ready release. The APIs currently cover basic student intake/profile history, attendance entry, preliminary dashboard/export endpoints and scheduling-rule storage. Remaining work includes managed user/role administration, Excel imports, complete timetable planning and Amend 4-up lesson placement, approved business-report reconciliation, backup/restore, broader security hardening and a production frontend.
+This remains an early foundation, not a production-ready release. Remaining work includes import class/catalog reconciliation and retention controls, approved business-report reconciliation, reporting/print parity, complete setup/recovery, backup/restore, broader security hardening and deployment readiness.
 
 ## Continuous integration
 

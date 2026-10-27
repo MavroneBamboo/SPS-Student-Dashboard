@@ -12,7 +12,7 @@ Build the system in vertical increments. Each increment must produce a deployabl
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
 
-### Current delivery checkpoint (27 October 2026)
+### Current delivery checkpoint (28 October 2026)
 
 - Operational role increment (26 October): students and attendance require Operator access. Dashboards and exports allow Operator or Executive; audit allows Superuser or IT. Tests use named Operator identities and cover all four roles. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
@@ -22,7 +22,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - Profile browser increment (26 October): Operator profile forms, status history, paged search, atomic version-checked saves and API/Chromium race/privacy/lifecycle checks. Existing-row version migration is additive and covered by preservation rehearsal. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
-- Extended intake-profile increment (27 October): migration `0009` adds the supplied workbook's enrolment, academic, demographic and next-of-kin fields without rewriting current profile data. Sensitive additions are application-encrypted; the browser supports create/read/update/clear with optimistic versioning. Workbook upload/staging, import reconciliation, controlled institution/class/category catalogs and historical assignment tracking remain required.
+- Extended intake-profile increment (27 October): migration `0009` adds the supplied workbook's enrolment, academic, demographic and next-of-kin fields without rewriting current profile data. Sensitive additions are application-encrypted; the browser supports create/read/update/clear with optimistic versioning.
+- Student workbook import increment (28 October): migration `0010` stages the source `.xlsx` and normalized rows as application-encrypted data. Operator upload is bounded and package/header/row validated; the actual age-column cached formulas are consumed, while other formulas are rejected. Numeric IC/NRIC/contact cells require explicit acknowledgement of leading-zero/precision warnings. Preview exposes counts and sanitized row errors/warnings. `CREATE_ONLY` and explicit `UPDATE_EXISTING` commits are atomic, stale-version checked, audited and idempotent. Case/space-normalized `Pris No.` uniqueness is enforced, with migration refusal if legacy collisions need reconciliation. Browser, API, migration, encryption, stale update, duplicate and rollback cases are added. The 2023 sheet is supported; class/catalog reconciliation, 2021 mapping, import retention controls and report parity remain required. See [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
 - Browser increment (26 October): deliver sign-in/rotation, Superuser accounts and live dashboard as the first actual frontend, with local assets and Chromium CI against the API/PostgreSQL. Profile/attendance/resource/timetable forms, full setup/recovery, IT account-management permissions and deployment hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
@@ -36,7 +37,7 @@ The initial release should be delivered in phases over approximately 16–20 wee
 - The defensive validation increment (PR #30) compares persisted cells with validated blocks before every amendment and approval. Regression tests cover missing cells, extra cells and changed block anchors, requiring rejection without revision, grid or audit changes.
 - The production timetable browser increment (PR #37) delivers IT resource forms and class-oriented Amend 4-up with 4/8/12/16 class paging, clickable add/edit/remove/lock, generation and IT approval. Teacher-oriented views, swap/drag, publishing, legacy reconciliation and printable report exports remain outstanding.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
-- Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
+- Local Python execution is unavailable in the current workstation environment; full GitHub CI is the verification gate for this increment. Docker daemon availability must be rechecked before relying on local Compose.
 
 ## 2. Delivery principles
 

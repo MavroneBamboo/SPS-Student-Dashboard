@@ -9,15 +9,35 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     Time,
     UniqueConstraint,
     func,
 )
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql.functions import FunctionElement
 
 from app.db import Base
+
+
+class _SpaceTrim(FunctionElement):
+    type = String()
+    inherit_cache = True
+
+
+@compiles(_SpaceTrim)
+def _compile_space_trim(element, compiler, **kwargs):
+    argument = compiler.process(next(iter(element.clauses)), **kwargs)
+    return f"trim({argument})"
+
+
+@compiles(_SpaceTrim, "postgresql")
+def _compile_postgres_space_trim(element, compiler, **kwargs):
+    argument = compiler.process(next(iter(element.clauses)), **kwargs)
+    return f"btrim({argument})"
 
 
 class User(Base):
@@ -313,6 +333,9 @@ class Student(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+Index("uq_students_pris_no_normalized", func.upper(_SpaceTrim(Student.pris_no)), unique=True)
+
+
 class StudentStatusHistory(Base):
     __tablename__ = "student_status_history"
 
@@ -323,6 +346,29 @@ class StudentStatusHistory(Base):
     effective_date: Mapped[date] = mapped_column(Date)
     changed_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StudentImportBatch(Base):
+    __tablename__ = "student_import_batches"
+    __table_args__ = (
+        CheckConstraint("status IN ('PREVIEW', 'COMMITTED')", name="ck_student_import_status"),
+        CheckConstraint("row_count >= 0 AND valid_count >= 0 AND invalid_count >= 0", name="ck_student_import_counts"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default="PREVIEW", server_default="PREVIEW", index=True)
+    source_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    rows_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    row_count: Mapped[int] = mapped_column(Integer)
+    valid_count: Mapped[int] = mapped_column(Integer)
+    invalid_count: Mapped[int] = mapped_column(Integer)
+    warning_count: Mapped[int] = mapped_column(Integer)
+    existing_count: Mapped[int] = mapped_column(Integer)
+    new_count: Mapped[int] = mapped_column(Integer)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AttendanceSession(Base):
