@@ -153,6 +153,7 @@ function breakdown(id, values) {
 async function showDashboard() {
   const requestId = ++dashboardRequest;
   showPanel("dashboard");
+  if (!$("monthly-attendance-report").elements.month.value) $("monthly-attendance-report").elements.month.value = new Date().toISOString().slice(0, 7);
   const fields = Object.fromEntries(new FormData($("dashboard-filter")));
   if (fields.date_from && fields.date_to && fields.date_from > fields.date_to) throw new Error("Attendance from must be on or before attendance to.");
   const query = new URLSearchParams(Object.entries(fields).filter(([, value]) => value));
@@ -189,6 +190,32 @@ async function showDashboard() {
   }
   $("dashboard-freshness").textContent = `Committed data refreshed ${new Date(data.refreshed_at).toLocaleString()}`;
 }
+const monthlyReportForm = $("monthly-attendance-report");
+monthlyReportForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(form, async () => {
+    const fields = Object.fromEntries(new FormData(form));
+    const query = new URLSearchParams(fields);
+    const response = await fetch(`/api/v1/reports/attendance/monthly.xlsx?${query}`, {
+      headers: {Authorization: `Bearer ${token}`},
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "Could not generate the monthly attendance register.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance-${fields.month}-${fields.class_name.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_")}.xlsx`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+});
 async function showUsers() {
   if (!["Superuser", "IT Administrator"].includes(identity.role)) throw new Error("User administration is not available for this role.");
   showPanel("users");

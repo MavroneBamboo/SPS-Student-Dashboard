@@ -44,6 +44,15 @@
         </form>
         <p id="dashboard-freshness"></p>
         <p>Student totals show current active profiles. Date filters apply to attendance sessions.</p>
+        <section class="panel" aria-labelledby="monthly-report-title">
+          <h3 id="monthly-report-title">Monthly attendance register</h3>
+          <form id="monthly-attendance-report" class="filters">
+            <label>Class<input name="class_name" maxlength="120" required></label>
+            <label>Month<input name="month" type="month" required></label>
+            <button type="submit">Download Excel register</button>
+          </form>
+          <p>Exports the active class roster with AM/PM columns, formatted for printing. Attendance codes: P present, A absent, L late, E excused, M missing.</p>
+        </section>
         <div class="metrics" id="metrics"></div>
         <div class="columns"><section class="panel"><h3>Active students by class</h3><div id="class-counts"></div></section><section class="panel"><h3>Active students by category</h3><div id="category-counts"></div></section></div>
         <section class="panel"><h3>Attendance sessions</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Class</th><th>Session</th><th>Present / late</th><th>Recorded</th><th>Expected</th><th>Rate</th></tr></thead><tbody id="attendance-trend"></tbody></table></div></section>

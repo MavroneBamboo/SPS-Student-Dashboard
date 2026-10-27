@@ -4,6 +4,7 @@ import os
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from app.db import SessionLocal
 from app.main import app
@@ -257,6 +258,66 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         actions = {event["action"] for event in audit.json()}
         assert {"student.created", "attendance.session.created", "attendance.record.created"} <= actions
         assert all("pris_no" not in event["details"] for event in audit.json())
+
+
+def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
+    with TestClient(app) as client:
+        headers = operator_headers(client)
+        class_name = f"MONTHLY-{uuid4().hex[:8]}"
+        pris_no = f"PS-MONTHLY-{uuid4().hex[:8]}"
+        created = client.post(
+            "/api/v1/students",
+            json={"pris_no": pris_no, "name": "Monthly Report Student", "class_name": class_name, "category": "OP", "status": "ACTIVE"},
+            headers=headers,
+        )
+        assert created.status_code == 201
+        for day, period, status in (("2026-10-03", "MORNING", "PRESENT"), ("2026-10-03", "AFTERNOON", "LATE")):
+            session = client.post(
+                "/api/v1/attendance/sessions",
+                json={"session_date": day, "session_type": period, "class_name": class_name, "expected_count": 1},
+                headers=headers,
+            ).json()
+            response = client.post(
+                f"/api/v1/attendance/sessions/{session['id']}/records",
+                json={"pris_no": pris_no, "attendance_status": status, "expected_session_version": session["version"]},
+                headers=headers,
+            )
+            assert response.status_code == 201
+
+        export = client.get(
+            f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=headers
+        )
+        assert export.status_code == 200
+        workbook = load_workbook(io.BytesIO(export.content), data_only=True)
+        sheet = workbook.active
+        assert sheet["A4"].value == "STATUS"
+        assert sheet["B4"].value == "PRIS NO."
+        assert sheet["C4"].value == "NAME"
+        assert sheet["D4"].value == "AM"
+        assert sheet["E4"].value == "PM"
+        assert sheet["H5"].value == "P"
+        assert sheet["I5"].value == "L"
+        assert sheet.freeze_panes == "D5"
+        assert sheet.page_setup.orientation == "landscape"
+        assert export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        bootstrap_headers = login_headers(client)
+        assert client.get(
+            f"/api/v1/reports/attendance/monthly.xlsx?month=2026-13&class_name={class_name}", headers=headers
+        ).status_code == 422
+        admin = client.post(
+            "/api/v1/users",
+            json={"username": f"monthly-admin-{uuid4().hex[:8]}", "temporary_password": "monthly-admin-password", "role": "IT Administrator"},
+            headers=bootstrap_headers,
+        )
+        assert admin.status_code == 201
+        admin_login = client.post(
+            "/api/v1/auth/login", json={"username": admin.json()["username"], "password": "monthly-admin-password"}
+        )
+        admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+        assert client.get(
+            f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=admin_headers
+        ).status_code == 403
 
 
 def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
