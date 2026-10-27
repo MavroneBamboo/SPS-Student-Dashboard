@@ -315,7 +315,7 @@ def test_student_import_upgrade_refuses_normalized_identifier_duplicates_without
 
 def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-class-mappings.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):
