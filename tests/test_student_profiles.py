@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from app.crypto import decrypt_sensitive
 from app.db import SessionLocal
 from app.models import AuditEvent, Student, StudentStatusHistory
 
@@ -79,6 +80,17 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
         {"expected_version": 1, "status_effective": "2026-09-01"},
     ):
         assert client.patch(path, json=body, headers=headers["operator"]).status_code == 422
+    assert client.patch(
+        path, json={"expected_version": 1, "age_in_academic_year": 121}, headers=headers["operator"]
+    ).status_code == 422
+    assert client.patch(
+        path, json={"expected_version": 1, "age_in_academic_year": 20}, headers=headers["operator"]
+    ).status_code == 422
+    assert client.post(
+        BASE,
+        json={"pris_no": "AGE-YEAR-MISSING", "name": "Synthetic", "class_name": "Class", "category": "OP", "age_in_academic_year": 20},
+        headers=headers["operator"],
+    ).status_code == 422
     assert client.get(path, headers=headers["executive"]).status_code == 403
     assert client.patch(path, json={"expected_version": 1, "name": "Denied"}, headers=headers["executive"]).status_code == 403
     assert client.get(f"{BASE}/999999999", headers=headers["operator"]).status_code == 404
@@ -87,6 +99,75 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
     duplicate["pris_no"] = " " + profile["pris_no"].lower() + " "
     assert client.post(BASE, json=duplicate, headers=headers["operator"]).status_code == 409
     assert client.get(BASE + "?limit=101", headers=headers["operator"]).status_code == 422
+
+
+def test_extended_intake_profile_round_trip_encrypts_sensitive_fields_and_allows_clearing(lesson_context):
+    client, headers, _ = lesson_context
+    encrypted_fields = {
+        "ic_number": ("ic_number_encrypted", "SYNTH-IC-001"),
+        "gender": ("gender_encrypted", "Synthetic gender"),
+        "nationality": ("nationality_encrypted", "Synthetic nationality"),
+        "citizenship": ("citizenship_encrypted", "Synthetic citizenship"),
+        "birthplace": ("birthplace_encrypted", "Synthetic birthplace"),
+        "religion": ("religion_encrypted", "Synthetic religion"),
+        "race": ("race_encrypted", "Synthetic race"),
+        "marital_status": ("marital_status_encrypted", "Synthetic marital status"),
+        "next_of_kin_name": ("next_of_kin_name_encrypted", "Synthetic next of kin"),
+        "next_of_kin_nric": ("next_of_kin_nric_encrypted", "SYNTH-NRIC-001"),
+        "next_of_kin_relationship": ("next_of_kin_relationship_encrypted", "Synthetic relationship"),
+        "next_of_kin_contact": ("next_of_kin_contact_encrypted", "0000-0000"),
+        "next_of_kin_address_ports": ("next_of_kin_address_ports_encrypted", "Synthetic port address"),
+        "next_of_kin_address_from_student": ("next_of_kin_address_from_student_encrypted", "Synthetic student address"),
+        "student_contact": ("student_contact_encrypted", "1111-1111"),
+    }
+    plain_fields = {
+        "edr_ros": "Synthetic EDR/ROS",
+        "admission_type": "Synthetic admission",
+        "exam_level": "Synthetic exam level",
+        "academic_year": "2023",
+        "age_in_academic_year": 23,
+        "language_1": "Synthetic language 1",
+        "language_2": "Synthetic language 2",
+        "math_1": "Synthetic math 1",
+        "math_2": "Synthetic math 2",
+        "cpa": "Synthetic CPA",
+        "science": "Synthetic science",
+        "humanities": "Synthetic humanities",
+        "commerce_1": "Synthetic commerce 1",
+        "commerce_2": "Synthetic commerce 2",
+        "commerce_3": "Synthetic commerce 3",
+        "aa": "Synthetic AA",
+    }
+    profile = _create(lesson_context, **{field: value for field, (_, value) in encrypted_fields.items()}, **plain_fields)
+    for field, (_, value) in encrypted_fields.items():
+        assert profile[field] == value
+    for field, value in plain_fields.items():
+        assert profile[field] == value
+
+    with SessionLocal() as db:
+        stored = db.get(Student, profile["id"])
+        for field, (column, value) in encrypted_fields.items():
+            ciphertext = getattr(stored, column)
+            assert ciphertext != value and decrypt_sensitive(ciphertext) == value
+    edited = client.patch(
+        f"{BASE}/{profile['id']}",
+        json={"expected_version": 1, "ic_number": None, "next_of_kin_contact": "2222-2222", "commerce_1": None},
+        headers=headers["operator"],
+    )
+    assert edited.status_code == 200, edited.text
+    saved = edited.json()
+    assert saved["version"] == 2 and saved["ic_number"] is None
+    assert saved["next_of_kin_contact"] == "2222-2222" and saved["commerce_1"] is None
+    with SessionLocal() as db:
+        stored = db.get(Student, profile["id"])
+        assert stored.ic_number_encrypted is None
+        assert stored.next_of_kin_contact_encrypted != "2222-2222"
+        audit = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == "student", AuditEvent.entity_id == str(profile["id"]), AuditEvent.action == "student.updated"
+            )
+        ).one()
+        assert "2222-2222" not in audit.details_json and "SYNTH-NRIC-001" not in audit.details_json
 
 
 def test_profile_search_and_pagination_filter_before_slicing(lesson_context):

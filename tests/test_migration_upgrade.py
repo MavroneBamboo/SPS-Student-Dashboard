@@ -140,6 +140,82 @@ def test_identity_upgrade_preserves_users_or_refuses_casefold_duplicates(tmp_pat
         database.dispose()
 
 
+def test_extended_student_profile_upgrade_preserves_existing_encrypted_profile(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'extended-profile-upgrade.db').as_posix()}"
+    environment = {**os.environ, "DATABASE_URL": database_url}
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    assert migrate("20261026_0008").returncode == 0
+    database = create_engine(database_url)
+    try:
+        before_metadata = MetaData()
+        before_metadata.reflect(bind=database)
+        students = before_metadata.tables["students"]
+        original = {
+            "pris_no": "EXTENDED-UPGRADE-1",
+            "name_encrypted": "preserved-name-ciphertext",
+            "class_name": "Preserved Class",
+            "category": "OP",
+            "status": "ACTIVE",
+            "status_effective": date(2026, 1, 2),
+            "date_of_birth_encrypted": "preserved-dob-ciphertext",
+            "version": 4,
+            "created_by": 1,
+        }
+        with database.begin() as connection:
+            connection.execute(students.insert().values(**original))
+
+        upgraded = migrate("head")
+        assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+        assert migrate("head").returncode == 0
+        after_metadata = MetaData()
+        after_metadata.reflect(bind=database)
+        with database.connect() as connection:
+            saved = connection.execute(select(after_metadata.tables["students"])).mappings().one()
+            assert all(saved[key] == value for key, value in original.items())
+            for column in (
+                "ic_number_encrypted",
+                "gender_encrypted",
+                "nationality_encrypted",
+                "citizenship_encrypted",
+                "birthplace_encrypted",
+                "religion_encrypted",
+                "race_encrypted",
+                "marital_status_encrypted",
+                "next_of_kin_name_encrypted",
+                "next_of_kin_nric_encrypted",
+                "next_of_kin_relationship_encrypted",
+                "next_of_kin_contact_encrypted",
+                "next_of_kin_address_ports_encrypted",
+                "next_of_kin_address_from_student_encrypted",
+                "student_contact_encrypted",
+                "edr_ros",
+                "admission_type",
+                "exam_level",
+                "academic_year",
+                "age_in_academic_year",
+                "language_1",
+                "language_2",
+                "math_1",
+                "math_2",
+                "cpa",
+                "science",
+                "humanities",
+                "commerce_1",
+                "commerce_2",
+                "commerce_3",
+                "aa",
+            ):
+                assert saved[column] is None
+    finally:
+        database.dispose()
+
+
 @pytest.mark.parametrize("duplicate", [False, True])
 def test_attendance_upgrade_preserves_records_or_refuses_ambiguous_sessions(tmp_path, duplicate):
     database_url = f"sqlite:///{(tmp_path / 'attendance-upgrade.db').as_posix()}"

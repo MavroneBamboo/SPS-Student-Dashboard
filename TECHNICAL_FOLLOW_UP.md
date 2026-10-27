@@ -6,7 +6,7 @@ Identity follow-up (26 October 2026): API and browser now support account-wide t
 
 Attendance follow-up (26 October 2026): Operator browser and APIs now support versioned daily sessions/records, corrections, missing review, count controls and closure with audit and row locking. Existing API clients must adopt expected versions and a close request body. Historical roster rules, full-day granularity policy, reopening/corrections, monthly Excel reconciliation and complete permissions remain to implement. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
-Profile follow-up (26 October 2026): the Operator browser now supports core profile search/create/edit/history with encrypted sensitive fields and stale-write protection. Clients must send `expected_version` for PATCH. Full intake fields/catalogs, workbook reconciliation, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+Profile follow-up (27 October 2026): migration `0009` extends profile/API/browser coverage to the supported intake workbook fields, including academic selections and next-of-kin. Sensitive identifiers, demographics, contact and address values are encrypted; clients still send `expected_version` for PATCH. Workbook staging/import/reconciliation, reference catalogs, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
 Browser follow-up (26 October 2026): `/ui/` provides real sign-in, mandatory password change, Superuser account administration, committed-data dashboards, Operator profile/attendance workspaces and a class-oriented timetable workspace. The timetable UI supports IT reference setup, draft creation, clickable placement/edit/remove/lock, generation and IT approval; Chromium CI covers the new paths. Teacher-oriented grids, swap/drag, imports/exports, complete setup/recovery, HTTPS and session hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) and [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 
@@ -138,6 +138,8 @@ The existing `Student Intake 2023` workbook is the migration source. Its importa
 - `STATUS EFFECTIVE`
 - `CAT`
 - profile and next-of-kin fields
+
+The supplied workbook's intake header row contains enrolment classifications (`EDR/ROS`, `ADM TYPE`, `EXAM LEVEL`), IC, DOB and academic-year age, gender, language/math/CPA/science/humanities/commerce/AA selections, nationality/citizenship/birthplace/religion/race/marital status, and next-of-kin name/NRIC/relationship/contact/address plus student contact. The current profile schema and browser now preserve these fields. `S/N` is a worksheet row sequence, not an identifier. `INSTN CLASS` remains the source class label; normalized institution/class catalogs and their crosswalk still need to be implemented and reconciled before import.
 
 Migration steps:
 

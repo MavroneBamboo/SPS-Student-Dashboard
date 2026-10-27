@@ -12,7 +12,7 @@ Build the system in vertical increments. Each increment must produce a deployabl
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
 
-### Current delivery checkpoint (26 October 2026)
+### Current delivery checkpoint (27 October 2026)
 
 - Operational role increment (26 October): students and attendance require Operator access. Dashboards and exports allow Operator or Executive; audit allows Superuser or IT. Tests use named Operator identities and cover all four roles. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
@@ -20,7 +20,9 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - Attendance browser increment (26 October): session create/search, eligible lookup, mark/correct/review, reasoned count adjustment and complete/explicit incomplete closure. Add version/lock/duplicate/migration-race tests and browser acceptance with the feature. Current-profile eligibility is not historical roster parity; granularity, roster snapshots, historical reconciliation, monthly output and full permissions remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
-- Profile browser increment (26 October): core Operator profile forms, status history, paged search, atomic version-checked saves and API/Chromium race/privacy/lifecycle checks. Existing-row version migration is additive and covered by preservation rehearsal. Extended schema, imports/reconciliation, catalogs, historical corrections and permission-matrix hardening remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+- Profile browser increment (26 October): Operator profile forms, status history, paged search, atomic version-checked saves and API/Chromium race/privacy/lifecycle checks. Existing-row version migration is additive and covered by preservation rehearsal. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+
+- Extended intake-profile increment (27 October): migration `0009` adds the supplied workbook's enrolment, academic, demographic and next-of-kin fields without rewriting current profile data. Sensitive additions are application-encrypted; the browser supports create/read/update/clear with optimistic versioning. Workbook upload/staging, import reconciliation, controlled institution/class/category catalogs and historical assignment tracking remain required.
 
 - Browser increment (26 October): deliver sign-in/rotation, Superuser accounts and live dashboard as the first actual frontend, with local assets and Chromium CI against the API/PostgreSQL. Profile/attendance/resource/timetable forms, full setup/recovery, IT account-management permissions and deployment hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
@@ -29,9 +31,10 @@ The initial release should be delivered in phases over approximately 16–20 wee
 - PR #28 is merged and includes the resource setup, persistent lesson requirements and stable-target rule-resolution foundations originally submitted through #26/#27/#28. The earlier #26/#27 PRs are superseded by that merged code.
 - Rule resolution includes typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 - The timetable-draft increment adds weekly snapshots, persistent block/cell placement, full-grid validation for manual changes, revision guards, approval and executive reads of approved versions. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
-- The generation increment adds deterministic first-fit plus bounded repair, default preservation of existing lessons, explicit replacement of unlocked blocks and persisted per-revision reports. It uses the manual validator and transactional placement services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Publishing coordination, resource editing, the production Amend 4-up UI, exports and end-to-end tests remain outstanding.
+- The generation increment adds deterministic first-fit plus bounded repair, default preservation of existing lessons, explicit replacement of unlocked blocks and persisted per-revision reports. It uses the manual validator and transactional placement services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Publishing coordination, teacher-oriented views, swap/drag and report exports remain outstanding.
 - The timetable browser increment adds IT forms for teachers/subjects/classes/clusters/membership/period overrides/rules and lesson requirements. Operators create weekly drafts, page through 4/8/12/16 class grids, add/amend/remove/lock lessons by clicking cells and run generation. IT Administrators approve complete drafts. Chromium acceptance tests cover editing, lunch placement, generation, approval and resource setup. Teacher-oriented grids, drag/swap, publishing, legacy reconciliation and report exports remain outstanding.
-- The next defensive validation increment compares persisted cells with validated blocks before every amendment and approval. Regression tests cover missing cells, extra cells and changed block anchors, requiring rejection without revision, grid or audit changes.
+- The defensive validation increment (PR #30) compares persisted cells with validated blocks before every amendment and approval. Regression tests cover missing cells, extra cells and changed block anchors, requiring rejection without revision, grid or audit changes.
+- The production timetable browser increment (PR #37) delivers IT resource forms and class-oriented Amend 4-up with 4/8/12/16 class paging, clickable add/edit/remove/lock, generation and IT approval. Teacher-oriented views, swap/drag, publishing, legacy reconciliation and printable report exports remain outstanding.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
 - Local Python and Docker execution are unavailable in the current workstation environment; the full GitHub CI workflow remains the required verification gate for this increment.
 
@@ -325,11 +328,10 @@ Before production deployment:
 
 ## 9. Immediate next actions
 
-1. Confirm the remaining identity-integration, hosting, and key-custody decisions with their owners.
-2. Require the Python/security/migration, secret-scan, and container-scan checks in repository branch protection, with MavroneBamboo review before merge.
-3. Continue with the next vertical feature slice and add its business-rule, permission, audit, and migration tests in the same PR.
-4. Extend CI with frontend/browser tests, timetable/import/report invariants, and Compose runtime smoke tests as those capabilities are implemented; add release publication and deployment approval only when a target environment is approved.
-6. Establish the acceptance-test catalogue before profile implementation.
+1. Complete the ordered Dependabot review queue (#20–25), refreshing and rerunning CI after each merge to the protected `main` branch.
+2. Implement controlled institution/class/category reference data and workbook intake upload, staging, validation, preview, commit and reconciliation. Use `Pris No.` as the stable match key; never overwrite on ambiguous name-only matching.
+3. Add a synthetic golden workbook fixture, malformed/oversized/hostile workbook tests, row-level validation tests, duplicate and stale-write tests, and migration preservation coverage with the import feature.
+4. Keep each slice aligned to its CI gates and expand coverage for Compose runtime, import/export, and report reconciliation as those capabilities arrive.
 
 ## 10. Timetable integration workstream
 
