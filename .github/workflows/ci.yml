@@ -33,7 +33,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql+psycopg://sps_app:ci-only-password@localhost:5432/sps_dashboard #gitleaks:allow
+      DATABASE_URL: postgresql+psycopg://sps_runtime:ci-only-runtime-password@localhost:5432/sps_dashboard #gitleaks:allow
+      DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:ci-only-password@localhost:5432/sps_dashboard #gitleaks:allow
+      DATABASE_RUNTIME_PASSWORD: ci-only-runtime-password #gitleaks:allow
       JWT_SECRET: ci-only-jwt-secret-long-enough-for-tests #gitleaks:allow
       BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
       APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
@@ -69,6 +71,9 @@ jobs:
         run: |
           alembic upgrade head
           alembic check
+
+      - name: Provision restricted API database account
+        run: python -m app.db_permissions
 
       - name: Run API and business-rule tests with coverage report
         run: pytest --cov=app --cov-report=term-missing --cov-report=xml
@@ -175,6 +180,9 @@ jobs:
       - name: Validate Compose configuration
         env:
           POSTGRES_PASSWORD: ci-only-password #gitleaks:allow
+          DATABASE_URL: postgresql+psycopg://sps_runtime:ci-only-runtime-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:ci-only-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_RUNTIME_PASSWORD: ci-only-runtime-password #gitleaks:allow
           JWT_SECRET: ci-only-jwt-secret-long-enough-for-compose #gitleaks:allow
           BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
           APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
@@ -183,6 +191,9 @@ jobs:
       - name: Verify staging defaults to localhost-only access
         env:
           POSTGRES_PASSWORD: ci-only-password #gitleaks:allow
+          DATABASE_URL: postgresql+psycopg://sps_runtime:ci-only-runtime-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:ci-only-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_RUNTIME_PASSWORD: ci-only-runtime-password #gitleaks:allow
           JWT_SECRET: ci-only-jwt-secret-long-enough-for-compose #gitleaks:allow
           BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
           APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow

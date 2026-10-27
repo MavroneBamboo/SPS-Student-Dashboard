@@ -8,10 +8,14 @@ import pytest
 from sqlalchemy import LargeBinary, MetaData, create_engine, inspect, select
 
 
+def _migration_environment(database_url: str) -> dict[str, str]:
+    return {**os.environ, "DATABASE_URL": database_url, "DATABASE_ADMIN_URL": database_url}
+
+
 def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_path):
     """Data preservation rehearsal; PostgreSQL DDL/parity is exercised separately in CI."""
     database_url = f"sqlite:///{(tmp_path / 'upgrade.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):
@@ -96,7 +100,7 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
 @pytest.mark.parametrize("duplicate", [False, True])
 def test_identity_upgrade_preserves_users_or_refuses_casefold_duplicates(tmp_path, duplicate):
     database_url = f"sqlite:///{(tmp_path / 'identity-upgrade.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):
@@ -142,7 +146,7 @@ def test_identity_upgrade_preserves_users_or_refuses_casefold_duplicates(tmp_pat
 
 def test_extended_student_profile_upgrade_preserves_existing_encrypted_profile(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'extended-profile-upgrade.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):
@@ -218,7 +222,7 @@ def test_extended_student_profile_upgrade_preserves_existing_encrypted_profile(t
 
 def test_student_import_upgrade_adds_encrypted_staging_without_touching_profiles(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-import-upgrade.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):
@@ -271,7 +275,7 @@ def test_student_import_upgrade_adds_encrypted_staging_without_touching_profiles
 
 def test_student_import_upgrade_refuses_normalized_identifier_duplicates_without_changes(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-import-duplicates.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):
@@ -366,7 +370,7 @@ def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
 @pytest.mark.parametrize("duplicate", [False, True])
 def test_attendance_upgrade_preserves_records_or_refuses_ambiguous_sessions(tmp_path, duplicate):
     database_url = f"sqlite:///{(tmp_path / 'attendance-upgrade.db').as_posix()}"
-    environment = {**os.environ, "DATABASE_URL": database_url}
+    environment = _migration_environment(database_url)
     root = Path(__file__).resolve().parents[1]
 
     def migrate(revision):

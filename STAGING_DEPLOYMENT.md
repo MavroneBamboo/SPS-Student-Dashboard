@@ -27,18 +27,23 @@ Generate a local file with unique values and no copied example secrets:
 ```bash
 install -d -m 700 "$HOME/.config/sps-student-dashboard"
 umask 077
+admin_password="$(openssl rand -hex 24)"
+runtime_password="$(openssl rand -hex 24)"
 cat > "$HOME/.config/sps-student-dashboard/staging.env" <<EOF
 APP_ENV=staging
 STAGING_BIND_ADDRESS=127.0.0.1
 JWT_SECRET=$(openssl rand -hex 32)
 BOOTSTRAP_PASSWORD=$(openssl rand -hex 24)
-POSTGRES_PASSWORD=$(openssl rand -hex 24)
+POSTGRES_PASSWORD=${admin_password}
+DATABASE_ADMIN_URL=postgresql+psycopg://sps_app:${admin_password}@db:5432/sps_dashboard
+DATABASE_RUNTIME_PASSWORD=${runtime_password}
+DATABASE_URL=postgresql+psycopg://sps_runtime:${runtime_password}@db:5432/sps_dashboard
 APP_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
 EOF
 chmod 600 "$HOME/.config/sps-student-dashboard/staging.env"
 ```
 
-Leave `DATABASE_URL` unset so Compose builds it using `POSTGRES_PASSWORD`. Do not use production secrets. The staging data volume and encryption key must be retained together; changing or losing the key makes encrypted staging values unreadable.
+For an existing staging environment file, retain its current `POSTGRES_PASSWORD` because it must continue to unlock the existing named database volume. Generate a separate URL-safe `runtime_password`, then set `DATABASE_RUNTIME_PASSWORD` to it and set `DATABASE_URL` to `postgresql+psycopg://sps_runtime:<runtime_password>@db:5432/sps_dashboard`. Set `DATABASE_ADMIN_URL` to the existing `sps_app` password. The migration service uses that admin URL to upgrade the schema and provision the restricted runtime account; the API receives only the runtime URL. Do not replace an existing staging secrets file with the first-start example. Do not use production secrets. The staging data volume and application encryption key must be retained together; changing or losing the key makes encrypted staging values unreadable.
 
 For the initial manual smoke test, check out `main`, configure the environment file, then run from the repository:
 
