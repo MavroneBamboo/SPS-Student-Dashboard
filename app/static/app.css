@@ -28,6 +28,7 @@ button:hover { background: #1748bb; } button:disabled { opacity: .55; cursor: wa
 .metric strong { display: block; font-size: 30px; margin-top: 14px; }.metric span { color: #52657b; }
 .columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
 .profile-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 16px; }
+.profile-fields h4 { grid-column: 1 / -1; margin: 12px 0 0; }
 #profile-editor { margin-top: 24px; }
 #attendance-editor, #new-session-panel { margin-top: 24px; }
 dl { display: grid; grid-template-columns: 1fr auto; gap: 12px; } dd { margin: 0; font-weight: 700; }

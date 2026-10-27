@@ -6,6 +6,15 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   let hasMore = false;
   const pageSize = 25;
   const form = $("profile-form");
+  const profileFields = [
+    "name", "class_name", "category", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
+    "admission_type", "exam_level", "academic_year", "age_in_academic_year", "gender", "language_1", "language_2",
+    "math_1", "math_2", "cpa", "science", "humanities", "commerce_1", "commerce_2", "commerce_3", "aa",
+    "nationality", "citizenship", "birthplace", "religion", "race", "marital_status", "next_of_kin_name",
+    "next_of_kin_nric", "next_of_kin_relationship", "next_of_kin_contact", "next_of_kin_address_ports",
+    "next_of_kin_address_from_student", "student_contact",
+  ];
+  const optionalTextFields = profileFields.filter((key) => !["name", "class_name", "category", "status", "status_effective", "date_of_birth", "age_in_academic_year"].includes(key));
   const today = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -64,7 +73,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     $("profile-editor-title").textContent = profile ? "Edit student profile" : "New student profile";
     $("profile-version").textContent = profile ? `Saved version ${profile.version}. Reload if another operator has changed this record.` : "Create a new student using a unique Pris No.";
     $("reload-profile").hidden = !profile;
-    for (const key of ["pris_no", "name", "class_name", "category", "status", "status_effective", "date_of_birth"]) {
+    for (const key of ["pris_no", ...profileFields]) {
       form.elements[key].value = profile ? profile[key] ?? "" : key === "status" ? "ACTIVE" : key === "status_effective" ? today() : "";
     }
     form.elements.pris_no.readOnly = Boolean(profile);
@@ -120,11 +129,12 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
       const fields = Object.fromEntries(new FormData(form));
       for (const key of Object.keys(fields)) fields[key] = fields[key].trim();
       fields.status = fields.status.toUpperCase();
-      fields.date_of_birth = fields.date_of_birth || null;
+      for (const key of [...optionalTextFields, "date_of_birth"]) fields[key] = fields[key] || null;
+      fields.age_in_academic_year = fields.age_in_academic_year === "" ? null : Number(fields.age_in_academic_year);
       let payload = fields;
       if (selected) {
         payload = {expected_version: selected.version};
-        for (const key of ["name", "class_name", "category", "status", "status_effective", "date_of_birth"]) {
+        for (const key of profileFields) {
           if (key in fields && fields[key] !== (selected[key] ?? null)) payload[key] = fields[key];
         }
         if (Object.keys(payload).length === 1) { notice("No profile changes to save."); return; }
