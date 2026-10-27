@@ -153,9 +153,7 @@ def attendance_monthly_xlsx(
     first_day = date(year, month_number, 1)
     last_day = date(year, month_number, calendar.monthrange(year, month_number)[1])
     students = db.scalars(
-        select(Student)
-        .where(Student.class_name == class_name, Student.status == "ACTIVE")
-        .order_by(Student.pris_no)
+        select(Student).where(Student.class_name == class_name, Student.status == "ACTIVE").order_by(Student.pris_no)
     ).all()
     sessions = db.scalars(
         select(AttendanceSession)

@@ -3,6 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from openpyxl import load_workbook
 from playwright.sync_api import expect
 
 from app.crypto import encrypt_sensitive
@@ -153,6 +154,56 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
     expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
     expect(page.locator("#metrics")).to_be_empty()
     expect(page.locator("#attendance-trend")).to_be_empty()
+
+
+def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path):
+    account = make_account("Operator")
+    class_name = f"MONTHLY-{uuid4().hex[:8]}"
+    session_date = date.today()
+    with SessionLocal() as db:
+        student = Student(
+            pris_no=f"B-{uuid4().hex[:12]}",
+            name_encrypted=encrypt_sensitive("Monthly Browser Student"),
+            class_name=class_name,
+            category="OP",
+            status="ACTIVE",
+            created_by=account["id"],
+        )
+        session = AttendanceSession(
+            session_date=session_date,
+            session_type="MORNING",
+            class_name=class_name,
+            expected_count=1,
+            created_by=account["id"],
+        )
+        db.add_all([student, session])
+        db.flush()
+        db.add(
+            AttendanceRecord(
+                session_id=session.id,
+                student_id=student.id,
+                attendance_status="PRESENT",
+                created_by=account["id"],
+                updated_by=account["id"],
+            )
+        )
+        db.commit()
+
+    login(page, account)
+    expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
+    report = page.locator("#monthly-attendance-report")
+    report.locator("input[name='class_name']").fill(class_name)
+    report.locator("input[name='month']").fill(session_date.strftime("%Y-%m"))
+    with page.expect_download() as download_info:
+        report.get_by_role("button", name="Download Excel register").click()
+    download = download_info.value
+    assert class_name.replace(" ", "_") in download.suggested_filename
+    target = tmp_path / download.suggested_filename
+    download.save_as(target)
+    sheet = load_workbook(target, data_only=True).active
+    attendance_column = 4 + (session_date.day - 1) * 2
+    assert sheet.cell(4, attendance_column).value == "AM"
+    assert sheet.cell(5, attendance_column).value == "P"
 
 
 def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):

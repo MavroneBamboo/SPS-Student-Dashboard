@@ -284,9 +284,7 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
             )
             assert response.status_code == 201
 
-        export = client.get(
-            f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=headers
-        )
+        export = client.get(f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=headers)
         assert export.status_code == 200
         workbook = load_workbook(io.BytesIO(export.content), data_only=True)
         sheet = workbook.active
@@ -302,22 +300,25 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
         assert export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         bootstrap_headers = login_headers(client)
-        assert client.get(
-            f"/api/v1/reports/attendance/monthly.xlsx?month=2026-13&class_name={class_name}", headers=headers
-        ).status_code == 422
+        assert (
+            client.get(f"/api/v1/reports/attendance/monthly.xlsx?month=2026-13&class_name={class_name}", headers=headers).status_code == 422
+        )
         admin = client.post(
             "/api/v1/users",
-            json={"username": f"monthly-admin-{uuid4().hex[:8]}", "temporary_password": "monthly-admin-password", "role": "IT Administrator"},
+            json={
+                "username": f"monthly-admin-{uuid4().hex[:8]}",
+                "temporary_password": "monthly-admin-password",
+                "role": "IT Administrator",
+            },
             headers=bootstrap_headers,
         )
         assert admin.status_code == 201
-        admin_login = client.post(
-            "/api/v1/auth/login", json={"username": admin.json()["username"], "password": "monthly-admin-password"}
-        )
+        admin_login = client.post("/api/v1/auth/login", json={"username": admin.json()["username"], "password": "monthly-admin-password"})
         admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-        assert client.get(
-            f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=admin_headers
-        ).status_code == 403
+        assert (
+            client.get(f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=admin_headers).status_code
+            == 403
+        )
 
 
 def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():

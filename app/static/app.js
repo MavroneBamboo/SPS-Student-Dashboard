@@ -195,17 +195,31 @@ monthlyReportForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   run(form, async () => {
+    const started = epoch;
+    const activeToken = token;
     const fields = Object.fromEntries(new FormData(form));
     const query = new URLSearchParams(fields);
     const response = await fetch(`/api/v1/reports/attendance/monthly.xlsx?${query}`, {
-      headers: {Authorization: `Bearer ${token}`},
+      headers: {Authorization: `Bearer ${activeToken}`},
       cache: "no-store",
+      credentials: "omit",
+      signal: requests.signal,
     });
+    if (started !== epoch) throw new DOMException("Session changed", "AbortError");
+    if (response.status === 401 && token) {
+      signedOut("Your session ended. Sign in again.");
+      throw new DOMException("Session ended", "AbortError");
+    }
+    if (response.status === 403 && token) {
+      signedOut("Your access changed. Sign in again.");
+      throw new DOMException("Access changed", "AbortError");
+    }
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.detail || "Could not generate the monthly attendance register.");
     }
     const blob = await response.blob();
+    if (started !== epoch || activeToken !== token) throw new DOMException("Session changed", "AbortError");
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -213,7 +227,7 @@ monthlyReportForm.addEventListener("submit", (event) => {
     document.body.append(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 });
 async function showUsers() {

@@ -81,7 +81,7 @@ jobs:
       - name: Install Chromium for browser acceptance tests
         run: python -m playwright install --with-deps chromium
 
-      - name: Run real browser authentication, administration, and dashboard tests
+      - name: Run browser authentication, administration, dashboard, and report-download tests
         run: pytest browser_tests
 
       - name: Upload synthetic browser screenshots
