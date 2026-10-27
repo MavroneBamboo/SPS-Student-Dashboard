@@ -232,7 +232,7 @@ Exit criteria: totals reconcile with approved source data, executive users canno
 Activities:
 
 - Complete end-to-end, security, migration, load and accessibility tests.
-- Test encrypted backups and restore.
+- Test encrypted backups and restore. The initial Compose maintenance slice now provides an age-encrypted PostgreSQL logical backup, no-overwrite atomic publication, empty-target restore, bounded retention pruning, and CI round-trip/tamper coverage. Production scheduling, off-host storage and restore drills remain.
 - Test key rotation and recovery procedures.
 - Run container and dependency vulnerability remediation.
 - Verify network segmentation and database non-exposure.
