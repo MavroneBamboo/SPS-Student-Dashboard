@@ -1,6 +1,8 @@
-FROM postgres:17.2-alpine
+FROM postgres:17.11-alpine3.23
 
-RUN apk add --no-cache age bash
+RUN apk upgrade --no-cache \
+    && apk add --no-cache age bash \
+    && rm -f /usr/local/bin/gosu
 
 COPY deploy/database-maintenance.sh /usr/local/bin/database-maintenance
 RUN chmod 0755 /usr/local/bin/database-maintenance
