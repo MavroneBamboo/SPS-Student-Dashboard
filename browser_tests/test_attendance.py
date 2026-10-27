@@ -73,7 +73,7 @@ def test_operator_attendance_create_lookup_record_correct_count_close_and_dashbo
     expect(page.locator("#attendance-write-panel")).to_be_hidden()
     screenshot(page, "operator-attendance-closed-review")
     page.get_by_role("button", name="Dashboard", exact=True).click()
-    page.get_by_label("Class", exact=True).fill(class_name)
+    page.locator("#dashboard-filter").get_by_label("Class", exact=True).fill(class_name)
     page.get_by_role("button", name="Apply filters", exact=True).click()
     expect(page.locator("#metrics .metric").nth(2)).to_have_text("Missing attendance records1")
     page.get_by_role("button", name="Sign out", exact=True).click()

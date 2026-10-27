@@ -136,7 +136,7 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
     login(page, account)
     expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
     expect(page.locator("#users-nav")).to_be_hidden()
-    page.get_by_label("Class", exact=True).fill(class_name)
+    page.locator("#dashboard-filter").get_by_label("Class", exact=True).fill(class_name)
     page.get_by_label("Attendance from", exact=True).fill("2026-10-20")
     page.get_by_label("Attendance to", exact=True).fill("2026-10-20")
     page.get_by_role("button", name="Apply filters").click()
