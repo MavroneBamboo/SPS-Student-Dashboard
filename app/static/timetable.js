@@ -7,6 +7,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let classes = [];
   let current = null;
   let teachers = [];
+  let draftMutationPending = false;
   let viewBy = "class";
   let pageOffset = 0;
   let detailSequence = 0;
@@ -43,6 +44,28 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   function editableDraft() {
     return canEdit() && current?.status === "DRAFT";
+  }
+
+  function syncDraftMutationControls() {
+    const editable = editableDraft();
+    const approve = $("timetable-approve");
+    $("timetable-generate").disabled = draftMutationPending || !editable;
+    approve.disabled = draftMutationPending || !canApprove() || current?.status !== "DRAFT";
+    for (const id of ["timetable-remove", "timetable-lock"]) $(id).disabled = draftMutationPending || !editable;
+    for (const button of placementForm.querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
+    for (const button of $("timetable-grid").querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
+  }
+
+  async function runDraftMutation(control, action) {
+    if (draftMutationPending) return;
+    draftMutationPending = true;
+    syncDraftMutationControls();
+    try {
+      await run(control, action);
+    } finally {
+      draftMutationPending = false;
+      syncDraftMutationControls();
+    }
   }
 
   function renderVersions() {
@@ -399,6 +422,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-next").hidden = !amendMode;
     if (current && !amendMode) {
       renderWeeklyBoard(host);
+      if (draftMutationPending) {
+        for (const button of host.querySelectorAll("button")) button.disabled = true;
+      }
       return;
     }
     $("timetable-summary").hidden = true;
@@ -438,7 +464,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             slot.instructional_class_id === classItem.id && slot.weekday === day && slot.slot_code === period));
           const button = document.createElement("button");
           button.className = placement ? "lesson-cell" : "empty-cell";
-          button.disabled = !editableDraft();
+          button.disabled = !editableDraft() || draftMutationPending;
           button.textContent = placement ? labelFor(placement) : (editableDraft() ? "+ Add lesson" : "—");
           button.setAttribute("aria-label", placement
             ? `${classItem.code} ${day} ${periodLabels[period]} ${labelFor(placement)}`
@@ -512,7 +538,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
         } else if (viewBy === "teacher") {
           button.className = "free-cell";
           button.textContent = "Free";
-          button.disabled = !editableDraft();
+          button.disabled = !editableDraft() || draftMutationPending;
           if (editableDraft()) button.addEventListener("click", () => addTeacherPlacement(entity, day, period));
         } else {
           button.className = "empty-cell";
@@ -650,6 +676,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-approve").hidden = !canApprove() || current.status !== "DRAFT";
     renderGrid();
     renderPending();
+    syncDraftMutationControls();
   }
 
   async function load(id) {
@@ -701,6 +728,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     form.elements.period_count.disabled = !editableDraft();
     form.elements.note.disabled = !editableDraft();
     form.querySelector('[type="submit"]').hidden = !editableDraft();
+    syncDraftMutationControls();
     form.elements.lesson_requirement_id.focus();
   }
 
@@ -812,12 +840,15 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       notice("Weekly timetable draft created.");
     });
   });
-  placementForm.addEventListener("submit", (event) => run(placementForm, () => savePlacement(event)));
-  $("timetable-remove").addEventListener("click", () => run($("timetable-remove"), removePlacement));
-  $("timetable-lock").addEventListener("click", () => run($("timetable-lock"), toggleLock));
+  placementForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    runDraftMutation(placementForm, () => savePlacement(event));
+  });
+  $("timetable-remove").addEventListener("click", () => runDraftMutation($("timetable-remove"), removePlacement));
+  $("timetable-lock").addEventListener("click", () => runDraftMutation($("timetable-lock"), toggleLock));
   $("timetable-cancel-placement").addEventListener("click", () => { placementForm.hidden = true; });
-  $("timetable-generate").addEventListener("click", () => run($("timetable-generate"), generate));
-  $("timetable-approve").addEventListener("click", () => run($("timetable-approve"), approve));
+  $("timetable-generate").addEventListener("click", () => runDraftMutation($("timetable-generate"), generate));
+  $("timetable-approve").addEventListener("click", () => runDraftMutation($("timetable-approve"), approve));
   $("new-timetable").addEventListener("click", () => {
     const form = $("timetable-create-form");
     form.hidden = !form.hidden;

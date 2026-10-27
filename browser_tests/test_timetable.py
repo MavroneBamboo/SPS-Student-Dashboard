@@ -1,3 +1,4 @@
+import re
 from uuid import uuid4
 
 from playwright.sync_api import expect
@@ -88,7 +89,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     page.locator(".amend-grid .lesson-cell").first.click()
     page.locator('#timetable-placement-form select[name="start_period"]').select_option("P3")
     page.get_by_role("button", name="Save lesson", exact=True).click()
-    expect(page.locator(".amend-grid .lesson-cell").first).to_contain_text(f"S{suffix} · T{suffix}")
+    expect(page.locator(".amend-grid .lesson-cell").first).to_have_attribute("aria-label", re.compile(r"MON P4"))
     page.get_by_role("button", name="Generate timetable", exact=True).click()
     try:
         expect(page.locator("#timetable-generation-summary")).to_contain_text("Generation complete")
