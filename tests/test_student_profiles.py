@@ -146,7 +146,7 @@ def test_extended_intake_profile_round_trip_encrypts_sensitive_fields_and_allows
 
     with SessionLocal() as db:
         stored = db.get(Student, profile["id"])
-        for field, (column, value) in encrypted_fields.items():
+        for _, (column, value) in encrypted_fields.items():
             ciphertext = getattr(stored, column)
             assert ciphertext != value and decrypt_sensitive(ciphertext) == value
     edited = client.patch(
