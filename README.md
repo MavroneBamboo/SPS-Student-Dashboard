@@ -44,6 +44,10 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 
 This remains an early foundation, not a production-ready release. Remaining work includes import class/catalog reconciliation and retention controls, approved business-report reconciliation, reporting/print parity, complete setup/recovery, backup/restore, broader security hardening and deployment readiness.
 
+## WSL laptop staging
+
+The staging CD workflow deploys only a successfully tested push to `main` to a labeled self-hosted runner on the WSL laptop. Pull request tests remain on GitHub-hosted runners. Follow [STAGING_DEPLOYMENT.md](STAGING_DEPLOYMENT.md) to enable Docker Desktop's WSL integration, prepare a local synthetic-data environment, register the `sps-staging` runner and configure the GitHub `staging` environment. The proxy binds to localhost by default. This staging process is not production deployment or a backup/rollback plan.
+
 ## Continuous integration
 
 Pull requests targeting `main` run lint and formatting checks, Python static-security and dependency audits, PostgreSQL-backed API tests with coverage reporting, Alembic migration checks, a production-container build and vulnerability scan, Compose configuration validation, and a full-history secret scan. Weekly Dependabot updates are enabled for Python and GitHub Actions dependencies. CI uses disposable test credentials and an isolated PostgreSQL service; it does not connect to operational data.
