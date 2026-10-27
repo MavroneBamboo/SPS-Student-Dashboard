@@ -4,13 +4,13 @@ This repository contains the production system under construction and the approv
 
 ## Run the foundation locally
 
-Copy `.env.example` to `.env` and replace the sample secrets. Then run:
+Copy `.env.example` to `.env` and replace the sample secrets. Set `DATABASE_RUNTIME_PASSWORD` to a generated URL-safe secret (`python -c "import secrets; print(secrets.token_urlsafe(32))"`) and use the same value in the password component of `DATABASE_URL`. `DATABASE_ADMIN_URL` and `POSTGRES_PASSWORD` must use the same migration-account password. Then run:
 
 ```powershell
 docker compose up --build
 ```
 
-Compose waits for PostgreSQL and applies the versioned schema migration before starting the API. To apply migrations manually during development, run `docker compose run --rm migrate`. The initial migration intentionally refuses downgrade because dropping its tables could destroy operational data; recover through a verified backup or a forward migration.
+Compose waits for PostgreSQL, applies the versioned schema migration, and provisions a SCRAM-authenticated `sps_runtime` role before starting the API. The API role has data read/write and sequence use privileges only; schema changes run through the separate migration account. The migration account is not passed to the API container. To apply migrations manually during development, run `docker compose run --rm migrate`. The initial migration intentionally refuses downgrade because dropping its tables could destroy operational data; recover through a verified backup or a forward migration.
 
 Open `http://localhost:8080/` for the actual sign-in, account administration and committed-data dashboard. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) for the delivered workflow and limitations. The synthetic prototype remains at `http://localhost:8080/prototype/index.html`, and API documentation is at `http://localhost:8080/docs`.
 
@@ -27,6 +27,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Production browser sign-in, forced password rotation, Superuser account administration and committed-data dashboard with real Chromium CI acceptance tests. Browser assets run locally without CDNs; tokens remain only in memory. The remaining production screens and security/deployment gates are documented in [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md).
 
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.
+- Separate PostgreSQL credentials for the migration service and API runtime; the API role cannot create schemas/objects or administer roles/databases. CI verifies its PostgreSQL privileges and SCRAM password storage.
 - Live/readiness health endpoints.
 - Bootstrap Superuser login with short-lived signed JWT access tokens.
 - Mandatory first-login password change; Superuser-only account creation and role assignment with account-activity checks on each authenticated request.

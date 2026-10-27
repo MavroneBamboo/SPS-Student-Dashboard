@@ -17,3 +17,7 @@ Security mutations take one PostgreSQL transaction advisory lock and re-read the
 ## Still required before production acceptance
 
 The reverse proxy now limits `POST /api/v1/auth/login` to 30 requests per minute per client IP, with a burst of 10 and HTTP 429 responses after the burst. CI exercises this behavior through Nginx and a mock API upstream. Persistent sign-in audit, account-level lockout, distributed abuse controls, setup completion and Superuser recovery, TLS/secret handling, session/device-level revocation, and tested backup/restore remain release work. The proxy limit does not replace those controls.
+
+The API process now uses a separate `sps_runtime` PostgreSQL role with table read/write and sequence privileges only; the migration role is confined to the one-shot Compose migration service. CI checks that the runtime identity cannot create database objects or administer roles/databases and that its password is stored as a SCRAM verifier.
+
+Setup completion and Superuser recovery, persistent sign-in audit and account-level failed-login controls, TLS/secret handling, session/device-level revocation, and tested backup/restore remain release work. These increments do not claim those controls are complete.
