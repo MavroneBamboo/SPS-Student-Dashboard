@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Sign-in rate-limit increment (27 October 2026): the Nginx reverse proxy applies a per-client-IP limit to `POST /api/v1/auth/login` and responds with HTTP 429 when a burst exceeds the configured threshold. CI validates the Nginx config and starts a local mock upstream to verify actual throttling. This is network-level protection; account-level lockout and distributed abuse controls remain follow-up work.
+
 Operational permission increment (26 October 2026): all student and attendance routes now enforce Operator server-side; dashboard and attendance CSV enforce Operator/Executive, while audit uses Superuser/IT Administrator. API tests exercise every role across reads and writes. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md) for the exact matrix and remaining authorization work.
 
 Identity increment (26 October 2026): migration `0008` preserves accounts while adding token versions and case-insensitive username uniqueness. JWT validation requires a version and live active user; PostgreSQL advisory locking serializes account mutations and last-administrator checks. IT Administrators manage named accounts except Superusers. Password reset and logout revoke all tokens for one account. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md); full permission separation, setup/recovery and deployment security remain required.
