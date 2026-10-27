@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality-and-tests:
@@ -176,3 +176,29 @@ jobs:
           BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
           APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
         run: docker compose config --quiet
+
+      - name: Verify staging defaults to localhost-only access
+        env:
+          POSTGRES_PASSWORD: ci-only-password #gitleaks:allow
+          JWT_SECRET: ci-only-jwt-secret-long-enough-for-compose #gitleaks:allow
+          BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
+          APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
+        run: docker compose config --format json | jq -e '.services.proxy.ports | any(.host_ip == "127.0.0.1" and .published == "8080" and .target == 80)'
+
+  deploy-staging:
+    name: Deploy staging on WSL laptop
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [quality-and-tests, secret-scan, container]
+    runs-on: [self-hosted, linux, x64, sps-staging]
+    environment:
+      name: staging
+    concurrency:
+      group: sps-staging-deploy
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+      - name: Check out tested main revision
+        uses: actions/checkout@v7
+
+      - name: Deploy and smoke-check staging
+        run: bash scripts/deploy-staging.sh
