@@ -12,19 +12,58 @@ from app.schemas import StudentCreate, StudentResponse, StudentStatusHistoryResp
 
 router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator"))])
 
+ENCRYPTED_PROFILE_FIELDS = {
+    "ic_number": "ic_number_encrypted",
+    "gender": "gender_encrypted",
+    "nationality": "nationality_encrypted",
+    "citizenship": "citizenship_encrypted",
+    "birthplace": "birthplace_encrypted",
+    "religion": "religion_encrypted",
+    "race": "race_encrypted",
+    "marital_status": "marital_status_encrypted",
+    "next_of_kin_name": "next_of_kin_name_encrypted",
+    "next_of_kin_nric": "next_of_kin_nric_encrypted",
+    "next_of_kin_relationship": "next_of_kin_relationship_encrypted",
+    "next_of_kin_contact": "next_of_kin_contact_encrypted",
+    "next_of_kin_address_ports": "next_of_kin_address_ports_encrypted",
+    "next_of_kin_address_from_student": "next_of_kin_address_from_student_encrypted",
+    "student_contact": "student_contact_encrypted",
+}
+PLAIN_PROFILE_FIELDS = (
+    "edr_ros",
+    "admission_type",
+    "exam_level",
+    "academic_year",
+    "age_in_academic_year",
+    "language_1",
+    "language_2",
+    "math_1",
+    "math_2",
+    "cpa",
+    "science",
+    "humanities",
+    "commerce_1",
+    "commerce_2",
+    "commerce_3",
+    "aa",
+)
+
 
 def response(row: Student) -> StudentResponse:
-    return StudentResponse(
-        id=row.id,
-        version=row.version,
-        pris_no=row.pris_no,
-        name=decrypt_sensitive(row.name_encrypted) or "",
-        class_name=row.class_name,
-        category=row.category,
-        status=row.status,
-        status_effective=row.status_effective,
-        date_of_birth=decrypt_sensitive(row.date_of_birth_encrypted),
-    )
+    values = {
+        "id": row.id,
+        "version": row.version,
+        "pris_no": row.pris_no,
+        "name": decrypt_sensitive(row.name_encrypted) or "",
+        "class_name": row.class_name,
+        "category": row.category,
+        "status": row.status,
+        "status_effective": row.status_effective,
+        "date_of_birth": decrypt_sensitive(row.date_of_birth_encrypted),
+    }
+    values.update({field: decrypt_sensitive(getattr(row, column)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
+    values.update({field: getattr(row, field) for field in PLAIN_PROFILE_FIELDS})
+    return StudentResponse(**values)
 
 
 @router.get("", response_model=list[StudentResponse])
@@ -66,6 +105,8 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
     pris_no = payload.pris_no.strip().upper()
     if db.scalar(select(Student).where(Student.pris_no == pris_no)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Pris No. already exists")
+    values = {field: getattr(payload, field) for field in PLAIN_PROFILE_FIELDS}
+    values.update({column: encrypt_sensitive(getattr(payload, field)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
     row = Student(
         pris_no=pris_no,
         name_encrypted=encrypt_sensitive(payload.name.strip()),
@@ -75,6 +116,7 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
         status_effective=payload.status_effective,
         date_of_birth_encrypted=encrypt_sensitive(payload.date_of_birth.isoformat() if payload.date_of_birth else None),
         created_by=int(claims["sub"]),
+        **values,
     )
     db.add(row)
     try:
@@ -106,6 +148,10 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     previous_status = row.status
     if row.version != payload.expected_version:
         raise HTTPException(status_code=409, detail="Student profile changed; reload before saving")
+    age_in_academic_year = changes.get("age_in_academic_year", row.age_in_academic_year)
+    academic_year = changes.get("academic_year", row.academic_year)
+    if age_in_academic_year is not None and not academic_year:
+        raise HTTPException(status_code=422, detail="academic_year is required when age_in_academic_year is provided")
     values = {"version": Student.version + 1}
     for field in ("class_name", "category"):
         if changes.get(field) is not None:
@@ -114,6 +160,12 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
         values["name_encrypted"] = encrypt_sensitive(changes["name"].strip())
     if "date_of_birth" in changes:
         values["date_of_birth_encrypted"] = encrypt_sensitive(changes["date_of_birth"].isoformat() if changes["date_of_birth"] else None)
+    for field, column in ENCRYPTED_PROFILE_FIELDS.items():
+        if field in changes:
+            values[column] = encrypt_sensitive(changes[field])
+    for field in PLAIN_PROFILE_FIELDS:
+        if field in changes:
+            values[field] = changes[field]
     new_status = changes.get("status", previous_status).upper()
     status_changed = new_status != previous_status
     if status_changed:

@@ -50,6 +50,28 @@
       </section>
       <section id="profiles-panel" hidden aria-labelledby="profiles-title">
         <div class="section-bar"><h2 id="profiles-title">Student profiles</h2><button id="new-student">New student</button></div>
+        <section id="student-import-panel" class="panel" aria-labelledby="student-import-title">
+          <h3 id="student-import-title">Import Student Intake workbook</h3>
+          <p>Upload an .xlsx file containing the <strong>Student Intake 2023</strong> sheet. The preview reports row numbers and field errors without displaying student values. Uploads and staged records are encrypted in the database.</p>
+          <form id="student-import-form" class="filters">
+            <label>Intake workbook (.xlsx)<input name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+            <button type="submit">Upload and preview</button>
+          </form>
+          <div id="student-import-preview" hidden>
+            <p id="student-import-summary"></p>
+            <ul id="student-import-errors"></ul>
+            <section id="student-import-warning-panel" class="panel notice-panel" hidden>
+              <p>Some identity or contact values are stored as numbers in Excel. Excel may already have removed leading zeroes or rounded long numbers. Verify these values against the source before importing.</p>
+              <ul id="student-import-warnings"></ul>
+              <label><input id="student-import-warnings-confirm" type="checkbox"> I reviewed and accept these numeric-cell values.</label>
+            </section>
+            <div class="actions">
+              <button id="student-import-create" type="button">Create new profiles only</button>
+              <button id="student-import-update" type="button" class="secondary">Update existing profiles</button>
+            </div>
+            <p>Update-existing mode explicitly updates matching identifiers and creates new ones. Blank workbook cells preserve saved values. A profile changed after preview blocks the whole import.</p>
+          </div>
+        </section>
         <form id="profile-search" class="filters">
           <label>Search identifier or name<input name="q" maxlength="120"></label>
           <label>Profile class filter<input name="class_name" maxlength="120"></label>
@@ -63,6 +85,7 @@
           <div class="section-bar"><h3 id="profile-editor-title">New student profile</h3><button id="cancel-profile" class="secondary">Close profile</button></div>
           <p id="profile-version"></p>
           <form id="profile-form" class="profile-fields">
+            <h4>Identity and enrolment</h4>
             <label>Pris No.<input name="pris_no" maxlength="40" required autocomplete="off"></label>
             <label>Student name<input name="name" maxlength="240" required autocomplete="off"></label>
             <label>Student class<input name="class_name" maxlength="120" required></label>
@@ -70,6 +93,40 @@
             <label>Student status<input name="status" maxlength="40" list="student-statuses" required></label>
             <label>Status effective date<input name="status_effective" type="date" required></label>
             <label>Date of birth<input name="date_of_birth" type="date" autocomplete="off"></label>
+            <label>IC number<input name="ic_number" maxlength="40" autocomplete="off"></label>
+            <label>EDR / ROS<input name="edr_ros" maxlength="80"></label>
+            <label>Admission type<input name="admission_type" maxlength="80"></label>
+            <label>Exam level<input name="exam_level" maxlength="80"></label>
+            <label>Academic year<input name="academic_year" maxlength="20" placeholder="For example, 2023"></label>
+            <label>Age in academic year<input name="age_in_academic_year" type="number" min="0" max="120"></label>
+            <h4>Personal information</h4>
+            <label>Gender<input name="gender" maxlength="40"></label>
+            <label>Nationality<input name="nationality" maxlength="120"></label>
+            <label>Citizenship<input name="citizenship" maxlength="120"></label>
+            <label>Birthplace<input name="birthplace" maxlength="240"></label>
+            <label>Religion<input name="religion" maxlength="120"></label>
+            <label>Race<input name="race" maxlength="120"></label>
+            <label>Marital status<input name="marital_status" maxlength="80"></label>
+            <h4>Academic selections</h4>
+            <label>Language 1<input name="language_1" maxlength="120"></label>
+            <label>Language 2<input name="language_2" maxlength="120"></label>
+            <label>Math 1<input name="math_1" maxlength="120"></label>
+            <label>Math 2<input name="math_2" maxlength="120"></label>
+            <label>CPA<input name="cpa" maxlength="120"></label>
+            <label>Science<input name="science" maxlength="120"></label>
+            <label>Humanities<input name="humanities" maxlength="120"></label>
+            <label>Commerce 1<input name="commerce_1" maxlength="120"></label>
+            <label>Commerce 2<input name="commerce_2" maxlength="120"></label>
+            <label>Commerce 3<input name="commerce_3" maxlength="120"></label>
+            <label>AA<input name="aa" maxlength="120"></label>
+            <h4>Next of kin and contact</h4>
+            <label>Next-of-kin name<input name="next_of_kin_name" maxlength="240"></label>
+            <label>Next-of-kin NRIC<input name="next_of_kin_nric" maxlength="40" autocomplete="off"></label>
+            <label>Next-of-kin relationship<input name="next_of_kin_relationship" maxlength="120"></label>
+            <label>Next-of-kin contact number<input name="next_of_kin_contact" maxlength="80" autocomplete="off"></label>
+            <label>Next-of-kin address (ports)<textarea name="next_of_kin_address_ports" maxlength="1500" rows="2"></textarea></label>
+            <label>Next-of-kin address (from student)<textarea name="next_of_kin_address_from_student" maxlength="1500" rows="2"></textarea></label>
+            <label>Student contact number<input name="student_contact" maxlength="80" autocomplete="off"></label>
             <div class="actions"><button type="submit">Save profile</button><button id="reload-profile" type="button" class="secondary" hidden>Reload saved profile</button></div>
           </form>
           <datalist id="student-statuses"><option value="ACTIVE"></option><option value="INACTIVE"></option></datalist>

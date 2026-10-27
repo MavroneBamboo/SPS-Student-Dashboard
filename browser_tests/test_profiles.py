@@ -29,13 +29,23 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     pris_no = "BP-" + uuid4().hex[:10].upper()
     login(page, account)
     page.get_by_role("button", name="Student profiles", exact=True).click()
+    profile_form = page.locator("#profile-form")
     _search(page, pris_no)
     expect(page.locator("#profile-rows")).to_contain_text("No student profiles")
     page.get_by_role("button", name="New student", exact=True).click()
     _fill_profile(page, pris_no.lower(), "Browser <img src=x onerror=alert(1)>")
+    page.get_by_label("IC number", exact=True).fill("SYNTH-IC-BROWSER-1")
+    profile_form.get_by_label("Academic year", exact=True).fill("2023")
+    profile_form.get_by_label("Age in academic year", exact=True).fill("23")
+    page.get_by_label("Next-of-kin NRIC", exact=True).fill("SYNTH-NRIC-BROWSER-1")
+    page.get_by_label("Next-of-kin contact number", exact=True).fill("0000-1111")
+    page.get_by_label("Language 1", exact=True).fill("Synthetic language")
     page.get_by_role("button", name="Save profile", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text(f"Saved student {pris_no}")
     expect(page.locator("#profile-version")).to_contain_text("Saved version 1")
+    expect(page.get_by_label("IC number", exact=True)).to_have_value("SYNTH-IC-BROWSER-1")
+    expect(profile_form.get_by_label("Academic year", exact=True)).to_have_value("2023")
+    expect(page.get_by_label("Next-of-kin NRIC", exact=True)).to_have_value("SYNTH-NRIC-BROWSER-1")
     expect(page.locator("#profile-rows")).to_contain_text("Browser <img")
     assert page.locator("#profile-rows img").count() == 0
     assert page.get_by_label("Pris No.", exact=True).get_attribute("readonly") is not None
@@ -45,6 +55,8 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     expect(page.get_by_role("status")).to_contain_text("Pris No. already exists")
     page.get_by_role("button", name="Close profile", exact=True).click()
     page.get_by_role("button", name=f"Open {pris_no}", exact=True).click()
+    page.get_by_label("Next-of-kin contact number", exact=True).fill("")
+    page.get_by_label("Next-of-kin NRIC", exact=True).fill("SYNTH-NRIC-BROWSER-2")
     page.get_by_label("Student name", exact=True).fill("Revised Browser Profile")
     page.get_by_label("Student status", exact=True).fill("INACTIVE")
     page.get_by_label("Status effective date", exact=True).fill("2026-10-02")
@@ -59,6 +71,9 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     with SessionLocal() as db:
         stored = db.scalar(select(Student).where(Student.pris_no == pris_no))
         assert stored.name_encrypted != "Revised Browser Profile" and stored.date_of_birth_encrypted is None
+        assert stored.ic_number_encrypted != "SYNTH-IC-BROWSER-1"
+        assert stored.next_of_kin_nric_encrypted != "SYNTH-NRIC-BROWSER-2"
+        assert stored.next_of_kin_contact_encrypted is None
     screenshot(page, "operator-profile-edit-history")
     page.get_by_role("button", name="Dashboard", exact=True).click()
     page.get_by_label("Class", exact=True).fill("Browser Profile Class")
@@ -68,6 +83,7 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     expect(page.locator("#profile-rows")).to_be_empty()
     expect(page.locator("#profile-history")).to_be_empty()
     expect(page.get_by_label("Student name", exact=True)).to_have_value("")
+    expect(page.get_by_label("Next-of-kin NRIC", exact=True)).to_have_value("")
 
 
 def test_stale_profile_save_preserves_form_requires_reload_and_revoked_access_clears_data(page, make_account, live_url):

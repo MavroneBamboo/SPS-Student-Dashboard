@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from sqlalchemy import MetaData, create_engine, inspect, select
+from sqlalchemy import LargeBinary, MetaData, create_engine, inspect, select
 
 
 def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_path):
@@ -136,6 +136,175 @@ def test_identity_upgrade_preserves_users_or_refuses_casefold_duplicates(tmp_pat
                 current = MetaData()
                 current.reflect(bind=connection)
                 assert connection.execute(select(current.tables["users"].c.token_version)).scalar_one() == 0
+    finally:
+        database.dispose()
+
+
+def test_extended_student_profile_upgrade_preserves_existing_encrypted_profile(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'extended-profile-upgrade.db').as_posix()}"
+    environment = {**os.environ, "DATABASE_URL": database_url}
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    assert migrate("20261026_0008").returncode == 0
+    database = create_engine(database_url)
+    try:
+        before_metadata = MetaData()
+        before_metadata.reflect(bind=database)
+        students = before_metadata.tables["students"]
+        original = {
+            "pris_no": "EXTENDED-UPGRADE-1",
+            "name_encrypted": "preserved-name-ciphertext",
+            "class_name": "Preserved Class",
+            "category": "OP",
+            "status": "ACTIVE",
+            "status_effective": date(2026, 1, 2),
+            "date_of_birth_encrypted": "preserved-dob-ciphertext",
+            "version": 4,
+            "created_by": 1,
+        }
+        with database.begin() as connection:
+            connection.execute(students.insert().values(**original))
+
+        upgraded = migrate("head")
+        assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+        assert migrate("head").returncode == 0
+        after_metadata = MetaData()
+        after_metadata.reflect(bind=database)
+        with database.connect() as connection:
+            saved = connection.execute(select(after_metadata.tables["students"])).mappings().one()
+            assert all(saved[key] == value for key, value in original.items())
+            for column in (
+                "ic_number_encrypted",
+                "gender_encrypted",
+                "nationality_encrypted",
+                "citizenship_encrypted",
+                "birthplace_encrypted",
+                "religion_encrypted",
+                "race_encrypted",
+                "marital_status_encrypted",
+                "next_of_kin_name_encrypted",
+                "next_of_kin_nric_encrypted",
+                "next_of_kin_relationship_encrypted",
+                "next_of_kin_contact_encrypted",
+                "next_of_kin_address_ports_encrypted",
+                "next_of_kin_address_from_student_encrypted",
+                "student_contact_encrypted",
+                "edr_ros",
+                "admission_type",
+                "exam_level",
+                "academic_year",
+                "age_in_academic_year",
+                "language_1",
+                "language_2",
+                "math_1",
+                "math_2",
+                "cpa",
+                "science",
+                "humanities",
+                "commerce_1",
+                "commerce_2",
+                "commerce_3",
+                "aa",
+            ):
+                assert saved[column] is None
+    finally:
+        database.dispose()
+
+
+def test_student_import_upgrade_adds_encrypted_staging_without_touching_profiles(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-import-upgrade.db').as_posix()}"
+    environment = {**os.environ, "DATABASE_URL": database_url}
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    assert migrate("20261027_0009").returncode == 0
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        users, students = metadata.tables["users"], metadata.tables["students"]
+        original = {
+            "pris_no": "IMPORT-UPGRADE-1",
+            "name_encrypted": "existing-encrypted-name",
+            "class_name": "Preserved Import Class",
+            "category": "OP",
+            "status": "ACTIVE",
+            "ic_number_encrypted": "existing-encrypted-ic",
+            "created_by": 1,
+        }
+        with database.begin() as connection:
+            connection.execute(
+                users.insert().values(
+                    id=1,
+                    username="import-upgrade",
+                    password_hash="preserved-hash",
+                    role="Operator",
+                    must_change_password=False,
+                    is_active=True,
+                )
+            )
+            connection.execute(students.insert().values(**original))
+        upgraded = migrate("head")
+        assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+        assert migrate("head").returncode == 0
+        after = MetaData()
+        after.reflect(bind=database)
+        assert "student_import_batches" in after.tables
+        columns = {column["name"]: column["type"] for column in inspect(database).get_columns("student_import_batches")}
+        assert isinstance(columns["source_ciphertext"], LargeBinary)
+        with database.connect() as connection:
+            saved = connection.execute(select(after.tables["students"])).mappings().one()
+            assert all(saved[key] == value for key, value in original.items())
+            assert connection.execute(select(after.tables["student_import_batches"])).first() is None
+    finally:
+        database.dispose()
+
+
+def test_student_import_upgrade_refuses_normalized_identifier_duplicates_without_changes(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-import-duplicates.db').as_posix()}"
+    environment = {**os.environ, "DATABASE_URL": database_url}
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    assert migrate("20261027_0009").returncode == 0
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        students = metadata.tables["students"]
+        with database.begin() as connection:
+            for id_, pris_no in ((1, "DUPLICATE-IMPORT"), (2, " duplicate-import ")):
+                connection.execute(
+                    students.insert().values(
+                        id=id_,
+                        pris_no=pris_no,
+                        name_encrypted=f"preserved-{id_}",
+                        class_name="Legacy",
+                        category="OP",
+                        status="ACTIVE",
+                        created_by=1,
+                    )
+                )
+            original = list(connection.execute(select(students)))
+        upgraded = migrate("head")
+        assert upgraded.returncode != 0 and "Normalized duplicate Pris No." in upgraded.stderr
+        with database.connect() as connection:
+            assert list(connection.execute(select(students))) == original
+            assert "student_import_batches" not in inspect(database).get_table_names()
+            assert "uq_students_pris_no_normalized" not in {index["name"] for index in inspect(database).get_indexes("students")}
     finally:
         database.dispose()
 

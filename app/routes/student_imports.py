@@ -1,0 +1,349 @@
+import json
+from datetime import UTC, date, datetime
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
+
+from app.audit import record_event
+from app.crypto import decrypt_sensitive, decrypt_sensitive_bytes, encrypt_sensitive, encrypt_sensitive_bytes
+from app.deps import Claims, DbSession, require_roles
+from app.models import Student, StudentImportBatch, StudentStatusHistory
+from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
+from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
+
+router = APIRouter(prefix="/student-imports", tags=["student imports"], dependencies=[Depends(require_roles("Operator"))])
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+class ImportRowError(BaseModel):
+    row_number: int
+    field: str
+    code: str
+
+
+class ImportRowWarning(BaseModel):
+    row_number: int
+    field: str
+    code: str
+
+
+class ImportBatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    status: str
+    row_count: int
+    valid_count: int
+    invalid_count: int
+    warning_count: int
+    existing_count: int
+    new_count: int
+    row_errors: list[ImportRowError]
+    row_warnings: list[ImportRowWarning]
+    result: dict | None = None
+
+
+class ImportCommitRequest(BaseModel):
+    mode: Literal["CREATE_ONLY", "UPDATE_EXISTING"]
+    confirm_data_warnings: bool = False
+
+
+def _safe_batch_view(batch: StudentImportBatch) -> ImportBatchResponse:
+    try:
+        staged = json.loads(decrypt_sensitive_bytes(batch.rows_ciphertext))
+        result = json.loads(batch.result_json) if batch.result_json else None
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="Stored import batch could not be read") from exc
+    errors = [
+        ImportRowError(row_number=row["row_number"], field=error["field"], code=error["code"]) for row in staged for error in row["errors"]
+    ]
+    warnings = [
+        ImportRowWarning(row_number=row["row_number"], field=warning["field"], code=warning["code"])
+        for row in staged
+        for warning in row["warnings"]
+    ]
+    return ImportBatchResponse(
+        id=batch.id,
+        status=batch.status,
+        row_count=batch.row_count,
+        valid_count=batch.valid_count,
+        invalid_count=batch.invalid_count,
+        warning_count=batch.warning_count,
+        existing_count=batch.existing_count,
+        new_count=batch.new_count,
+        row_errors=errors,
+        row_warnings=warnings,
+        result=result,
+    )
+
+
+def _load_owned_batch(db, batch_id: int, actor_id: int, *, lock: bool = False) -> StudentImportBatch:
+    query = select(StudentImportBatch).where(StudentImportBatch.id == batch_id, StudentImportBatch.created_by == actor_id)
+    if lock:
+        query = query.with_for_update()
+    batch = db.scalar(query)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Import batch not found")
+    return batch
+
+
+def _stored_fields(row: Student) -> dict:
+    values = {field: getattr(row, field) for field in PLAIN_PROFILE_FIELDS}
+    values.update({field: decrypt_sensitive(getattr(row, column)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
+    values.update(
+        {
+            "pris_no": row.pris_no,
+            "name": decrypt_sensitive(row.name_encrypted),
+            "class_name": row.class_name,
+            "category": row.category,
+            "status": row.status,
+            "status_effective": row.status_effective.isoformat() if row.status_effective else None,
+            "date_of_birth": decrypt_sensitive(row.date_of_birth_encrypted),
+        }
+    )
+    return values
+
+
+def _database_values(fields: dict) -> dict:
+    values = {field: fields.get(field) for field in PLAIN_PROFILE_FIELDS if field in fields}
+    values.update({column: encrypt_sensitive(fields.get(field)) for field, column in ENCRYPTED_PROFILE_FIELDS.items() if field in fields})
+    if "name" in fields:
+        values["name_encrypted"] = encrypt_sensitive(fields["name"])
+    if "date_of_birth" in fields:
+        value = fields["date_of_birth"]
+        values["date_of_birth_encrypted"] = encrypt_sensitive(value)
+    return values
+
+
+@router.post("", response_model=ImportBatchResponse, status_code=status.HTTP_201_CREATED)
+async def upload_student_workbook(request: Request, db: DbSession, claims: Claims) -> ImportBatchResponse:
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != XLSX_MEDIA_TYPE:
+        raise HTTPException(status_code=415, detail="Upload an .xlsx Student Intake workbook")
+    declared_length = request.headers.get("content-length")
+    if declared_length and declared_length.isdigit() and int(declared_length) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Workbook exceeds the upload limit")
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Workbook exceeds the upload limit")
+        content.extend(chunk)
+    if not content:
+        raise HTTPException(status_code=400, detail="Workbook is empty")
+    source = bytes(content)
+    try:
+        rows = parse_student_workbook(source)
+    except ImportFileError as exc:
+        if exc.code == "file_too_large":
+            raise HTTPException(status_code=413, detail="Workbook exceeds the upload limit") from exc
+        raise HTTPException(status_code=422, detail=f"Workbook could not be imported ({exc.code})") from exc
+
+    try:
+        mark_duplicate_identifiers(rows)
+        identifiers = {row["fields"].get("pris_no", "").strip().upper() for row in rows if row["fields"].get("pris_no")}
+        existing = db.scalars(select(Student).where(func.upper(func.trim(Student.pris_no)).in_(identifiers))).all() if identifiers else []
+        existing_by_identifier = {row.pris_no.strip().upper(): row for row in existing}
+        for row in rows:
+            pris_no = row["fields"].get("pris_no")
+            saved = existing_by_identifier.get(pris_no.strip().upper()) if pris_no else None
+            row["existing_student_id"] = saved.id if saved else None
+            row["expected_version"] = saved.version if saved else None
+            if saved is None:
+                for field in ("name", "class_name", "category", "status"):
+                    if row["fields"].get(field) is None:
+                        row["errors"].append({"field": field, "code": "required_for_new_profile"})
+        valid_rows = [row for row in rows if not row["errors"]]
+        existing_count = sum(row["existing_student_id"] is not None for row in valid_rows)
+        batch = StudentImportBatch(
+            status="PREVIEW",
+            source_ciphertext=encrypt_sensitive_bytes(source),
+            rows_ciphertext=encrypt_sensitive_bytes(json.dumps(rows, separators=(",", ":"), sort_keys=True).encode()),
+            row_count=len(rows),
+            valid_count=len(valid_rows),
+            invalid_count=len(rows) - len(valid_rows),
+            warning_count=sum(len(row["warnings"]) for row in rows),
+            existing_count=existing_count,
+            new_count=len(valid_rows) - existing_count,
+            created_by=int(claims["sub"]),
+        )
+        db.add(batch)
+        db.flush()
+        record_event(
+            db,
+            int(claims["sub"]),
+            "student.import_batch.created",
+            "student_import_batch",
+            str(batch.id),
+            {
+                "row_count": batch.row_count,
+                "valid_count": batch.valid_count,
+                "invalid_count": batch.invalid_count,
+                "warning_count": batch.warning_count,
+            },
+        )
+        db.commit()
+        db.refresh(batch)
+        return _safe_batch_view(batch)
+    finally:
+        content.clear()
+
+
+@router.get("/{batch_id}", response_model=ImportBatchResponse)
+def get_student_import(batch_id: int, db: DbSession, claims: Claims) -> ImportBatchResponse:
+    return _safe_batch_view(_load_owned_batch(db, batch_id, int(claims["sub"])))
+
+
+@router.post("/{batch_id}/commit", response_model=ImportBatchResponse)
+def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSession, claims: Claims) -> ImportBatchResponse:
+    actor_id = int(claims["sub"])
+    batch = _load_owned_batch(db, batch_id, actor_id, lock=True)
+    if batch.status == "COMMITTED":
+        return _safe_batch_view(batch)
+    if batch.invalid_count:
+        raise HTTPException(status_code=409, detail="Resolve all invalid workbook rows before committing")
+    if batch.warning_count and not payload.confirm_data_warnings:
+        raise HTTPException(status_code=409, detail="Confirm the workbook data warnings before committing")
+    try:
+        staged = json.loads(decrypt_sensitive_bytes(batch.rows_ciphertext))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="Stored import batch could not be read") from exc
+
+    identifiers = [row["fields"]["pris_no"].strip().upper() for row in staged]
+    current_rows = db.scalars(select(Student).where(func.upper(func.trim(Student.pris_no)).in_(identifiers)).with_for_update()).all()
+    current = {row.pris_no.strip().upper(): row for row in current_rows}
+    for staged_row in staged:
+        key = staged_row["fields"]["pris_no"].strip().upper()
+        student = current.get(key)
+        if staged_row["existing_student_id"] is None:
+            if student is not None:
+                db.rollback()
+                raise HTTPException(status_code=409, detail="Student identifiers changed after preview; upload the workbook again")
+        elif student is None or student.id != staged_row["existing_student_id"] or student.version != staged_row["expected_version"]:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="A student profile changed after preview; upload the workbook again")
+    if payload.mode == "CREATE_ONLY" and current:
+        raise HTTPException(status_code=409, detail="Existing student identifiers require explicit update-existing mode")
+
+    created = updated = unchanged = 0
+    try:
+        for staged_row in staged:
+            fields = staged_row["fields"]
+            key = fields["pris_no"].strip().upper()
+            student = current.get(key)
+            if student is None:
+                values = _database_values(fields)
+                student = Student(
+                    pris_no=key,
+                    class_name=fields["class_name"].strip(),
+                    category=fields["category"].strip(),
+                    status=fields["status"].strip().upper(),
+                    status_effective=date.fromisoformat(fields["status_effective"]) if fields.get("status_effective") else None,
+                    created_by=actor_id,
+                    **{k: v for k, v in values.items() if k not in {"class_name", "category", "status", "status_effective"}},
+                )
+                db.add(student)
+                db.flush()
+                db.add(
+                    StudentStatusHistory(
+                        student_id=student.id,
+                        previous_status=None,
+                        new_status=student.status,
+                        effective_date=student.status_effective or date.today(),
+                        changed_by=actor_id,
+                    )
+                )
+                record_event(
+                    db,
+                    actor_id,
+                    "student.imported",
+                    "student",
+                    str(student.id),
+                    {
+                        "fields": sorted(fields.keys()),
+                        "import_batch_id": batch.id,
+                        "source_row": staged_row["row_number"],
+                        "version": student.version,
+                    },
+                )
+                created += 1
+                current[key] = student
+                continue
+
+            previous = _stored_fields(student)
+            changes = {
+                field: value for field, value in fields.items() if value is not None and field not in {"pris_no", "status_effective"}
+            }
+            next_status = str(fields.get("status") or student.status).strip().upper()
+            status_changed = fields.get("status") is not None and next_status != student.status
+            if status_changed:
+                changes["status"] = next_status
+                changes["status_effective"] = fields.get("status_effective") or date.today().isoformat()
+            changed_fields = {field: value for field, value in changes.items() if value != previous.get(field)}
+            if not changed_fields:
+                unchanged += 1
+                continue
+            db_values = _database_values(changed_fields)
+            if "class_name" in changed_fields:
+                db_values["class_name"] = changed_fields["class_name"].strip()
+            if "category" in changed_fields:
+                db_values["category"] = changed_fields["category"].strip()
+            if "status" in changed_fields:
+                db_values["status"] = next_status
+            if "status_effective" in changed_fields:
+                db_values["status_effective"] = date.fromisoformat(changed_fields["status_effective"])
+            old_version = student.version
+            changed = db.execute(
+                update(Student)
+                .where(Student.id == student.id, Student.version == old_version)
+                .values(**db_values, version=Student.version + 1)
+                .execution_options(synchronize_session=False)
+            )
+            if changed.rowcount != 1:
+                raise HTTPException(status_code=409, detail="A student profile changed during import; upload the workbook again")
+            if status_changed:
+                db.add(
+                    StudentStatusHistory(
+                        student_id=student.id,
+                        previous_status=student.status,
+                        new_status=next_status,
+                        effective_date=db_values.get("status_effective", student.status_effective or date.today()),
+                        changed_by=actor_id,
+                    )
+                )
+            record_event(
+                db,
+                actor_id,
+                "student.import_updated",
+                "student",
+                str(student.id),
+                {
+                    "fields": sorted(changed_fields),
+                    "import_batch_id": batch.id,
+                    "previous_version": old_version,
+                    "source_row": staged_row["row_number"],
+                    "version": old_version + 1,
+                },
+            )
+            updated += 1
+
+        result = {
+            "mode": payload.mode,
+            "created": created,
+            "updated": updated,
+            "unchanged": unchanged,
+            "data_warnings_acknowledged": bool(batch.warning_count),
+        }
+        batch.status = "COMMITTED"
+        batch.committed_at = datetime.now(UTC)
+        batch.result_json = json.dumps(result, separators=(",", ":"), sort_keys=True)
+        record_event(db, actor_id, "student.import_batch.committed", "student_import_batch", str(batch.id), result)
+        db.commit()
+        db.refresh(batch)
+        return _safe_batch_view(batch)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A student identifier changed during import; upload the workbook again") from exc
+    except Exception:
+        db.rollback()
+        raise

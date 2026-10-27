@@ -6,7 +6,7 @@ Identity increment (26 October 2026): migration `0008` preserves accounts while 
 
 Attendance increment (26 October 2026): migration `0007` preserves attendance while adding session/record versions and class/date/type uniqueness, refusing ambiguous legacy sessions before DDL. PostgreSQL session/student row locks, required expected versions, immutable record identity, correction reasons and audited incomplete closure/count adjustments protect browser operations. Raw attendance APIs deny Executive access; historical roster/reconciliation and complete permission separation remain release work. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
-Profile browser increment (26 October 2026): migration `0006` adds preserved student edit versions; PATCH requires an expected version and compares/increments it atomically. Profile/history/audit changes share one transaction, and status effective dates remain consistent. The local browser profile module adds search/paging, create/edit, history and explicit stale-save reload. This is the existing core schema, not the full intake migration/catalog or permission model. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+Profile/import increment (28 October 2026): migration `0009` adds the student intake attributes and `0010` adds encrypted source/staging storage. Profile create/read/update and the Operator browser support academic, demographic and next-of-kin fields. The 2023 intake worksheet can be previewed and committed in create-only or explicit update-existing mode with version checks and atomic audit/history writes. Class crosswalk, catalog reconciliation, 2021 mapping and retention controls remain follow-up work. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md) and [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
 Browser increment (26 October 2026): same-origin HTML/CSS/JavaScript are served from `/ui/`, packaged in the application image, and reached from the root. Authentication uses the existing bearer API with module-memory-only tokens, current identity from `/auth/me`, forced rotation, expiry and data clearing. Dynamic values use text/DOM properties; assets/API responses use no-store and restrictive CSP/security headers. Nginx routes production and prototype paths explicitly. Chromium CI exercises real API/database workflows. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md), including unresolved HTTPS, session, permission and full-feature release gates.
 
@@ -139,9 +139,11 @@ Important rules:
 - Business records use created/updated timestamps and actor IDs.
 - Normal users cannot hard-delete students, attendance or audit records.
 
+Student intake attributes include enrolment classifications, academic-year age, academic selections, demographics and next-of-kin details. The source worksheet's S/N is a display sequence and is not a business key. Age is stored with its academic year because a workbook may contain an age snapshot that cannot be reconstructed when DOB is absent. IC, DOB, gender, nationality, citizenship, birthplace, religion, race, marital status, next-of-kin identity/contact/address and student contact fields use authenticated application encryption; API responses decrypt them only for authorized Operators.
+
 ### 6.1 Sensitive data
 
-Classify personal identifiers, dates of birth, contact numbers, addresses and next-of-kin data as sensitive. Use application-level authenticated encryption for designated fields, with key version metadata. Encryption keys are held outside the database and source repository. Database encryption at rest, TLS database connections and encrypted backups remain required in addition to field encryption.
+Classify personal identifiers, dates of birth, contact numbers, addresses and next-of-kin data as sensitive. Designated profile fields currently use authenticated Fernet encryption via the external `APP_ENCRYPTION_KEY`. The current ciphertext format does not include an explicit key identifier; versioned key rotation and ciphertext migration remain required. Encryption keys are held outside the database and source repository. Database encryption at rest, TLS database connections and encrypted backups remain required in addition to field encryption.
 
 ## 7. API conventions
 
@@ -170,7 +172,7 @@ Representative operations:
 
 ## 8. Intake and attendance transactions
 
-Excel imports are staged before commit. The pipeline validates file type, required headers, reference values, duplicate `Pris No.`, date formats, status values and class mappings. The operator sees a preview and row-level errors. Confirmation commits the batch in one transaction or rejects it without partial business updates.
+Excel imports are staged before commit. The implemented `Student Intake 2023` path accepts bounded `.xlsx` bytes, validates the package and required headers, accepts only cached formulas in `AGE IN AY'23`, rejects other formulas and numeric `Pris No.`, detects duplicate identifiers, and validates profile fields. Numeric IC/NRIC/contact cells are converted from their stored number and require explicit acknowledgement of a leading-zero/precision warning. The preview exposes counts and sanitized row/field errors and warnings. Source bytes and staged records are application-encrypted in `student_import_batches`; the creating Operator chooses create-only or explicit update-existing. The transaction rechecks profile versions and identifier conflicts, then writes all profile, status history, audit and batch changes atomically. Migration `0010` adds case/space-normalized identifier uniqueness and refuses existing collisions for explicit reconciliation. Reference catalog/class crosswalk reconciliation, the 2021 sheet, malware scanning, retention policy and workbook-report parity remain open design/release work. See [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
 Attendance writes validate student eligibility, session date, class consistency and duplicate records. Corrections require a reason and preserve the before/after values in the audit log.
 
