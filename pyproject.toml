@@ -11,7 +11,7 @@ dependencies = [
   "fastapi==0.161.1",
   "uvicorn[standard]==0.34.0",
   "sqlalchemy==2.0.37",
-  "psycopg[binary]==3.2.3",
+  "psycopg[binary]==3.3.6",
   "PyJWT==2.15.0",
   "pydantic-settings==2.7.1",
   "python-multipart==0.0.31",
