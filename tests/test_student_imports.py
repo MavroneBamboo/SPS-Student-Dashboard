@@ -273,6 +273,9 @@ def test_preview_is_operator_only_sanitized_encrypted_and_detects_duplicates(les
     assert (preview["row_count"], preview["valid_count"], preview["invalid_count"]) == (3, 0, 3)
     assert all("DUPLICATE-IMPORT" not in json.dumps(error) for error in preview["row_errors"])
     assert all(error["code"] in {"duplicate_in_workbook", "required_for_new_profile"} for error in preview["row_errors"])
+    superuser_preview = client.post(BASE, content=raw, headers={**headers["superuser"], "Content-Type": XLSX})
+    assert superuser_preview.status_code == 201, superuser_preview.text
+    assert client.get(f"{BASE}/{superuser_preview.json()['id']}", headers=headers["superuser"]).status_code == 200
     assert client.post(BASE, content=raw, headers={**headers["executive"], "Content-Type": XLSX}).status_code == 403
     with SessionLocal() as db:
         batch = db.get(StudentImportBatch, preview["id"])
@@ -331,6 +334,12 @@ def test_class_mappings_are_it_managed_normalized_and_versioned(lesson_context):
         headers=headers["operator"],
     )
     assert denied.status_code == 403
+    superuser_mapping = client.post(
+        mapping_path,
+        json={"source_label": "Superuser Can Map", "instructional_class_id": references["instructional_class_id"]},
+        headers=headers["superuser"],
+    )
+    assert superuser_mapping.status_code == 201
     stale = client.patch(f"{mapping_path}/{mapping['id']}", json={"expected_version": 2, "is_active": False}, headers=headers["admin"])
     assert stale.status_code == 409
     updated = client.patch(f"{mapping_path}/{mapping['id']}", json={"expected_version": 1, "is_active": False}, headers=headers["admin"])

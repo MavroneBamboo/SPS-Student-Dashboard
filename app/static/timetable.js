@@ -1,16 +1,18 @@
 const weekdays = ["MON", "TUE", "WED", "THU", "FRI"];
 const periods = ["P1", "P2", "LUNCH", "P3", "P4"];
-const periodLabels = {P1: "Period 1", P2: "Period 2", LUNCH: "Lunch", P3: "Period 3", P4: "Period 4"};
+const periodLabels = {P1: "P1 · Period 1", P2: "P2 · Period 2", LUNCH: "P3 · Lunch / Muster", P3: "P4 · Period 3", P4: "P5 · Period 4"};
 
 export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, role}) {
   let versions = [];
   let classes = [];
   let current = null;
+  let teachers = [];
+  let viewBy = "class";
   let pageOffset = 0;
   let detailSequence = 0;
   const currentRole = () => typeof role === "function" ? role() : role;
-  const canEdit = () => ["Operator", "IT Administrator"].includes(currentRole());
-  const canApprove = () => currentRole() === "IT Administrator";
+  const canEdit = () => ["Superuser", "Operator", "IT Administrator"].includes(currentRole());
+  const canApprove = () => ["Superuser", "IT Administrator"].includes(currentRole());
   const placementForm = $("timetable-placement-form");
 
   function clear() {
@@ -26,6 +28,13 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     placementForm.reset();
     placementForm.hidden = true;
     $("timetable-generation-summary").textContent = "";
+    viewBy = "class";
+    for (const page of document.querySelectorAll(".timetable-page")) page.hidden = page.id !== "timetable-board-page";
+    for (const link of document.querySelectorAll(".timetable-side-link")) link.classList.toggle("is-active", link.dataset.timetablePage === "board");
+    $("timetable-by-class").classList.add("is-selected");
+    $("timetable-by-teacher").classList.remove("is-selected");
+    $("timetable-class-filter-wrap").hidden = false;
+    $("timetable-teacher-filter-wrap").hidden = true;
     for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows", "student-class-mapping-rows"]) {
       const element = $(id);
       if (element) element.replaceChildren();
@@ -60,11 +69,13 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     const data = await Promise.all([
       api("/timetable/versions?limit=100"),
       api("/timetable/classes"),
+      api("/timetable/teachers"),
     ]);
     versions = data[0];
     classes = data[1].filter((row) => row.is_active);
+    teachers = data[2].filter((row) => row.is_active);
     renderVersions();
-    $("student-class-mapping-section").hidden = !["Operator", "IT Administrator"].includes(currentRole());
+    $("student-class-mapping-section").hidden = !["Operator", "IT Administrator", "Superuser"].includes(currentRole());
     const createForm = $("timetable-create-form");
     $("new-timetable").hidden = !canEdit();
     const select = createForm.elements.class_ids;
@@ -75,9 +86,10 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       option.textContent = `${item.code} · ${item.name}`;
       select.append(option);
     }
-    $("timetable-setup").hidden = currentRole() !== "IT Administrator";
     $("timetable-lesson-form").hidden = !canEdit();
-    if (canEdit()) await refreshSetup();
+    fillSelect($("timetable-class-filter"), classes, (row) => `${row.code} · ${row.name}`);
+    fillSelect($("timetable-teacher-filter"), teachers, (row) => `${row.short_code} · ${row.full_name}`);
+    await refreshSetup();
   }
 
   function fillSelect(select, rows, label) {
@@ -109,7 +121,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
         input.value = period;
         input.dataset.day = day;
         input.setAttribute("aria-label", `${day} ${period}`);
-        label.append(input, document.createTextNode(period));
+        label.append(input, document.createTextNode(periodLabels[period]));
         row.append(label);
       }
       fieldset.append(row);
@@ -117,11 +129,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   async function refreshSetup() {
-    const [teachers, subjects, instructionalClasses, clusters, periodRows, classMappings] = await Promise.all([
+    const canConfigure = ["IT Administrator", "Superuser"].includes(currentRole());
+    const [teacherRows, subjects, instructionalClasses, clusters, periodRows, classMappings] = await Promise.all([
       api("/timetable/teachers"), api("/timetable/subjects"), api("/timetable/classes"), api("/timetable/clusters"), api("/timetable/periods"),
-      api("/student-reference/class-mappings"),
+      ["Operator", "IT Administrator", "Superuser"].includes(currentRole()) ? api("/student-reference/class-mappings") : Promise.resolve([]),
     ]);
-    const activeTeachers = teachers.filter((row) => row.is_active);
+    const activeTeachers = teacherRows.filter((row) => row.is_active);
     const activeSubjects = subjects.filter((row) => row.is_active);
     const activeClasses = instructionalClasses.filter((row) => row.is_active);
     const activeClusters = clusters.filter((row) => row.is_active);
@@ -134,24 +147,38 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     fillSelect($("timetable-period-form").elements.target_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-rule-form").elements.target_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     fillSelect($("student-class-mapping-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
-    $("student-class-mapping-form").hidden = currentRole() !== "IT Administrator";
-    for (const [id, values] of [["timetable-teacher-rows", teachers], ["timetable-subject-rows", subjects], ["timetable-class-rows", instructionalClasses]]) {
+    $("student-class-mapping-form").hidden = !["IT Administrator", "Superuser"].includes(currentRole());
+    for (const [id, values] of [["timetable-teacher-rows", teacherRows], ["timetable-subject-rows", subjects], ["timetable-class-rows", instructionalClasses]]) {
       const body = $(id);
       body.replaceChildren();
       for (const item of values) {
         const row = document.createElement("tr");
         const code = item.short_code || item.code;
         for (const value of [code, item.full_name || item.name, item.is_active ? "Active" : "Inactive"]) cell(row, value);
+        if (id === "timetable-teacher-rows") {
+          const periodsPerWeek = Object.values(item.availability || {}).reduce((sum, day) => sum + (Array.isArray(day) ? day.length : 0), 0);
+          cell(row, periodsPerWeek);
+        }
         body.append(row);
       }
     }
-    $("timetable-resource-summary").textContent = `${teachers.length} teacher profiles · ${subjects.length} subjects · ${instructionalClasses.length} classes · ${clusters.length} clusters`;
+    const summary = $("timetable-resource-summary");
+    if (summary) summary.textContent = `${teacherRows.length} teacher profiles · ${subjects.length} subjects · ${instructionalClasses.length} classes · ${clusters.length} clusters`;
     renderAvailability();
     const periodTable = $("timetable-period-rows");
     periodTable?.replaceChildren();
     if (periodTable) for (const period of periodRows) {
       const row = document.createElement("tr");
-      for (const value of [period.scope, period.target_id ?? "Default", period.slot_code, period.label, period.starts_at ?? "", period.ends_at ?? ""]) cell(row, value);
+      const targets = period.scope === "CLASS" ? instructionalClasses : activeClusters;
+      const target = period.scope === "DEFAULT" ? "All classes" : targets.find((item) => item.id === period.target_id)?.code || period.target_id;
+      for (const value of [period.scope, target, periodLabels[period.slot_code] || period.slot_code, period.label, period.starts_at ?? "", period.ends_at ?? ""]) cell(row, value);
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.hidden = !canConfigure;
+      edit.addEventListener("click", () => editPeriod(period));
+      cell(row, "").append(edit);
       periodTable.append(row);
     }
     const mappingRows = $("student-class-mapping-rows");
@@ -164,18 +191,18 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       classSelect.setAttribute("aria-label", `Target class for ${mapping.source_label}`);
       fillSelect(classSelect, instructionalClasses, (item) => `${item.code} · ${item.name}`);
       classSelect.value = String(mapping.instructional_class_id);
-      classSelect.disabled = currentRole() !== "IT Administrator";
+      classSelect.disabled = !["IT Administrator", "Superuser"].includes(currentRole());
       cell(row, "").append(classSelect);
       const active = document.createElement("input");
       active.type = "checkbox";
       active.checked = mapping.is_active;
-      active.disabled = currentRole() !== "IT Administrator";
+      active.disabled = !["IT Administrator", "Superuser"].includes(currentRole());
       active.setAttribute("aria-label", `Active mapping for ${mapping.source_label}`);
       cell(row, "").append(active);
       cell(row, String(mapping.version));
       const save = document.createElement("button");
       save.textContent = "Save";
-      save.disabled = currentRole() !== "IT Administrator";
+      save.disabled = !["IT Administrator", "Superuser"].includes(currentRole());
       save.setAttribute("aria-label", `Save mapping for ${mapping.source_label}`);
       save.addEventListener("click", () => run(save, async () => {
         const payload = {expected_version: mapping.version};
@@ -191,14 +218,16 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     }
     updatePeriodTargets();
     updateRuleTargets();
+    for (const id of ["timetable-class-form", "timetable-cluster-form", "timetable-cluster-member-form", "timetable-subject-form", "timetable-period-form", "timetable-rule-form"]) $(id).hidden = !canConfigure;
+    for (const button of document.querySelectorAll('[data-open-resource-form]')) button.hidden = !canConfigure;
   }
 
   function updatePeriodTargets() {
     const form = $("timetable-period-form");
-    const rows = form.elements.scope.value === "CLASS" ? classes : [];
-    const targets = form.elements.scope.value === "CLASS" ? rows : lastClusters;
+    const scope = form.elements.scope.value;
+    const targets = scope === "CLASS" ? classes : scope === "CLUSTER" ? lastClusters : [];
     fillSelect(form.elements.target_id, targets, (row) => `${row.code} · ${row.name}`);
-    form.elements.target_id.disabled = form.elements.scope.value === "DEFAULT";
+    form.elements.target_id.disabled = scope === "DEFAULT";
   }
 
   let lastClusters = [];
@@ -265,14 +294,52 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       notice("Class added to cluster.");
     });
   });
-  submitJSON("timetable-period-form", "/timetable/periods", (form) => ({
-    scope: form.elements.scope.value,
-    target_id: Number(form.elements.target_id.value),
-    slot_code: form.elements.slot_code.value,
-    label: form.elements.label.value,
-    starts_at: form.elements.starts_at.value,
-    ends_at: form.elements.ends_at.value,
-  }), "Period override saved. The new override applies to future timetable snapshots.");
+  function editPeriod(period) {
+    const form = $("timetable-period-form");
+    form.dataset.periodId = String(period.id);
+    form.elements.scope.value = period.scope;
+    updatePeriodTargets();
+    if (period.scope !== "DEFAULT") form.elements.target_id.value = String(period.target_id);
+    form.elements.slot_code.value = period.slot_code;
+    form.elements.label.value = period.label;
+    form.elements.starts_at.value = period.starts_at;
+    form.elements.ends_at.value = period.ends_at;
+    form.elements.scope.disabled = true;
+    form.elements.target_id.disabled = true;
+    form.elements.slot_code.disabled = true;
+    form.elements.label.disabled = period.slot_code === "LUNCH";
+    form.querySelector('button[type="submit"]').textContent = "Update period";
+    form.scrollIntoView({behavior: "smooth", block: "center"});
+  }
+
+  $("timetable-period-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    run(form, async () => {
+      const isEdit = Boolean(form.dataset.periodId);
+      const payload = isEdit
+        ? {label: form.elements.label.value, starts_at: form.elements.starts_at.value, ends_at: form.elements.ends_at.value}
+        : {
+            scope: form.elements.scope.value,
+            target_id: form.elements.scope.value === "DEFAULT" ? null : Number(form.elements.target_id.value),
+            slot_code: form.elements.slot_code.value,
+            label: form.elements.label.value,
+            starts_at: form.elements.starts_at.value,
+            ends_at: form.elements.ends_at.value,
+          };
+      await api(isEdit ? `/timetable/periods/${form.dataset.periodId}` : "/timetable/periods", isEdit ? "PATCH" : "POST", payload);
+      delete form.dataset.periodId;
+      form.reset();
+      form.elements.scope.disabled = false;
+      form.elements.target_id.disabled = false;
+      form.elements.slot_code.disabled = false;
+      form.elements.label.disabled = false;
+      form.querySelector('button[type="submit"]').textContent = "Save period definition";
+      updatePeriodTargets();
+      await refresh();
+      notice(isEdit ? "Period definition updated." : "Period definition saved for future timetable drafts.");
+    });
+  });
   submitJSON("timetable-rule-form", "/timetable/rules", (form) => ({
     academic_year: form.elements.academic_year.value,
     target_type: form.elements.target_type.value,
@@ -322,6 +389,19 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   function renderGrid() {
     const host = $("timetable-grid");
     host.replaceChildren();
+    host.classList.remove("weekly-board-host");
+    if (!current) return;
+    const amendMode = $("timetable-board-mode").value === "amend";
+    $("timetable-editor").classList.toggle("amend-mode", amendMode);
+    document.querySelector(".timetable-board-layout").classList.toggle("amend-mode", amendMode);
+    $("timetable-density").parentElement.hidden = !amendMode;
+    $("timetable-previous").hidden = !amendMode;
+    $("timetable-next").hidden = !amendMode;
+    if (current && !amendMode) {
+      renderWeeklyBoard(host);
+      return;
+    }
+    $("timetable-summary").hidden = true;
     const all = classRows();
     const density = Number($("timetable-density").value) || 4;
     const visible = all.slice(pageOffset, pageOffset + density);
@@ -340,7 +420,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       const head = document.createElement("thead");
       const headerRow = document.createElement("tr");
       cell(headerRow, "Day");
-      for (const period of periods) cell(headerRow, period === "LUNCH" ? "Lunch" : period);
+      for (const period of periods) cell(headerRow, periodLabels[period]);
       head.append(headerRow);
       table.append(head);
       const body = document.createElement("tbody");
@@ -377,6 +457,167 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     if (!visible.length) host.textContent = "This timetable has no selected classes.";
   }
 
+  function renderWeeklyBoard(host) {
+    const search = $("timetable-search").value.trim().toLocaleLowerCase();
+    const selectedId = Number(viewBy === "class" ? $("timetable-class-filter").value : $("timetable-teacher-filter").value);
+    const entity = viewBy === "class"
+      ? current.snapshot.classes[String(selectedId)]
+      : current.snapshot.teachers[String(selectedId)];
+    $("timetable-summary").replaceChildren();
+    $("timetable-summary").hidden = false;
+    host.classList.add("weekly-board-host");
+    if (!entity || (search && !`${entity.code || entity.short_code} ${entity.name || entity.full_name}`.toLocaleLowerCase().includes(search))) {
+      host.textContent = "Choose an available class or teacher to view its timetable.";
+      return;
+    }
+    const title = document.createElement("h3");
+    title.textContent = viewBy === "class" ? `${entity.code} · ${entity.name}` : `${entity.short_code} · ${entity.full_name}`;
+    host.append(title);
+    const table = document.createElement("table");
+    table.className = "weekly-board";
+    const thead = document.createElement("thead");
+    const header = document.createElement("tr");
+    cell(header, "Period");
+    for (const day of weekdays) cell(header, day[0] + day.slice(1).toLowerCase());
+    thead.append(header);
+    table.append(thead);
+    const tbody = document.createElement("tbody");
+    for (const period of periods) {
+      const row = document.createElement("tr");
+      const label = document.createElement("th");
+      label.scope = "row";
+      label.textContent = periodLabels[period];
+      row.append(label);
+      for (const day of weekdays) {
+        const td = document.createElement("td");
+        if (period === "LUNCH") {
+          td.className = "lunch-cell";
+          td.textContent = "Lunch / Muster";
+          row.append(td);
+          continue;
+        }
+        const block = current.placements.find((candidate) => {
+          const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
+          const matchesEntity = viewBy === "class"
+            ? req?.instructional_class_id === entity.id
+            : req?.teacher_id === entity.id;
+          return matchesEntity && candidate.slots.some((slot) => slot.weekday === day && slot.slot_code === period);
+        });
+        const button = document.createElement("button");
+        if (block) {
+          button.className = "lesson-cell weekly-lesson";
+          button.textContent = labelFor(block);
+          button.setAttribute("aria-label", `${title.textContent} ${day} ${periodLabels[period]} ${labelFor(block)}`);
+          button.addEventListener("click", () => editPlacement(block, block.weekday, block.start_period));
+        } else if (viewBy === "teacher") {
+          button.className = "free-cell";
+          button.textContent = "Free";
+          button.disabled = !editableDraft();
+          if (editableDraft()) button.addEventListener("click", () => addTeacherPlacement(entity, day, period));
+        } else {
+          button.className = "empty-cell";
+          button.textContent = editableDraft() ? "+ Add lesson" : "—";
+          button.disabled = !editableDraft();
+          if (editableDraft()) button.addEventListener("click", () => run(button, () => addPlacement(entity, day, period)));
+        }
+        td.append(button);
+        row.append(td);
+      }
+      tbody.append(row);
+    }
+    table.append(tbody);
+    host.append(table);
+    if (viewBy === "teacher") renderTeacherSummary(entity);
+  }
+
+  function addTeacherPlacement(teacher, weekday, startPeriod) {
+    const pending = current.pending.filter((item) => current.snapshot.requirements[String(item.lesson_requirement_id)]?.teacher_id === teacher.id);
+    if (!pending.length) {
+      notice(`No unplaced lesson requirements remain for ${teacher.full_name}.`);
+      return;
+    }
+    const requirement = current.snapshot.requirements[String(pending[0].lesson_requirement_id)];
+    const classItem = current.snapshot.classes[String(requirement.instructional_class_id)];
+    const ids = pending.map((item) => item.lesson_requirement_id);
+    const lengths = pending.flatMap((item) => item.remaining_blocks);
+    openPlacement(ids, {class_code: classItem.code, weekday, start_period: startPeriod, allowed_lengths: lengths});
+  }
+
+  function renderTeacherSummary(teacher) {
+    const placements = current.placements.filter((block) => current.snapshot.requirements[String(block.lesson_requirement_id)]?.teacher_id === teacher.id);
+    const taught = placements.reduce((sum, block) => sum + block.period_count, 0);
+    const scheduledSlots = weekdays.length * periods.filter((p) => p !== "LUNCH").length;
+    const free = Math.max(0, scheduledSlots - taught);
+    const classNames = [...new Set(placements.map((block) => {
+      const req = current.snapshot.requirements[String(block.lesson_requirement_id)];
+      return current.snapshot.classes[String(req.instructional_class_id)]?.code;
+    }).filter(Boolean))];
+    for (const [label, value] of [["Periods taught", taught], ["Free periods", free], ["Duty periods", 0], ["Classes", classNames.length]]) {
+      const card = document.createElement("div");
+      card.className = "teacher-stat";
+      const strong = document.createElement("strong");
+      strong.textContent = String(value);
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      card.append(strong, caption);
+      $("timetable-summary").append(card);
+    }
+    const note = document.createElement("p");
+    note.textContent = `Classes taught: ${classNames.join(", ") || "None assigned"}`;
+    $("timetable-summary").append(note);
+  }
+
+  function printReports(kind) {
+    if (!current) {
+      notice("Open a saved timetable draft before exporting reports.");
+      return;
+    }
+    const escapeHTML = (value) => String(value ?? "").replace(/[&<>\"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[char]));
+    const includeLunch = $("print-lunch-row").checked;
+    const includeAllPeriods = $("print-all-periods").checked;
+    const items = [];
+    if (kind !== "teacher") {
+      for (const cls of classRows()) items.push({kind: "class", item: cls});
+    }
+    if (kind !== "class") {
+      for (const teacher of Object.values(current.snapshot.teachers).sort((a, b) => a.short_code.localeCompare(b.short_code))) items.push({kind: "teacher", item: teacher});
+    }
+    const sections = items.map(({kind: itemKind, item}) => {
+      const title = itemKind === "class" ? `${item.code} · ${item.name}` : `${item.short_code} · ${item.full_name}`;
+      const headers = weekdays.map((day) => `<th>${day}</th>`).join("");
+      const rows = periods.filter((period) => (includeLunch || period !== "LUNCH") && (includeAllPeriods || period === "LUNCH" || current.placements.some((candidate) => {
+        const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
+        const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+        return matches && candidate.slots.some((slot) => slot.slot_code === period);
+      }))).map((period) => {
+        const cells = weekdays.map((day) => {
+          if (period === "LUNCH") return "<td class='lunch'>Lunch / Muster</td>";
+          const block = current.placements.find((candidate) => {
+            const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
+            const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+            return matches && candidate.slots.some((slot) => slot.weekday === day && slot.slot_code === period);
+          });
+          if (!block) return `<td>${itemKind === "teacher" ? "Free" : ""}</td>`;
+          const req = current.snapshot.requirements[String(block.lesson_requirement_id)];
+          const subject = current.snapshot.subjects[String(req.subject_id)];
+          const cls = current.snapshot.classes[String(req.instructional_class_id)];
+          const teacher = current.snapshot.teachers[String(req.teacher_id)];
+          return `<td><strong>${escapeHTML(subject.code)}</strong><br>${itemKind === "class" ? escapeHTML(teacher.short_code) : escapeHTML(cls.code)}</td>`;
+        }).join("");
+        return `<tr><th>${escapeHTML(periodLabels[period])}</th>${cells}</tr>`;
+      }).join("");
+      return `<section><h2>${escapeHTML(title)}</h2><table><thead><tr><th>Period</th>${headers}</tr></thead><tbody>${rows}</tbody></table></section>`;
+    }).join("");
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      notice("Allow pop-ups for this site to export timetable reports.");
+      return;
+    }
+    printWindow.opener = null;
+    printWindow.document.write(`<!doctype html><html><head><title>${escapeHTML(current.name)} · Timetable report</title><style>body{font:12px Arial,sans-serif;color:#14263f;margin:24px}h1{font-size:22px}h2{font-size:16px;margin:0 0 8px}section{page-break-after:always;margin:0 0 24px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #ccd6e4;padding:8px;text-align:center}th:first-child{width:100px;background:#f1f4f8}.lunch{background:#fff3d6;font-weight:bold}@media print{body{margin:12mm}}</style></head><body><h1>${escapeHTML(current.name)} · ${kind === "both" ? "Class and teacher timetables" : `Timetable by ${kind}`}</h1><p>${escapeHTML(current.academic_year)} · Week of ${escapeHTML(current.week_start)} · ${escapeHTML(current.status)}</p>${sections}<script>window.addEventListener('load',()=>window.print())<\/script></body></html>`);
+    printWindow.document.close();
+  }
+
   function renderPending() {
     const rows = $("timetable-pending");
     rows.replaceChildren();
@@ -398,6 +639,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   function render() {
     if (!current) return;
+    fillSelect($("timetable-class-filter"), Object.values(current.snapshot.classes).sort((a, b) => a.reporting_order - b.reporting_order), (row) => `${row.code} · ${row.name}`);
+    fillSelect($("timetable-teacher-filter"), Object.values(current.snapshot.teachers).sort((a, b) => a.short_code.localeCompare(b.short_code)), (row) => `${row.short_code} · ${row.full_name}`);
     $("timetable-editor").hidden = false;
     $("timetable-editor-title").textContent = current.name;
     $("timetable-version-detail").textContent = `${current.academic_year} · week of ${current.week_start} · ${current.status} · revision ${current.revision}`;
@@ -584,9 +827,61 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   $("timetable-reload").addEventListener("click", () => run($("timetable-reload"), () => load(current.id)));
   $("timetable-density").addEventListener("change", renderGrid);
   $("timetable-period-form").elements.scope.addEventListener("change", updatePeriodTargets);
+  $("timetable-period-form").elements.slot_code.addEventListener("change", () => {
+    const isLunch = $("timetable-period-form").elements.slot_code.value === "LUNCH";
+    const label = $("timetable-period-form").elements.label;
+    if (isLunch) label.value = "LUNCH";
+    label.disabled = isLunch;
+  });
   $("timetable-rule-form").elements.target_type.addEventListener("change", updateRuleTargets);
   $("timetable-previous").addEventListener("click", () => { pageOffset = Math.max(0, pageOffset - Number($("timetable-density").value)); renderGrid(); });
   $("timetable-next").addEventListener("click", () => { pageOffset += Number($("timetable-density").value); renderGrid(); });
+
+  function chooseView(view) {
+    viewBy = view;
+    $("timetable-by-class").classList.toggle("is-selected", view === "class");
+    $("timetable-by-teacher").classList.toggle("is-selected", view === "teacher");
+    $("timetable-class-filter-wrap").hidden = view !== "class";
+    $("timetable-teacher-filter-wrap").hidden = view !== "teacher";
+    renderGrid();
+  }
+  $("timetable-by-class").addEventListener("click", () => chooseView("class"));
+  $("timetable-by-teacher").addEventListener("click", () => chooseView("teacher"));
+  for (const id of ["timetable-class-filter", "timetable-teacher-filter", "timetable-search", "timetable-board-mode"]) {
+    $(id).addEventListener("input", renderGrid);
+    $(id).addEventListener("change", renderGrid);
+  }
+  $("timetable-print").addEventListener("click", () => printReports(viewBy));
+  for (const button of document.querySelectorAll("[data-print-report]")) {
+    button.addEventListener("click", () => printReports(button.dataset.printReport));
+  }
+  $("timetable-print-both").addEventListener("click", () => printReports("both"));
+  for (const button of document.querySelectorAll("[data-timetable-page]")) {
+    button.addEventListener("click", () => {
+      const target = button.dataset.timetablePage;
+      for (const page of document.querySelectorAll(".timetable-page")) page.hidden = page.id !== `timetable-${target}-page`;
+      for (const link of document.querySelectorAll(".timetable-side-link")) link.classList.toggle("is-active", link === button);
+    });
+  }
+  for (const button of document.querySelectorAll("[data-resource-tab]")) {
+    button.addEventListener("click", () => {
+      const target = button.dataset.resourceTab;
+      for (const tab of document.querySelectorAll("[data-resource-tab]")) tab.classList.toggle("is-selected", tab === button);
+      for (const panel of document.querySelectorAll("[data-resource-panel]")) panel.hidden = panel.dataset.resourcePanel !== target;
+    });
+  }
+  for (const button of document.querySelectorAll("[data-open-resource-form]")) {
+    button.addEventListener("click", () => {
+      const form = $(button.dataset.openResourceForm);
+      form.hidden = false;
+      form.scrollIntoView({behavior: "smooth", block: "center"});
+      form.querySelector("input")?.focus();
+    });
+  }
+  $("teacher-search").addEventListener("input", () => {
+    const query = $("teacher-search").value.trim().toLocaleLowerCase();
+    for (const row of $("timetable-teacher-rows").rows) row.hidden = !row.textContent.toLocaleLowerCase().includes(query);
+  });
 
   return {show, clear};
 }

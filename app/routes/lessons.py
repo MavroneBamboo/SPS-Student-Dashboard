@@ -12,7 +12,7 @@ from app.timetable_lock import lock_timetable_configuration
 router = APIRouter(
     prefix="/timetable/lessons",
     tags=["lesson requirements"],
-    dependencies=[Depends(require_roles("IT Administrator", "Operator"))],
+    dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))],
 )
 
 

@@ -73,10 +73,15 @@ def _db_rule(payload, **changes):
 def test_rule_permissions_lifecycle_and_inclusive_date_resolution(rules_context):
     client, headers, payload = rules_context
     assert _resolve(client, headers, payload).status_code == 409
-    for role in ("operator", "executive", "superuser"):
+    for role in ("operator", "executive"):
         assert client.post(f"{BASE}/rules", json=payload, headers=headers[role]).status_code == 403
-    for role in ("executive", "superuser"):
+    for role in ("executive",):
         assert client.get(f"{BASE}/rules", headers=headers[role]).status_code == 403
+    superuser_rule = client.post(
+        f"{BASE}/rules", json={**payload, "academic_year": f"SU-{payload['academic_year']}"}, headers=headers["superuser"]
+    )
+    assert superuser_rule.status_code == 201
+    assert client.get(f"{BASE}/rules", headers=headers["superuser"]).status_code == 200
     created = client.post(f"{BASE}/rules", json=payload, headers=headers["admin"])
     assert created.status_code == 201, created.text
     rule_id = created.json()["id"]

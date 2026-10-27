@@ -15,7 +15,7 @@ BASE = "/api/v1/timetable"
 
 def test_lesson_lifecycle_permissions_and_concurrent_edits(lesson_context):
     client, headers, payload = lesson_context
-    for role in ("executive", "superuser"):
+    for role in ("executive",):
         assert client.post(f"{BASE}/lessons", json=payload, headers=headers[role]).status_code == 403
         assert client.get(f"{BASE}/lessons", headers=headers[role]).status_code == 403
     assert client.get(f"{BASE}/lessons").status_code == 401
@@ -23,6 +23,11 @@ def test_lesson_lifecycle_permissions_and_concurrent_edits(lesson_context):
     assert created.status_code == 201, created.text
     lesson_id = created.json()["id"]
     assert created.json()["version"] == 1
+    assert client.get(f"{BASE}/lessons", headers=headers["superuser"]).status_code == 200
+    assert (
+        client.post(f"{BASE}/lessons", json={**payload, "academic_year": f"SU-{uuid4().hex[:8]}"}, headers=headers["superuser"]).status_code
+        == 201
+    )
     assert client.post(f"{BASE}/lessons", json=payload, headers=headers["admin"]).status_code == 409
     assert client.post(f"{BASE}/lessons", json={**payload, "academic_year": "2027"}, headers=headers["operator"]).status_code == 201
     assert client.post(f"{BASE}/lessons", json={**payload, "academic_year": " 2026 "}, headers=headers["operator"]).status_code == 409

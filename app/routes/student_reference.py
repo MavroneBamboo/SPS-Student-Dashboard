@@ -10,7 +10,7 @@ from app.student_class_mapping import normalize_source_class_label
 
 router = APIRouter(prefix="/student-reference/class-mappings", tags=["student reference data"])
 READ_ACCESS = Depends(require_roles("Operator", "IT Administrator", "Superuser"))
-EDIT_ACCESS = Depends(require_roles("IT Administrator"))
+EDIT_ACCESS = Depends(require_roles("IT Administrator", "Superuser"))
 
 
 def _mapping_response(db: DbSession, mapping: StudentClassMapping) -> StudentClassMappingResponse:

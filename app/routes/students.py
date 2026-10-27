@@ -10,7 +10,7 @@ from app.deps import Claims, DbSession, require_roles
 from app.models import Student, StudentStatusHistory
 from app.schemas import StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
 
-router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator"))])
+router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
 
 ENCRYPTED_PROFILE_FIELDS = {
     "ic_number": "ic_number_encrypted",

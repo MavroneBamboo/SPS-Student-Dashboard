@@ -55,5 +55,52 @@ th, td { padding: 14px 12px; border-bottom: 1px solid #e1e8f1; } th { color: #52
 .availability-row label { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; margin: 0; }
 .availability-row input { min-width: auto; }
 #timetable-setup summary { cursor: pointer; font-weight: 700; font-size: 18px; }
+.timetable-workspace { display: grid; grid-template-columns: 205px minmax(0,1fr); gap: 22px; align-items: start; }
+.timetable-sidebar { background: #11243e; color: #dbe7f6; border-radius: 12px; padding: 20px 14px; min-height: 620px; }
+.timetable-sidebar .eyebrow { color: #91afd4; margin: 4px 10px 16px; font-size: 10px; }
+.timetable-side-link { display: block; width: 100%; text-align: left; margin: 5px 0; background: transparent; color: #dbe7f6; border: 0; padding: 13px 12px; }
+.timetable-side-link:hover, .timetable-side-link.is-active { background: #29486e; color: white; }
+.timetable-content { min-width: 0; }
+.timetable-toolbar { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; padding: 14px; }
+.timetable-toolbar label { min-width: 130px; flex: 1; margin: 0; }
+.segmented, .resource-tabs { display: flex; gap: 3px; padding: 3px; background: #edf2f8; border-radius: 9px; }
+.segmented button, .resource-tabs button { background: transparent; color: #40536d; padding: 9px 13px; }
+.segmented button.is-selected, .resource-tabs button.is-selected { color: #174bb7; background: white; box-shadow: 0 1px 4px #11243e22; }
+.timetable-page > h3 { margin: 0 0 6px; }
+.timetable-page > p { margin-top: 6px; }
+.weekly-board-host { display: block; }
+.timetable-board-layout { display: grid; grid-template-columns: minmax(0,1fr) 285px; gap: 18px; align-items: start; }
+.timetable-board-layout > #timetable-grid { grid-column: 1; }
+.timetable-board-layout > #timetable-summary { grid-column: 1; }
+.timetable-board-layout > #timetable-placement-form { grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 18px; }
+.timetable-board-layout.amend-mode { display: block; }
+.timetable-board-layout.amend-mode > #timetable-placement-form { position: static; }
+.weekly-board-host > h3 { margin: 4px 0 14px; }
+.weekly-board { table-layout: fixed; border-collapse: separate; border-spacing: 5px; min-width: 760px; }
+.weekly-board th, .weekly-board td { border: 0; padding: 7px; text-align: center; }
+.weekly-board thead th { color: #334a68; }
+.weekly-board th:first-child { width: 116px; }
+.weekly-board tbody th { text-align: left; white-space: nowrap; color: #435773; }
+.weekly-board td { background: white; border: 1px solid #e0e7f0; border-radius: 8px; height: 78px; }
+.weekly-board td button { min-height: 58px; height: 100%; border-radius: 6px; }
+.weekly-board .weekly-lesson { background: #e7efff; color: #183c77; border-color: #cbdcff; }
+.weekly-board .free-cell { width: 100%; background: #f2f5f8; color: #67758a; border: 1px dashed #c5cfdb; }
+.weekly-board .lunch-cell { background: #fff5db; color: #76531d; font-weight: 700; }
+.timetable-summary { display: grid; grid-template-columns: repeat(4,minmax(120px,1fr)); gap: 12px; margin: 14px 0 24px; }
+.teacher-stat { background: white; border: 1px solid #dce4ef; border-radius: 10px; padding: 16px; }
+.teacher-stat strong { display: block; font-size: 24px; color: #132a49; }
+.teacher-stat span { display: block; color: #5a6c81; margin-top: 4px; }
+.timetable-summary > p { grid-column: 1 / -1; }
+.report-cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.report-icon { color: #2861c2; font-size: 25px; }
+.checkline { display: inline-flex; flex-direction: row; align-items: center; gap: 9px; margin-right: 22px; }
+.checkline input { min-width: auto; }
+.resource-tabs { display: inline-flex; margin-bottom: 16px; }
+.resource-form { background: #f8faff; border: 1px solid #dce4ef; border-radius: 10px; padding: 18px; margin: 18px 0; }
+.timetable-page .panel { box-shadow: 0 3px 14px #11243e08; }
+.timetable-workspace .timetable-class { box-shadow: 0 3px 14px #11243e0a; }
+@media print { body { background: white; } .brand, .workspace-bar, nav, .timetable-sidebar, .timetable-toolbar, .timetable-actions, #notice, #timetable-create-form, #timetable-lesson-form, #timetable-placement-form { display: none !important; } main { max-width: none; padding: 0; } #timetable-panel, .timetable-workspace, .timetable-content { display: block; } .timetable-page[hidden] { display: none !important; } }
 @media(max-width: 900px) { .timetable-grid { grid-template-columns: 1fr; } }
-@media(max-width: 640px) { main { padding: 16px; }.brand { padding: 16px; }.auth-card { margin: 20px auto; padding: 24px; }.columns { grid-template-columns: 1fr; }.actions { width: 100%; } }
+@media(max-width: 1100px) { .timetable-board-layout { grid-template-columns: 1fr; }.timetable-board-layout > #timetable-placement-form { grid-column: 1; grid-row: auto; position: static; } }
+@media(max-width: 900px) { .timetable-workspace { grid-template-columns: 1fr; }.timetable-sidebar { min-height: auto; display: flex; flex-wrap: wrap; gap: 4px; }.timetable-sidebar .eyebrow { flex-basis: 100%; }.timetable-side-link { width: auto; }.timetable-summary { grid-template-columns: repeat(2,minmax(110px,1fr)); } }
+@media(max-width: 640px) { main { padding: 16px; }.brand { padding: 16px; }.auth-card { margin: 20px auto; padding: 24px; }.columns, .report-cards { grid-template-columns: 1fr; }.actions { width: 100%; }.timetable-toolbar > * { flex-basis: 100%; }.timetable-side-link { flex: 1 1 45%; }.weekly-board-host { overflow-x: auto; } }

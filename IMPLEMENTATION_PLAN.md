@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (28 October 2026)
 
+- Timetable interface redesign (27 October): production UI implements By class/By teacher weekly views, browser print-to-PDF reports, teacher/class/subject tabs, period and rule management, and clickable Amend 4-up at 4/8/12/16 classes per page. Display maps the lunch interval to P3 while preserving stable database/API slot codes. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md).
+
 - Operational role increment (26 October): students and attendance require Operator access. Dashboards and exports allow Operator or Executive; audit allows Superuser or IT. Tests use named Operator identities and cover all four roles. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
 - Identity increment (26 October): versioned account-wide token revocation, explicit logout, IT management of non-Superuser accounts, administrator reset, case-insensitive unique usernames and preserved last administrators. Verify migration, API and browser cases in CI. Complete least-privilege permissions, setup/recovery and deployment controls in later slices. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).

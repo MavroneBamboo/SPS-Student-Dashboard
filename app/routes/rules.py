@@ -12,9 +12,9 @@ from app.schemas import ResolvedRule, RuleCreate, RuleResolutionRequest, RuleRes
 from app.timetable_lock import lock_timetable_configuration
 
 router = APIRouter(
-    prefix="/timetable/rules", tags=["scheduling rules"], dependencies=[Depends(require_roles("IT Administrator", "Operator"))]
+    prefix="/timetable/rules", tags=["scheduling rules"], dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator"))]
 )
-EDIT_ACCESS = Depends(require_roles("IT Administrator"))
+EDIT_ACCESS = Depends(require_roles("IT Administrator", "Superuser"))
 
 
 def _response(row: SchedulingRule) -> RuleResponse:

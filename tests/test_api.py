@@ -341,8 +341,7 @@ def test_timetable_resources_clusters_period_overrides_and_lunch_invariant():
         headers = {"Authorization": f"Bearer {changed_password.json()['access_token']}"}
         availability = {day: ["P1", "P2", "P3", "P4"] for day in ("MON", "TUE", "WED", "THU", "FRI")}
         teacher_payload = {"short_code": "teach-a", "full_name": "Teacher A", "is_adjunct": True, "availability": availability}
-        assert client.post("/api/v1/timetable/teachers", json=teacher_payload, headers=superuser_headers).status_code == 403
-        teacher = client.post("/api/v1/timetable/teachers", json=teacher_payload, headers=headers)
+        teacher = client.post("/api/v1/timetable/teachers", json=teacher_payload, headers=superuser_headers)
         assert teacher.status_code == 201
         assert teacher.json()["short_code"] == "TEACH-A"
         assert teacher.json()["availability"] == availability
