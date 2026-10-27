@@ -26,7 +26,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     placementForm.reset();
     placementForm.hidden = true;
     $("timetable-generation-summary").textContent = "";
-    for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows"]) {
+    for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows", "student-class-mapping-rows"]) {
       const element = $(id);
       if (element) element.replaceChildren();
     }
@@ -64,6 +64,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     versions = data[0];
     classes = data[1].filter((row) => row.is_active);
     renderVersions();
+    $("student-class-mapping-section").hidden = !["Operator", "IT Administrator"].includes(currentRole());
     const createForm = $("timetable-create-form");
     $("new-timetable").hidden = !canEdit();
     const select = createForm.elements.class_ids;
@@ -116,8 +117,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   async function refreshSetup() {
-    const [teachers, subjects, instructionalClasses, clusters, periodRows] = await Promise.all([
+    const [teachers, subjects, instructionalClasses, clusters, periodRows, classMappings] = await Promise.all([
       api("/timetable/teachers"), api("/timetable/subjects"), api("/timetable/classes"), api("/timetable/clusters"), api("/timetable/periods"),
+      api("/student-reference/class-mappings"),
     ]);
     const activeTeachers = teachers.filter((row) => row.is_active);
     const activeSubjects = subjects.filter((row) => row.is_active);
@@ -131,6 +133,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     fillSelect($("timetable-cluster-member-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-period-form").elements.target_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-rule-form").elements.target_id, activeClasses, (row) => `${row.code} · ${row.name}`);
+    fillSelect($("student-class-mapping-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
+    $("student-class-mapping-form").hidden = currentRole() !== "IT Administrator";
     for (const [id, values] of [["timetable-teacher-rows", teachers], ["timetable-subject-rows", subjects], ["timetable-class-rows", instructionalClasses]]) {
       const body = $(id);
       body.replaceChildren();
@@ -149,6 +153,41 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       const row = document.createElement("tr");
       for (const value of [period.scope, period.target_id ?? "Default", period.slot_code, period.label, period.starts_at ?? "", period.ends_at ?? ""]) cell(row, value);
       periodTable.append(row);
+    }
+    const mappingRows = $("student-class-mapping-rows");
+    mappingRows.replaceChildren();
+    for (const mapping of classMappings) {
+      const row = document.createElement("tr");
+      cell(row, mapping.source_workbook);
+      cell(row, mapping.source_label);
+      const classSelect = document.createElement("select");
+      classSelect.setAttribute("aria-label", `Target class for ${mapping.source_label}`);
+      fillSelect(classSelect, instructionalClasses, (item) => `${item.code} · ${item.name}`);
+      classSelect.value = String(mapping.instructional_class_id);
+      classSelect.disabled = currentRole() !== "IT Administrator";
+      cell(row, "").append(classSelect);
+      const active = document.createElement("input");
+      active.type = "checkbox";
+      active.checked = mapping.is_active;
+      active.disabled = currentRole() !== "IT Administrator";
+      active.setAttribute("aria-label", `Active mapping for ${mapping.source_label}`);
+      cell(row, "").append(active);
+      cell(row, String(mapping.version));
+      const save = document.createElement("button");
+      save.textContent = "Save";
+      save.disabled = currentRole() !== "IT Administrator";
+      save.setAttribute("aria-label", `Save mapping for ${mapping.source_label}`);
+      save.addEventListener("click", () => run(save, async () => {
+        const payload = {expected_version: mapping.version};
+        if (Number(classSelect.value) !== mapping.instructional_class_id) payload.instructional_class_id = Number(classSelect.value);
+        if (active.checked !== mapping.is_active) payload.is_active = active.checked;
+        if (Object.keys(payload).length === 1) throw new Error("Change the target class or active status before saving.");
+        await api(`/student-reference/class-mappings/${mapping.id}`, "PATCH", payload);
+        await refreshSetup();
+        notice(`Updated mapping for ${mapping.source_label}.`);
+      }));
+      cell(row, "").append(save);
+      mappingRows.append(row);
     }
     updatePeriodTargets();
     updateRuleTargets();
@@ -201,6 +240,20 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }), "Teacher profile created.");
   submitJSON("timetable-subject-form", "/timetable/subjects", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Subject created.");
   submitJSON("timetable-class-form", "/timetable/classes", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Instructional class created.");
+  $("student-class-mapping-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(event.currentTarget, async () => {
+      const form = event.currentTarget;
+      await api("/student-reference/class-mappings", "POST", {
+        source_workbook: "STUDENT_INTAKE_2023",
+        source_label: form.elements.source_label.value,
+        instructional_class_id: Number(form.elements.instructional_class_id.value),
+      });
+      form.reset();
+      await refreshSetup();
+      notice("Student intake class mapping saved.");
+    });
+  });
   submitJSON("timetable-cluster-form", "/timetable/clusters", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Class cluster created.");
   $("timetable-cluster-member-form").addEventListener("submit", (event) => {
     event.preventDefault();

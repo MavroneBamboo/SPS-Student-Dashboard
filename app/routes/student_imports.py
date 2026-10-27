@@ -10,8 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from app.audit import record_event
 from app.crypto import decrypt_sensitive, decrypt_sensitive_bytes, encrypt_sensitive, encrypt_sensitive_bytes
 from app.deps import Claims, DbSession, require_roles
-from app.models import Student, StudentImportBatch, StudentStatusHistory
+from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch, StudentStatusHistory
 from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
+from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
 
 router = APIRouter(prefix="/student-imports", tags=["student imports"], dependencies=[Depends(require_roles("Operator"))])
@@ -141,6 +142,27 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
 
     try:
         mark_duplicate_identifiers(rows)
+        mapping_rows = db.execute(
+            select(StudentClassMapping, InstructionalClass)
+            .join(InstructionalClass, InstructionalClass.id == StudentClassMapping.instructional_class_id)
+            .where(StudentClassMapping.source_workbook == STUDENT_INTAKE_2023)
+        ).all()
+        mappings_by_key = {mapping.source_key: (mapping, instructional_class) for mapping, instructional_class in mapping_rows}
+        for row in rows:
+            source_label = row["fields"].get("class_name")
+            if not source_label:
+                continue
+            normalized_label, source_key = normalize_source_class_label(source_label)
+            row["source_class_label"] = normalized_label
+            mapping_target = mappings_by_key.get(source_key)
+            if mapping_target is None or not mapping_target[0].is_active or not mapping_target[1].is_active:
+                row["errors"].append({"field": "class_name", "code": "unmapped_class"})
+                continue
+            mapping, instructional_class = mapping_target
+            row["class_mapping_id"] = mapping.id
+            row["class_mapping_version"] = mapping.version
+            row["instructional_class_id"] = instructional_class.id
+            row["fields"]["class_name"] = instructional_class.name
         identifiers = {row["fields"].get("pris_no", "").strip().upper() for row in rows if row["fields"].get("pris_no")}
         existing = db.scalars(select(Student).where(func.upper(func.trim(Student.pris_no)).in_(identifiers))).all() if identifiers else []
         existing_by_identifier = {row.pris_no.strip().upper(): row for row in existing}
@@ -210,6 +232,37 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
         raise HTTPException(status_code=500, detail="Stored import batch could not be read") from exc
 
     identifiers = [row["fields"]["pris_no"].strip().upper() for row in staged]
+    mapping_ids = [row["class_mapping_id"] for row in staged if row.get("class_mapping_id") is not None]
+    current_mappings = (
+        {
+            mapping.id: (mapping, instructional_class)
+            for mapping, instructional_class in db.execute(
+                select(StudentClassMapping, InstructionalClass)
+                .join(InstructionalClass, InstructionalClass.id == StudentClassMapping.instructional_class_id)
+                .where(StudentClassMapping.id.in_(mapping_ids))
+                .with_for_update()
+            ).all()
+        }
+        if mapping_ids
+        else {}
+    )
+    for staged_row in staged:
+        mapping_id = staged_row.get("class_mapping_id")
+        if mapping_id is None:
+            continue
+        mapping_pair = current_mappings.get(mapping_id)
+        mapping, instructional_class = mapping_pair if mapping_pair else (None, None)
+        if (
+            mapping is None
+            or not mapping.is_active
+            or mapping.version != staged_row["class_mapping_version"]
+            or mapping.instructional_class_id != staged_row["instructional_class_id"]
+            or instructional_class is None
+            or not instructional_class.is_active
+            or instructional_class.name != staged_row["fields"]["class_name"]
+        ):
+            db.rollback()
+            raise HTTPException(status_code=409, detail="A class mapping changed after preview; upload the workbook again")
     current_rows = db.scalars(select(Student).where(func.upper(func.trim(Student.pris_no)).in_(identifiers)).with_for_update()).all()
     current = {row.pris_no.strip().upper(): row for row in current_rows}
     for staged_row in staged:

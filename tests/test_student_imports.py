@@ -184,6 +184,22 @@ def intake_row(pris_no=None, **changes):
 
 
 def upload(client, headers, content):
+    mappings = client.get("/api/v1/student-reference/class-mappings", headers=headers["admin"])
+    assert mappings.status_code == 200, mappings.text
+    if not any(row["source_workbook"] == "STUDENT_INTAKE_2023" and row["source_label"] == "A4 A" for row in mappings.json()):
+        class_code = "IM" + uuid4().hex[:8].upper()
+        instructional_class = client.post("/api/v1/timetable/classes", json={"code": class_code, "name": "A4 A"}, headers=headers["admin"])
+        assert instructional_class.status_code == 201, instructional_class.text
+        mapped = client.post(
+            "/api/v1/student-reference/class-mappings",
+            json={
+                "source_workbook": "STUDENT_INTAKE_2023",
+                "source_label": "A4 A",
+                "instructional_class_id": instructional_class.json()["id"],
+            },
+            headers=headers["admin"],
+        )
+        assert mapped.status_code == 201, mapped.text
     return client.post(BASE, content=content, headers={**headers["operator"], "Content-Type": XLSX})
 
 
@@ -269,6 +285,97 @@ def test_preview_is_operator_only_sanitized_encrypted_and_detects_duplicates(les
         assert batch.status == "PREVIEW"
     assert client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"]).status_code == 409
     assert client.get(f"{BASE}/{preview['id']}", headers=headers["executive"]).status_code == 403
+
+
+def test_unmapped_intake_class_blocks_import_without_echoing_student_data(lesson_context):
+    client, headers, _ = lesson_context
+    row = intake_row("PRIVATE-UNMAPPED-CLASS")
+    row["class_name"] = "Unmapped Source Class " + uuid4().hex[:8]
+    response = client.post(BASE, content=workbook([row]), headers={**headers["operator"], "Content-Type": XLSX})
+    assert response.status_code == 201, response.text
+    preview = response.json()
+    assert preview["invalid_count"] == 1
+    assert preview["row_errors"] == [{"row_number": 2, "field": "class_name", "code": "unmapped_class"}]
+    assert "PRIVATE-UNMAPPED-CLASS" not in response.text and row["class_name"] not in response.text
+    denied = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert denied.status_code == 409
+
+
+def test_class_mappings_are_it_managed_normalized_and_versioned(lesson_context):
+    client, headers, references = lesson_context
+    mapping_path = "/api/v1/student-reference/class-mappings"
+    source_label = "Legacy Intake Class " + uuid4().hex[:8]
+    created = client.post(
+        mapping_path,
+        json={
+            "source_workbook": "STUDENT_INTAKE_2023",
+            "source_label": f"  {source_label}  ",
+            "instructional_class_id": references["instructional_class_id"],
+        },
+        headers=headers["admin"],
+    )
+    assert created.status_code == 201, created.text
+    mapping = created.json()
+    assert mapping["source_label"] == source_label and mapping["version"] == 1
+    listed = client.get(mapping_path, headers=headers["operator"])
+    assert any(row["id"] == mapping["id"] for row in listed.json())
+    duplicate = client.post(
+        mapping_path,
+        json={"source_label": source_label.upper(), "instructional_class_id": references["instructional_class_id"]},
+        headers=headers["admin"],
+    )
+    assert duplicate.status_code == 409
+    denied = client.post(
+        mapping_path,
+        json={"source_label": "Operator Cannot Map", "instructional_class_id": references["instructional_class_id"]},
+        headers=headers["operator"],
+    )
+    assert denied.status_code == 403
+    stale = client.patch(f"{mapping_path}/{mapping['id']}", json={"expected_version": 2, "is_active": False}, headers=headers["admin"])
+    assert stale.status_code == 409
+    updated = client.patch(f"{mapping_path}/{mapping['id']}", json={"expected_version": 1, "is_active": False}, headers=headers["admin"])
+    assert updated.status_code == 200 and updated.json()["version"] == 2 and not updated.json()["is_active"]
+
+
+def test_import_uses_canonical_class_and_rejects_mapping_changes_after_preview(lesson_context):
+    client, headers, references = lesson_context
+    class_path = "/api/v1/timetable/classes"
+    source_class = client.post(
+        class_path,
+        json={"code": "SRC" + uuid4().hex[:8].upper(), "name": "Canonical Intake Class"},
+        headers=headers["admin"],
+    )
+    target_class = client.post(
+        class_path,
+        json={"code": "DST" + uuid4().hex[:8].upper(), "name": "Replacement Intake Class"},
+        headers=headers["admin"],
+    )
+    assert source_class.status_code == 201 and target_class.status_code == 201
+    mappings_path = "/api/v1/student-reference/class-mappings"
+    mapping = client.post(
+        mappings_path,
+        json={"source_label": "Legacy Class Alias " + uuid4().hex[:8], "instructional_class_id": source_class.json()["id"]},
+        headers=headers["admin"],
+    ).json()
+    row = intake_row("CLASS-MAPPING-STALE")
+    row["class_name"] = " " + mapping["source_label"].upper().replace(" ", "   ") + " "
+    content = workbook([row])
+    preview = upload(client, headers, content).json()
+    assert preview["valid_count"] == 1
+    changed_mapping = client.patch(
+        f"{mappings_path}/{mapping['id']}",
+        json={"expected_version": mapping["version"], "instructional_class_id": target_class.json()["id"]},
+        headers=headers["admin"],
+    )
+    assert changed_mapping.status_code == 200 and changed_mapping.json()["version"] == 2
+    stale_commit = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert stale_commit.status_code == 409 and "class mapping changed" in stale_commit.json()["detail"].lower()
+    fresh_preview = upload(client, headers, content).json()
+    committed = client.post(f"{BASE}/{fresh_preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert committed.status_code == 200, committed.text
+    saved = client.get("/api/v1/students?q=CLASS-MAPPING-STALE", headers=headers["operator"]).json()[0]
+    assert saved["class_name"] == "Replacement Intake Class"
+    assert references["instructional_class_id"] != source_class.json()["id"]
 
 
 def test_create_only_import_is_encrypted_atomic_idempotent_and_audited(lesson_context):

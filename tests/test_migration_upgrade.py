@@ -309,6 +309,60 @@ def test_student_import_upgrade_refuses_normalized_identifier_duplicates_without
         database.dispose()
 
 
+def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-class-mappings.db').as_posix()}"
+    environment = {**os.environ, "DATABASE_URL": database_url}
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    assert migrate("20261028_0010").returncode == 0
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        users, students = metadata.tables["users"], metadata.tables["students"]
+        with database.begin() as connection:
+            connection.execute(
+                users.insert().values(
+                    id=1,
+                    username="class-mapping-upgrade-admin",
+                    password_hash="fixture-hash",
+                    role="IT Administrator",
+                    must_change_password=False,
+                    is_active=True,
+                )
+            )
+            connection.execute(
+                students.insert().values(
+                    id=1,
+                    pris_no="CLASS-MAPPING-UPGRADE",
+                    name_encrypted="preserved-ciphertext",
+                    class_name="Legacy class label",
+                    category="OP",
+                    status="ACTIVE",
+                    created_by=1,
+                )
+            )
+            before = list(connection.execute(select(students)))
+        upgraded = migrate("head")
+        assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+        assert migrate("head").returncode == 0
+        after = MetaData()
+        after.reflect(bind=database)
+        assert "student_class_mappings" in after.tables
+        columns = {column["name"] for column in inspect(database).get_columns("student_class_mappings")}
+        assert {"source_workbook", "source_label", "source_key", "instructional_class_id", "version", "is_active"} <= columns
+        with database.connect() as connection:
+            assert list(connection.execute(select(after.tables["students"]))) == before
+            assert connection.execute(select(after.tables["student_class_mappings"])).first() is None
+    finally:
+        database.dispose()
+
+
 @pytest.mark.parametrize("duplicate", [False, True])
 def test_attendance_upgrade_preserves_records_or_refuses_ambiguous_sessions(tmp_path, duplicate):
     database_url = f"sqlite:///{(tmp_path / 'attendance-upgrade.db').as_posix()}"
