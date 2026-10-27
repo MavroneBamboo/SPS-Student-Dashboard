@@ -76,7 +76,7 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
         assert stored.next_of_kin_contact_encrypted is None
     screenshot(page, "operator-profile-edit-history")
     page.get_by_role("button", name="Dashboard", exact=True).click()
-    page.get_by_label("Class", exact=True).fill("Browser Profile Class")
+    page.locator("#dashboard-filter").get_by_label("Class", exact=True).fill("Browser Profile Class")
     page.get_by_role("button", name="Apply filters", exact=True).click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students0")
     page.get_by_role("button", name="Sign out", exact=True).click()

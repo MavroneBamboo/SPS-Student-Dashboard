@@ -139,6 +139,7 @@ Dashboard results must be based on committed database data and show the last ref
 
 - Import the existing intake workbook format.
 - Export approved operational and executive reports to Excel/PDF.
+- Operators and Executives can download a monthly Excel attendance register for one class, formatted as a printable AM/PM calendar grid with compact attendance codes.
 - Retain UiPath integration while the new application is introduced.
 - Treat the existing formula dashboards as reference specifications for acceptance testing.
 

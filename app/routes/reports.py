@@ -1,10 +1,15 @@
+import calendar
 import csv
 import io
 import json
 from datetime import UTC, date, datetime
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy import func, select
 
 from app.crypto import decrypt_sensitive
@@ -134,6 +139,115 @@ def attendance_csv(
         )
     return StreamingResponse(
         iter([stream.getvalue()]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=attendance-report.csv"}
+    )
+
+
+@router.get("/attendance/monthly.xlsx", dependencies=[Depends(require_roles(*READ_ROLES))])
+def attendance_monthly_xlsx(
+    db: DbSession,
+    claims: Claims,
+    month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    class_name: str = Query(min_length=1, max_length=120),
+) -> Response:
+    year, month_number = (int(part) for part in month.split("-"))
+    first_day = date(year, month_number, 1)
+    last_day = date(year, month_number, calendar.monthrange(year, month_number)[1])
+    students = db.scalars(
+        select(Student).where(Student.class_name == class_name, Student.status == "ACTIVE").order_by(Student.pris_no)
+    ).all()
+    sessions = db.scalars(
+        select(AttendanceSession)
+        .where(
+            AttendanceSession.class_name == class_name,
+            AttendanceSession.session_date >= first_day,
+            AttendanceSession.session_date <= last_day,
+        )
+        .order_by(AttendanceSession.session_date, AttendanceSession.id)
+    ).all()
+    sessions_by_id = {session.id: session for session in sessions}
+    attendance: dict[tuple[int, int, str], str] = {}
+    if sessions_by_id and students:
+        records = db.execute(
+            select(AttendanceRecord, Student)
+            .join(Student, Student.id == AttendanceRecord.student_id)
+            .where(
+                AttendanceRecord.session_id.in_(sessions_by_id),
+                Student.class_name == class_name,
+                Student.status == "ACTIVE",
+            )
+        )
+        status_codes = {"PRESENT": "P", "ABSENT": "A", "LATE": "L", "EXCUSED": "E", "MISSING": "M"}
+        for record, student in records:
+            session = sessions_by_id[record.session_id]
+            slots = ("AM", "PM") if session.session_type == "FULL_DAY" else (("AM",) if session.session_type == "MORNING" else ("PM",))
+            for slot in slots:
+                attendance[(student.id, session.session_date.day, slot)] = status_codes[record.attendance_status]
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Monthly Attendance"
+
+    def write_literal(row: int, column: int, value: str) -> None:
+        cell = sheet.cell(row, column, value)
+        cell.data_type = "s"
+
+    days_in_month = calendar.monthrange(year, month_number)[1]
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3 + days_in_month * 2)
+    sheet.cell(1, 1, f"MONTHLY ATTENDANCE | {first_day.strftime('%B %Y')}")
+    sheet.cell(2, 1, "CLASS")
+    write_literal(2, 3, class_name)
+    sheet.cell(4, 1, "STATUS")
+    sheet.cell(4, 2, "PRIS NO.")
+    sheet.cell(4, 3, "NAME")
+    header_fill = PatternFill("solid", fgColor="17365D")
+    header_font = Font(color="FFFFFF", bold=True)
+    for column in range(1, 4):
+        cell = sheet.cell(4, column)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+    for day in range(1, days_in_month + 1):
+        first_col = 4 + (day - 1) * 2
+        sheet.merge_cells(start_row=3, start_column=first_col, end_row=3, end_column=first_col + 1)
+        sheet.cell(3, first_col, date(year, month_number, day))
+        sheet.cell(3, first_col).number_format = "ddd, d mmm"
+        for slot, column in (("AM", first_col), ("PM", first_col + 1)):
+            cell = sheet.cell(4, column, slot)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+    for row_number, student in enumerate(students, start=5):
+        write_literal(row_number, 1, student.status)
+        write_literal(row_number, 2, student.pris_no)
+        write_literal(row_number, 3, decrypt_sensitive(student.name_encrypted) or "")
+        for day in range(1, days_in_month + 1):
+            for slot_index, slot in enumerate(("AM", "PM")):
+                column = 4 + (day - 1) * 2 + slot_index
+                code = attendance.get((student.id, day, slot))
+                if code:
+                    sheet.cell(row_number, column, code)
+    sheet.freeze_panes = "D5"
+    sheet.sheet_view.showGridLines = False
+    sheet.column_dimensions["A"].width = 12
+    sheet.column_dimensions["B"].width = 16
+    sheet.column_dimensions["C"].width = 30
+    for column in range(4, 4 + days_in_month * 2):
+        sheet.column_dimensions[get_column_letter(column)].width = 5
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.print_title_rows = "1:4"
+    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(4, 4 + len(students))}"
+    output = io.BytesIO()
+    workbook.save(output)
+    safe_class = quote(class_name.strip().replace(" ", "_"), safe="")
+    filename = f"attendance-{year}-{month_number:02d}-{safe_class}.xlsx"
+    return Response(
+        output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
