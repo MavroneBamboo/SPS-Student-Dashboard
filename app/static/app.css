@@ -25,6 +25,7 @@ button:hover { background: #1748bb; } button:disabled { opacity: .55; cursor: wa
 .filters { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; } .filters label { margin: 0; flex: 1; min-width: 180px; }
 .metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 16px; margin: 24px 0; }
 .metric, .panel { background: white; border: 1px solid #dce4ef; border-radius: 12px; padding: 22px; margin-bottom: 20px; }
+.notice-panel { background: #fff5db; border-color: #ead298; }.notice-panel label { flex-direction: row; align-items: center; }.notice-panel ul { max-height: 180px; overflow: auto; }
 .metric strong { display: block; font-size: 30px; margin-top: 14px; }.metric span { color: #52657b; }
 .columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
 .profile-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 16px; }

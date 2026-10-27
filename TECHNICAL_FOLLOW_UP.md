@@ -6,7 +6,7 @@ Identity follow-up (26 October 2026): API and browser now support account-wide t
 
 Attendance follow-up (26 October 2026): Operator browser and APIs now support versioned daily sessions/records, corrections, missing review, count controls and closure with audit and row locking. Existing API clients must adopt expected versions and a close request body. Historical roster rules, full-day granularity policy, reopening/corrections, monthly Excel reconciliation and complete permissions remain to implement. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
-Profile follow-up (27 October 2026): migration `0009` extends profile/API/browser coverage to the supported intake workbook fields, including academic selections and next-of-kin. Sensitive identifiers, demographics, contact and address values are encrypted; clients still send `expected_version` for PATCH. Workbook staging/import/reconciliation, reference catalogs, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+Profile/import follow-up (28 October 2026): migration `0009` extends profile coverage and `0010` adds encrypted intake staging. The Operator can upload the supported 2023 worksheet, inspect sanitized errors, and commit create-only or explicit update-existing changes atomically. Clients still send `expected_version` for PATCH. Class/catalog mapping, 2021 workbook support, retention controls, report reconciliation, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md) and [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
 Browser follow-up (26 October 2026): `/ui/` provides real sign-in, mandatory password change, Superuser account administration, committed-data dashboards, Operator profile/attendance workspaces and a class-oriented timetable workspace. The timetable UI supports IT reference setup, draft creation, clickable placement/edit/remove/lock, generation and IT approval; Chromium CI covers the new paths. Teacher-oriented grids, swap/drag, imports/exports, complete setup/recovery, HTTPS and session hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) and [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 
@@ -139,7 +139,7 @@ The existing `Student Intake 2023` workbook is the migration source. Its importa
 - `CAT`
 - profile and next-of-kin fields
 
-The supplied workbook's intake header row contains enrolment classifications (`EDR/ROS`, `ADM TYPE`, `EXAM LEVEL`), IC, DOB and academic-year age, gender, language/math/CPA/science/humanities/commerce/AA selections, nationality/citizenship/birthplace/religion/race/marital status, and next-of-kin name/NRIC/relationship/contact/address plus student contact. The current profile schema and browser now preserve these fields. `S/N` is a worksheet row sequence, not an identifier. `INSTN CLASS` remains the source class label; normalized institution/class catalogs and their crosswalk still need to be implemented and reconciled before import.
+The supplied workbook's intake header row contains enrolment classifications (`EDR/ROS`, `ADM TYPE`, `EXAM LEVEL`), IC, DOB and academic-year age, gender, language/math/CPA/science/humanities/commerce/AA selections, nationality/citizenship/birthplace/religion/race/marital status, and next-of-kin name/NRIC/relationship/contact/address plus student contact. The current profile schema and browser preserve these fields. `S/N` is a worksheet row sequence, not an identifier. The supported 2023 sheet can be staged and imported now; `INSTN CLASS` remains the source class label until normalized institution/class catalogs and their crosswalk are implemented and reconciled for the finalized production migration.
 
 Migration steps:
 
@@ -147,7 +147,7 @@ Migration steps:
 2. Import reference values from `Filtering Criteria` and `Class DefinItion`.
 3. Load students using `Pris No.` as the matching key.
 4. Resolve duplicate identifiers and missing identifiers before final commit.
-5. Load status history and preserve the original source filename and import batch.
+5. Load status history and retain the encrypted source workbook and import-batch metadata; the original filesystem path/name is not stored.
 6. Reconcile active counts, class counts and category totals with the original workbook.
 7. Freeze the migration snapshot and obtain business sign-off.
 
@@ -311,9 +311,9 @@ The initial pull-request CI foundation is implemented. It runs Ruff lint/format 
 
 The current workflow does not yet verify all of the release gates below. Add gates with the associated feature and keep the implementation status explicit:
 
-1. Frontend unit, accessibility and browser end-to-end tests when the production UI exists.
+1. Frontend unit and accessibility tests; Chromium end-to-end coverage exists for delivered workspaces and must continue to grow with each feature.
 2. Timetable invariant/property and PDF golden-output tests with scheduling and Amend 4-up.
-3. Workbook import malformed-file, golden fixture and reconciliation tests with intake import.
+3. Broader workbook import malformed-file, production-template golden fixture and catalog/reconciliation tests. Synthetic tests already cover parser, encryption, permissions, duplicate handling and atomic commit.
 4. Report reconciliation fixtures with each approved business report.
 5. Disposable Compose full-stack startup/readiness/smoke tests and artifact publication before release deployment.
 6. Backup/restore, load, expanded penetration/security, signing and deployment approval gates before production readiness.

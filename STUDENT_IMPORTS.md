@@ -1,0 +1,21 @@
+# Student Intake workbook import
+
+Operators can import a workbook from **Student profiles**. The supported workbook must contain the visible worksheet named `Student Intake 2023` and its current header set. The importer ignores `S/N` as a row sequence, maps `Pris No.` as the unique student key, and retains `INSTN CLASS` verbatim until the institution/class crosswalk is approved. Unknown or missing required headers reject the workbook rather than silently dropping data. The older 2021 worksheet is not accepted by this increment.
+
+## Upload, preview and commit
+
+1. The browser posts the selected `.xlsx` bytes directly to `POST /api/v1/student-imports`; it does not send the workbook to a third-party service or write an upload file to the app's temporary directory.
+2. The server checks the media type, 10 MiB input limit, ZIP member count and compressed/uncompressed size limits, package structure, worksheet name, row/column limits and headers. The parser uses `openpyxl` in read-only mode with XML hardening installed. The actual 2023 sheet contains formula-driven `AGE IN AY'23` values, so only that column may contain formulas; the importer uses its saved cached result and rejects a formula without one. Formulas elsewhere, Excel error cells and numeric `Pris No.` values are rejected. Numeric IC/NRIC/contact cells are converted from the workbook's stored number and flagged because leading zeroes or long digits may already have been lost.
+3. A preview reports total, valid, invalid, existing, new and warning counts. Row errors/warnings identify only the workbook row, field and safe code; student values are not echoed. `GET /api/v1/student-imports/{id}` returns that sanitized preview to the Operator who uploaded the batch.
+4. The Operator chooses **Create new profiles only** or **Update existing profiles**. The first mode refuses a batch containing any identifier already in the database. The second explicitly updates matching `Pris No.` records and creates new ones. New identifiers require `NAME`, `INSTN CLASS`, `CAT` and `STATUS`; blank fields on an existing profile preserve saved values. If numeric-cell warnings exist, the Operator must acknowledge them before either commit. Status changes append status history using the workbook's effective date or the current date when none is supplied.
+5. Any invalid row blocks the batch. The commit rechecks all identifiers and captured profile versions; an identifier race or stale profile rejects the whole batch. Valid batches update profiles, status history, audit and batch outcome in one database transaction. A repeated commit returns the stored outcome without replaying changes.
+
+## Protected staging
+
+Migration `20261028_0010` adds `student_import_batches`. The original workbook bytes and parsed row payload are separately encrypted with the existing application encryption key before they are stored in PostgreSQL. There is no endpoint to retrieve the raw workbook or staged values. Audit events contain counts, field names, versions and row numbers only. An import batch is visible only to its creating Operator. Batch encryption currently uses the existing Fernet format, which has no explicit key identifier; key rotation and retention controls remain release requirements.
+
+## Boundaries and verification
+
+This increment does not reconcile class/category catalogs, import formulas outside the age column or dashboard sheets, provide 2021-workbook mapping, or reproduce workbook reports. Supplied values must satisfy the profile schema; spreadsheet formatting is not a business rule. A preview is not a backup or a substitute for data reconciliation and sign-off.
+
+API and migration tests cover actual header variants, malformed packages, formulas/cached age values, numeric identifier warnings and acknowledgement, duplicate workbook identifiers, sanitized preview, encryption at rest, ownership/role controls, create-only refusal, explicit updates, blank-field preservation, status history, stale preview, idempotent commit and transaction rollback. Chromium acceptance covers the Operator upload, preview, create, update, numeric-warning acknowledgement and sanitized error flow. The container CI includes these with PostgreSQL migration/model parity, security scans, browser checks and production image validation.
