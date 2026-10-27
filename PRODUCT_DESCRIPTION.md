@@ -100,7 +100,7 @@ Executives cannot alter source records or configuration.
 - Role-based access control.
 - Account activation, deactivation and password reset.
 - Optional Windows/Active Directory integration where available.
-- Session timeout and protection against repeated failed login attempts.
+- Session timeout and reverse-proxy throttling of repeated sign-in attempts by client IP, with rejected bursts returned as HTTP 429.
 - Audit records for sign-in, role changes and privileged actions.
 
 ### 4.2 Student intake and profile management
