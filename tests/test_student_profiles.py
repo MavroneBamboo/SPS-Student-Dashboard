@@ -80,17 +80,16 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
         {"expected_version": 1, "status_effective": "2026-09-01"},
     ):
         assert client.patch(path, json=body, headers=headers["operator"]).status_code == 422
-    assert client.patch(
-        path, json={"expected_version": 1, "age_in_academic_year": 121}, headers=headers["operator"]
-    ).status_code == 422
-    assert client.patch(
-        path, json={"expected_version": 1, "age_in_academic_year": 20}, headers=headers["operator"]
-    ).status_code == 422
-    assert client.post(
-        BASE,
-        json={"pris_no": "AGE-YEAR-MISSING", "name": "Synthetic", "class_name": "Class", "category": "OP", "age_in_academic_year": 20},
-        headers=headers["operator"],
-    ).status_code == 422
+    assert client.patch(path, json={"expected_version": 1, "age_in_academic_year": 121}, headers=headers["operator"]).status_code == 422
+    assert client.patch(path, json={"expected_version": 1, "age_in_academic_year": 20}, headers=headers["operator"]).status_code == 422
+    assert (
+        client.post(
+            BASE,
+            json={"pris_no": "AGE-YEAR-MISSING", "name": "Synthetic", "class_name": "Class", "category": "OP", "age_in_academic_year": 20},
+            headers=headers["operator"],
+        ).status_code
+        == 422
+    )
     assert client.get(path, headers=headers["executive"]).status_code == 403
     assert client.patch(path, json={"expected_version": 1, "name": "Denied"}, headers=headers["executive"]).status_code == 403
     assert client.get(f"{BASE}/999999999", headers=headers["operator"]).status_code == 404
