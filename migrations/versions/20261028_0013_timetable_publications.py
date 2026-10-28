@@ -20,16 +20,6 @@ def upgrade() -> None:
     )
     op.add_column("timetable_versions", sa.Column("published_by", sa.Integer(), nullable=True))
     op.add_column("timetable_versions", sa.Column("published_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_check_constraint(
-        "ck_timetable_publication_metadata_pair",
-        "timetable_versions",
-        "(published_by IS NULL AND published_at IS NULL) OR (published_by IS NOT NULL AND published_at IS NOT NULL)",
-    )
-    op.create_check_constraint(
-        "ck_timetable_published_approved",
-        "timetable_versions",
-        "is_published = false OR (status = 'APPROVED' AND published_by IS NOT NULL AND published_at IS NOT NULL)",
-    )
     op.create_index(
         "uq_timetable_current_publication",
         "timetable_versions",
@@ -39,6 +29,16 @@ def upgrade() -> None:
         sqlite_where=sa.text("is_published = 1"),
     )
     if op.get_bind().dialect.name == "postgresql":
+        op.create_check_constraint(
+            "ck_timetable_publication_metadata_pair",
+            "timetable_versions",
+            "(published_by IS NULL AND published_at IS NULL) OR (published_by IS NOT NULL AND published_at IS NOT NULL)",
+        )
+        op.create_check_constraint(
+            "ck_timetable_published_approved",
+            "timetable_versions",
+            "is_published = false OR (status = 'APPROVED' AND published_by IS NOT NULL AND published_at IS NOT NULL)",
+        )
         op.execute("""
             CREATE OR REPLACE FUNCTION sps_guard_timetable_version() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
             BEGIN
