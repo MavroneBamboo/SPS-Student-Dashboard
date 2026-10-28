@@ -120,6 +120,58 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     expect(page.locator("#timetable-unpublish")).to_be_hidden()
     assert page.request.get(live_url + "/api/v1/timetable/published?academic_year=2026&week_start=2026-10-26", headers=headers).json() == []
 
+    page.get_by_role("button", name="Reports & export", exact=True).click()
+    with page.expect_popup() as popup_info:
+        page.get_by_role("button", name="Open class print view", exact=True).click()
+    report_page = popup_info.value
+    report_page.wait_for_load_state("load")
+    expect(report_page.locator(".report-page")).to_have_count(1)
+    expect(report_page.locator('link[rel="stylesheet"]')).to_have_attribute("href", "/ui/timetable-print.css")
+    expect(report_page.locator(".report-title h1")).to_have_text(f"C{suffix}")
+    expect(report_page.locator(".report-table thead th")).to_have_count(6)
+    expect(report_page.locator(".report-table tbody tr")).to_have_count(5)
+    expect(report_page.locator('.report-table th[data-period="P1"]')).to_contain_text("Period 1")
+    expect(report_page.locator('.report-table th[data-period="P1"]')).to_contain_text("8:30")
+    expect(report_page.locator('.report-table th[data-period="LUNCH"]')).to_contain_text("Lunch / Muster")
+    expect(report_page.locator(".report-page")).to_contain_text("Browser Timetable Subject")
+    crest = report_page.locator(".report-brand img")
+    expect(crest).to_have_js_property("complete", True)
+    assert report_page.evaluate("document.querySelector('.report-brand img').naturalWidth") > 0
+
+    report_page.emulate_media(media="print")
+    layout = report_page.evaluate("""() => {
+      const rect = (selector) => {
+        const element = document.querySelector(selector);
+        const box = element.getBoundingClientRect();
+        return {x: box.x, y: box.y, width: box.width, height: box.height, scrollHeight: element.scrollHeight};
+      };
+      return {body: rect('body'), page: rect('.report-page'), header: rect('.report-header'), table: rect('.report-table'), footer: rect('.report-footer'), viewport: {width: innerWidth, height: innerHeight}};
+    }""")
+    assert 1060 < layout["page"]["width"] < 1080
+    assert 720 < layout["page"]["height"] < 750
+    pdf_path = tmp_path / "class-timetable.pdf"
+    pdf = report_page.pdf(path=str(pdf_path), format="A4", landscape=True, print_background=True, prefer_css_page_size=True)
+    assert pdf.startswith(b"%PDF")
+    assert pdf_path.stat().st_size > 5000
+    page_boxes = re.findall(rb"/MediaBox\s*\[([^\]]+)\]", pdf)
+    assert len(page_boxes) == 1, f"Expected one report page, found {len(page_boxes)}; print layout: {layout}"
+    page_bounds = [float(value) for value in page_boxes[0].split()]
+    assert len(page_bounds) == 4
+    _, _, page_width, page_height = page_bounds
+    assert 820 < page_width < 860 and 570 < page_height < 620
+
+    with page.expect_popup() as teacher_popup_info:
+        page.get_by_role("button", name="Open teacher print view", exact=True).click()
+    teacher_report = teacher_popup_info.value
+    teacher_report.wait_for_load_state("load")
+    expect(teacher_report.locator(".report-page")).to_have_count(1)
+    expect(teacher_report.locator(".report-title h1")).to_have_text("Teacher Browser Timetable Teacher")
+    expect(teacher_report.locator(".report-page")).to_contain_text("Browser Timetable Subject")
+    expect(teacher_report.locator(".report-page")).to_contain_text(f"C{suffix}")
+    teacher_pdf = teacher_report.pdf(format="A4", landscape=True, print_background=True, prefer_css_page_size=True)
+    teacher_page_boxes = re.findall(rb"/MediaBox\s*\[([^\]]+)\]", teacher_pdf)
+    assert len(teacher_page_boxes) == 1
+
 
 def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(page, make_account, live_url):
     admin = make_account("IT Administrator")
