@@ -89,6 +89,48 @@ async function api(path, method = "GET", body) {
   return data;
 }
 
+async function downloadXlsx(path) {
+  const started = epoch;
+  const activeToken = token;
+  let response;
+  try {
+    response = await fetch(`/api/v1${path}`, {
+      headers: {Authorization: `Bearer ${activeToken}`},
+      cache: "no-store",
+      credentials: "omit",
+      signal: requests.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    throw new Error("Unable to reach the server. Check your connection and try again.");
+  }
+  if (started !== epoch || activeToken !== token) throw new DOMException("Session changed", "AbortError");
+  if (response.status === 401 && token) {
+    signedOut("Your session ended. Sign in again.");
+    throw new DOMException("Session ended", "AbortError");
+  }
+  if (response.status === 403 && token) {
+    signedOut("Your access changed. Sign in again.");
+    throw new DOMException("Access changed", "AbortError");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Could not generate the timetable report.");
+  }
+  const blob = await response.blob();
+  if (started !== epoch || activeToken !== token) throw new DOMException("Session changed", "AbortError");
+  const filename = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)"?/i)?.[1] || "timetable-report.xlsx";
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  notice("Timetable report workbook downloaded.");
+}
+
 async function run(control, action) {
   const controls = control.matches("form") ? [...control.querySelectorAll("button")] : [control];
   controls.forEach((element) => { element.disabled = true; });
@@ -291,7 +333,7 @@ async function showUsers() {
 
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
-const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role});
+const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role, downloadXlsx});
 $("profiles-nav").addEventListener("click", () => run($("profiles-nav"), students.show));
 $("attendance-nav").addEventListener("click", () => run($("attendance-nav"), attendance.show));
 $("timetable-nav").addEventListener("click", () => run($("timetable-nav"), timetable.show));

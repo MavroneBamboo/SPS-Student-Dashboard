@@ -2,7 +2,7 @@ const weekdays = ["MON", "TUE", "WED", "THU", "FRI"];
 const periods = ["P1", "P2", "LUNCH", "P3", "P4"];
 const periodLabels = {P1: "P1 · Period 1", P2: "P2 · Period 2", LUNCH: "P3 · Lunch / Muster", P3: "P4 · Period 3", P4: "P5 · Period 4"};
 
-export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, role}) {
+export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, role, downloadXlsx}) {
   let versions = [];
   let classes = [];
   let current = null;
@@ -849,6 +849,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   $("timetable-cancel-placement").addEventListener("click", () => { placementForm.hidden = true; });
   $("timetable-generate").addEventListener("click", () => runDraftMutation($("timetable-generate"), generate));
   $("timetable-approve").addEventListener("click", () => runDraftMutation($("timetable-approve"), approve));
+  $("timetable-download-report").addEventListener("click", () => run($("timetable-download-report"), () =>
+    downloadXlsx(`/timetable/versions/${current.id}/reports.xlsx?kind=both`)));
   $("new-timetable").addEventListener("click", () => {
     const form = $("timetable-create-form");
     form.hidden = !form.hidden;

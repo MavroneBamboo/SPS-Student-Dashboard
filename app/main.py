@@ -18,6 +18,7 @@ from app.routes import (
     student_imports,
     student_reference,
     students,
+    timetable_exports,
     timetable_resources,
     timetables,
     users,
@@ -49,6 +50,7 @@ app.include_router(rules.router, prefix="/api/v1")
 app.include_router(timetable_resources.router, prefix="/api/v1")
 app.include_router(lessons.router, prefix="/api/v1")
 app.include_router(timetables.router, prefix="/api/v1")
+app.include_router(timetable_exports.router, prefix="/api/v1")
 app.include_router(students.router, prefix="/api/v1")
 app.include_router(student_reference.router, prefix="/api/v1")
 app.include_router(student_imports.router, prefix="/api/v1")
