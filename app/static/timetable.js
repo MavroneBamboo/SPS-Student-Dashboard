@@ -602,38 +602,87 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     const escapeHTML = (value) => String(value ?? "").replace(/[&<>\"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[char]));
     const includeLunch = $("print-lunch-row").checked;
     const includeAllPeriods = $("print-all-periods").checked;
+    const periodOrder = ["P1", "P2", "LUNCH", "P3", "P4"];
+    const periodNumber = {P1: 1, P2: 2, LUNCH: 3, P3: 4, P4: 5};
+    const dayLabels = {MON: "Mo", TUE: "Tu", WED: "We", THU: "Th", FRI: "Fr"};
+    const days = Object.keys(dayLabels);
+    const classes = classRows();
     const items = [];
     if (kind !== "teacher") {
-      for (const cls of classRows()) items.push({kind: "class", item: cls});
+      for (const cls of classes) items.push({kind: "class", item: cls});
     }
     if (kind !== "class") {
       for (const teacher of Object.values(current.snapshot.teachers).sort((a, b) => a.short_code.localeCompare(b.short_code))) items.push({kind: "teacher", item: teacher});
     }
+    if (!items.length) {
+      notice("There are no class or teacher schedules in this timetable.");
+      return;
+    }
+    const getPeriodDefinitions = (itemKind, item) => {
+      if (itemKind === "class") return [item.periods ?? []];
+      return classes.map((classItem) => classItem.periods ?? []);
+    };
+    const formatTime = (value) => {
+      if (!value) return "";
+      const [hours, minutes] = value.slice(0, 5).split(":");
+      return `${Number(hours)}:${minutes}`;
+    };
+    const formatDate = (value) => {
+      if (!value) return "Not recorded";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "Not recorded" : new Intl.DateTimeFormat("en-SG", {dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Singapore"}).format(date);
+    };
+    const generatedAt = new Intl.DateTimeFormat("en-SG", {dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Singapore"}).format(new Date());
     const sections = items.map(({kind: itemKind, item}) => {
-      const title = itemKind === "class" ? `${item.code} · ${item.name}` : `${item.short_code} · ${item.full_name}`;
-      const headers = weekdays.map((day) => `<th>${day}</th>`).join("");
-      const rows = periods.filter((period) => (includeLunch || period !== "LUNCH") && (includeAllPeriods || period === "LUNCH" || current.placements.some((candidate) => {
-        const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
-        const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
-        return matches && candidate.slots.some((slot) => slot.slot_code === period);
-      }))).map((period) => {
-        const cells = weekdays.map((day) => {
-          if (period === "LUNCH") return "<td class='lunch'>Lunch / Muster</td>";
-          const block = current.placements.find((candidate) => {
+      const title = itemKind === "class" ? item.code : `Teacher ${item.full_name}`;
+      const periodDefinitions = getPeriodDefinitions(itemKind, item);
+      const periodsToPrint = periodOrder.filter((period) => {
+        if (period === "LUNCH" && !includeLunch) return false;
+        if (includeAllPeriods || period === "LUNCH") return true;
+        return current.placements.some((candidate) => {
+          const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
+          const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+          return matches && candidate.slots.some((slot) => slot.slot_code === period);
+        });
+      });
+      const periodHeaders = periodsToPrint.map((period) => {
+        const definitions = periodDefinitions.map((rows) => rows.find((row) => row.slot_code === period)).filter(Boolean);
+        const times = [...new Set(definitions.map((row) => `${row.starts_at ?? ""}-${row.ends_at ?? ""}`))];
+        const timeText = !times.length || times.every((value) => value === "-")
+          ? "Time not set"
+          : times.length > 1
+            ? "Times vary by class"
+            : `${formatTime(definitions[0].starts_at)} – ${formatTime(definitions[0].ends_at)}`;
+        const label = period === "LUNCH" ? "Lunch / Muster" : `Period ${periodNumber[period]}`;
+        return `<th data-period="${period}"><span>${label}</span><small>${escapeHTML(timeText)}</small></th>`;
+      }).join("");
+      const rows = days.map((day) => {
+        const cells = periodsToPrint.map((period) => {
+          if (period === "LUNCH") return '<td class="lunch-cell" data-period="LUNCH">Lunch / Muster</td>';
+          const entries = current.placements.flatMap((candidate) => {
             const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
             const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
-            return matches && candidate.slots.some((slot) => slot.weekday === day && slot.slot_code === period);
+            if (!matches) return [];
+            return candidate.slots.filter((slot) => slot.weekday === day && slot.slot_code === period).map((slot) => ({req, slot}));
           });
-          if (!block) return `<td>${itemKind === "teacher" ? "Free" : ""}</td>`;
-          const req = current.snapshot.requirements[String(block.lesson_requirement_id)];
-          const subject = current.snapshot.subjects[String(req.subject_id)];
-          const cls = current.snapshot.classes[String(req.instructional_class_id)];
-          const teacher = current.snapshot.teachers[String(req.teacher_id)];
-          return `<td><strong>${escapeHTML(subject.code)}</strong><br>${itemKind === "class" ? escapeHTML(teacher.short_code) : escapeHTML(cls.code)}</td>`;
+          const content = entries.map(({req, slot}) => {
+            const subject = current.snapshot.subjects[String(req.subject_id)];
+            const classItem = current.snapshot.classes[String(req.instructional_class_id)];
+            const teacher = current.snapshot.teachers[String(req.teacher_id)];
+            const resource = itemKind === "class" ? teacher.short_code : classItem.code;
+            const timeVaries = itemKind === "teacher" && periodDefinitions
+              .map((definitions) => definitions.find((definition) => definition.slot_code === period))
+              .filter(Boolean)
+              .some((definition, index, definitions) => index > 0 && (definition.starts_at !== definitions[0].starts_at || definition.ends_at !== definitions[0].ends_at));
+            const time = timeVaries ? `<small class="entry-time">${formatTime(slot.starts_at)} – ${formatTime(slot.ends_at)}</small>` : "";
+            return `<span class="lesson-entry"><strong>${escapeHTML(subject.name)}</strong><small class="entry-resource">${escapeHTML(resource)}</small>${time}</span>`;
+          }).join("");
+          return `<td data-period="${period}">${content}</td>`;
         }).join("");
-        return `<tr><th>${escapeHTML(periodLabels[period])}</th>${cells}</tr>`;
+        return `<tr data-weekday="${day}"><th scope="row">${dayLabels[day]}</th>${cells}</tr>`;
       }).join("");
-      return `<section><h2>${escapeHTML(title)}</h2><table><thead><tr><th>Period</th>${headers}</tr></thead><tbody>${rows}</tbody></table></section>`;
+      const className = itemKind === "class" ? `<span>${escapeHTML(item.name)}</span>` : "";
+      return `<section class="report-page" data-report-kind="${itemKind}"><header class="report-header"><div class="report-brand"><img src="/ui/sps-crest.png" alt=""><strong>Singapore Prison Service</strong></div><div class="report-title"><h1>${escapeHTML(title)}</h1>${className}<p>Academic year ${escapeHTML(current.academic_year)} · Week of ${escapeHTML(current.week_start)}</p><p>${escapeHTML(current.status)} · Revision ${escapeHTML(current.revision)}</p></div></header><table class="report-table"><thead><tr><th class="day-heading"></th>${periodHeaders}</tr></thead><tbody>${rows}</tbody></table><footer class="report-footer"><span>Timetable generated on ${escapeHTML(generatedAt)}</span><span>Prison School Timetables</span></footer></section>`;
     }).join("");
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -641,7 +690,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       return;
     }
     printWindow.opener = null;
-    printWindow.document.write(`<!doctype html><html><head><title>${escapeHTML(current.name)} · Timetable report</title><style>body{font:12px Arial,sans-serif;color:#14263f;margin:24px}h1{font-size:22px}h2{font-size:16px;margin:0 0 8px}section{page-break-after:always;margin:0 0 24px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #ccd6e4;padding:8px;text-align:center}th:first-child{width:100px;background:#f1f4f8}.lunch{background:#fff3d6;font-weight:bold}@media print{body{margin:12mm}}</style></head><body><h1>${escapeHTML(current.name)} · ${kind === "both" ? "Class and teacher timetables" : `Timetable by ${kind}`}</h1><p>${escapeHTML(current.academic_year)} · Week of ${escapeHTML(current.week_start)} · ${escapeHTML(current.status)}</p>${sections}<script>window.addEventListener('load',()=>window.print())<\/script></body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHTML(current.name)} · Timetable report</title><link rel="stylesheet" href="/ui/timetable-print.css"></head><body>${sections}</body></html>`);
+    printWindow.addEventListener("load", () => printWindow.print(), {once: true});
     printWindow.document.close();
   }
 
