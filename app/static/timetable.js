@@ -73,7 +73,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     rows.replaceChildren();
     for (const version of versions) {
       const row = document.createElement("tr");
-      for (const value of [version.name, version.academic_year, version.week_start, version.status, `r${version.revision}`]) cell(row, value);
+      const status = version.is_published ? `${version.status} · PUBLISHED` : version.status;
+      for (const value of [version.name, version.academic_year, version.week_start, status, `r${version.revision}`]) cell(row, value);
       const open = document.createElement("button");
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open timetable ${version.name}`);
@@ -670,10 +671,13 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-editor").hidden = false;
     $("timetable-editor-title").textContent = current.name;
     $("timetable-version-detail").textContent = `${current.academic_year} · week of ${current.week_start} · ${current.status} · revision ${current.revision}`;
+    if (current.is_published) $("timetable-version-detail").textContent += " · PUBLISHED";
     $("timetable-generate").hidden = !editableDraft();
     $("timetable-generation-mode").disabled = !editableDraft();
     $("timetable-search-budget").disabled = !editableDraft();
     $("timetable-approve").hidden = !canApprove() || current.status !== "DRAFT";
+    $("timetable-publish").hidden = !canApprove() || current.status !== "APPROVED" || current.is_published;
+    $("timetable-unpublish").hidden = !canApprove() || !current.is_published;
     renderGrid();
     renderPending();
     syncDraftMutationControls();
@@ -823,6 +827,20 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     notice("Timetable approved and saved as an immutable version.");
   }
 
+  async function publish() {
+    current = await api(`/timetable/versions/${current.id}/publish`, "POST", {expected_revision: current.revision});
+    render();
+    await refresh();
+    notice("Approved timetable published for this academic week.");
+  }
+
+  async function unpublish() {
+    current = await api(`/timetable/versions/${current.id}/unpublish`, "POST", {expected_revision: current.revision});
+    render();
+    await refresh();
+    notice("Timetable unpublished. No version is currently published for this week.");
+  }
+
   $("timetable-create-form").addEventListener("submit", (event) => {
     event.preventDefault();
     run(event.currentTarget, async () => {
@@ -851,6 +869,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   $("timetable-approve").addEventListener("click", () => runDraftMutation($("timetable-approve"), approve));
   $("timetable-download-report").addEventListener("click", () => run($("timetable-download-report"), () =>
     downloadXlsx(`/timetable/versions/${current.id}/reports.xlsx?kind=both`)));
+  $("timetable-publish").addEventListener("click", () => run($("timetable-publish"), publish));
+  $("timetable-unpublish").addEventListener("click", () => run($("timetable-unpublish"), unpublish));
   $("new-timetable").addEventListener("click", () => {
     const form = $("timetable-create-form");
     form.hidden = !form.hidden;

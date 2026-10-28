@@ -39,6 +39,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Weekly timetable planning with deterministic generation, persistent revisioned drafts, validated manual edits, class-oriented Amend 4-up for 4/8/12/16 classes, and IT approval. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md), [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md) and [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) for current delivery and remaining gaps.
 - The timetable workspace provides redesigned By class/By teacher boards, IT resource setup, Superuser operational access and browser print layouts. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) for current delivery limits.
 - Audited Excel timetable reports for By Instructional Class and By Teacher, generated from saved version snapshots with Executive downloads limited to approved versions. See [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
+- IT-managed publication of one approved timetable version per academic week, with an authenticated published-version lookup for downstream consumers. See [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md).
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
 - Student profile updates with append-only status history and audit events.
 - Attendance session and record API with class eligibility checks, duplicate prevention, correction reasons, record review and session close control.
