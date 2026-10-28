@@ -72,6 +72,74 @@ services:
       retries: 5
     restart: unless-stopped
 
+  database-backup:
+    profiles: [maintenance]
+    user: "${BACKUP_CONTAINER_UID:-1000}:${BACKUP_CONTAINER_GID:-1000}"
+    image: sps-database-maintenance:${DATABASE_MAINTENANCE_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/database-maintenance.Dockerfile
+    command: ["backup"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-sps_dashboard}
+      PGUSER: ${BACKUP_DATABASE_USER:-sps_runtime}
+      PGPASSWORD: ${BACKUP_DATABASE_PASSWORD:-${DATABASE_RUNTIME_PASSWORD:-${POSTGRES_PASSWORD}}}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_DIRECTORY: /backups
+      BACKUP_FILE: ${BACKUP_FILE:-}
+    volumes:
+      - ${BACKUP_HOST_PATH:-./backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+
+  database-restore:
+    profiles: [maintenance]
+    user: "${BACKUP_CONTAINER_UID:-1000}:${BACKUP_CONTAINER_GID:-1000}"
+    image: sps-database-maintenance:${DATABASE_MAINTENANCE_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/database-maintenance.Dockerfile
+    command: ["restore"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: ${RESTORE_TARGET_DATABASE:-sps_restore_target}
+      PGUSER: ${POSTGRES_USER:-sps_app}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      RESTORE_TARGET_ACK: ${RESTORE_TARGET_ACK:-}
+      BACKUP_DIRECTORY: /backups
+      BACKUP_FILE: ${BACKUP_FILE:-}
+      AGE_IDENTITY_FILE: /run/secrets/backup.agekey
+    volumes:
+      - ${BACKUP_HOST_PATH:-./backups}:/backups:ro
+      - ${BACKUP_AGE_IDENTITY_HOST_PATH:-./secrets/backup.agekey}:/run/secrets/backup.agekey:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+
+  database-backup-prune:
+    profiles: [maintenance]
+    user: "${BACKUP_CONTAINER_UID:-1000}:${BACKUP_CONTAINER_GID:-1000}"
+    image: sps-database-maintenance:${DATABASE_MAINTENANCE_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/database-maintenance.Dockerfile
+    command: ["prune"]
+    environment:
+      BACKUP_DIRECTORY: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-90}
+    volumes:
+      - ${BACKUP_HOST_PATH:-./backups}:/backups
+    networks: [private]
+    restart: "no"
+
 networks:
   public:
   private:

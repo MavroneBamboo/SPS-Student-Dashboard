@@ -28,6 +28,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.
 - Separate PostgreSQL credentials for the migration service and API runtime; the API role cannot create schemas/objects or administer roles/databases. CI verifies its PostgreSQL privileges and SCRAM password storage.
+- One-shot encrypted PostgreSQL backup, empty-database restore and bounded retention commands in the Compose `maintenance` profile. See [DATABASE_BACKUPS.md](DATABASE_BACKUPS.md).
 - Live/readiness health endpoints.
 - Bootstrap Superuser login with short-lived signed JWT access tokens.
 - Mandatory first-login password change; Superuser-only account creation and role assignment with account-activity checks on each authenticated request.
@@ -35,7 +36,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Stable-ID scheduling rules with effective dates, edit versions, class/cluster overlap prevention and exactly-one-rule bulk resolution. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md) for the API and legacy binding process.
 - Teacher, subject, instructional-class and cluster resource APIs, with inherited period definitions and a non-schedulable third lunch column.
 - Lesson requirements linked to resource IDs, with duplicate prevention, availability/block checks, versioned edits, archive/restore and audit events. Operators and IT Administrators can maintain requirements.
-- Persistent weekly timetable drafts and configuration snapshots, with validated add/move/swap/remove/lock operations, pending requirements and immutable approval. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) for the actual API and remaining UI/generation work.
+- Weekly timetable planning with deterministic generation, persistent revisioned drafts, validated manual edits, class-oriented Amend 4-up for 4/8/12/16 classes, and IT approval. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md), [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md) and [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) for current delivery and remaining gaps.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
 - Student profile updates with append-only status history and audit events.
 - Attendance session and record API with class eligibility checks, duplicate prevention, correction reasons, record review and session close control.
@@ -43,7 +44,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Versioned Alembic schema migrations run as an explicit Compose startup dependency and CI gate.
 - CI test workflow and container-based pytest suite.
 
-This remains an early foundation, not a production-ready release. Remaining work includes import class/catalog reconciliation and retention controls, approved business-report reconciliation, reporting/print parity, complete setup/recovery, backup/restore, broader security hardening and deployment readiness.
+This remains an early foundation, not a production-ready release. Remaining work includes historical roster reconciliation, approved business-report reconciliation and print parity, complete setup/recovery, off-host backup scheduling and restore drills, database storage encryption, broader security hardening and deployment readiness.
 
 ## WSL laptop staging
 
@@ -51,7 +52,7 @@ The staging CD workflow deploys only a successfully tested push to `main` to a l
 
 ## Continuous integration
 
-Pull requests targeting `main` run lint and formatting checks, Python static-security and dependency audits, PostgreSQL-backed API tests with coverage reporting, Alembic migration checks, a production-container build and vulnerability scan, Compose configuration validation, and a full-history secret scan. Weekly Dependabot updates are enabled for Python and GitHub Actions dependencies. CI uses disposable test credentials and an isolated PostgreSQL service; it does not connect to operational data.
+Pull requests targeting `main` run lint and formatting checks, Python static-security and dependency audits, PostgreSQL-backed API tests with coverage reporting, Alembic migration checks, application and database-maintenance container builds/scans, Compose configuration validation, full-history secret scanning, and a Compose PostgreSQL backup/restore round trip that checks encryption, target safety, no-overwrite behavior and tamper rollback. Weekly Dependabot updates are enabled for Python and GitHub Actions dependencies. CI uses disposable test credentials and isolated PostgreSQL data; it does not connect to operational data.
 
 For local Python development, install the test toolset with `python -m pip install -e ".[test]"`, then run `ruff check app tests migrations`, `ruff format --check app tests migrations`, `bandit -q -r app`, and `pytest`. Set `DATABASE_URL` to an isolated PostgreSQL database to exercise the same database engine as CI. Coverage is reported while the initial baseline is being established; no aggregate minimum is enforced yet.
 

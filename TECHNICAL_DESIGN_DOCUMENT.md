@@ -211,7 +211,9 @@ Audit events include actor, action, entity, entity ID, timestamp, outcome, reque
 
 ## 13. Backup, recovery and deployment
 
-Backups are encrypted, stored separately from the database host and regularly restored in a test environment. Deployment runs migrations before enabling new application code, with a documented rollback strategy for both application and schema changes.
+The Compose `maintenance` profile runs PostgreSQL 17 `pg_dump` and `pg_restore` without publishing a database port. Backup streams are encrypted with age to a public recipient, written atomically without overwriting existing files, and can be pruned by age using a narrowly scoped filename pattern. Restore requires the private identity, an explicit host/database acknowledgement, and an empty target; `pg_restore` runs in a single transaction so authentication or restore errors roll back. The API runtime role reads backups; restore uses the administrative database role. See [DATABASE_BACKUPS.md](DATABASE_BACKUPS.md).
+
+Production operations must schedule and monitor backups, store them outside the database host, protect a recoverable copy of the age identity, approve retention and recovery objectives, and regularly restore into an isolated environment. These controls are not provided by the one-shot Compose commands alone. Deployment runs migrations before enabling new application code, with a documented rollback strategy for both application and schema changes.
 
 Production deployment requires a tagged, tested container artifact, approved configuration, verified backup and smoke tests for login, profile read, attendance and dashboard access. Database ports remain restricted throughout deployment.
 

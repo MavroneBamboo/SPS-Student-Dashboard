@@ -222,10 +222,10 @@ Audit events should cover:
 
 Minimum operational controls:
 
-- Daily full database backup.
+- Daily full database backup. The Compose `maintenance` profile now provides an age-encrypted PostgreSQL logical dump, atomic no-overwrite output and an explicit restore into an acknowledged empty database. See [DATABASE_BACKUPS.md](DATABASE_BACKUPS.md).
 - More frequent transaction/log backup where supported.
 - Separate backup location and retention policy.
-- Routine restore testing.
+- Routine restore testing. CI verifies a real PostgreSQL 17 dump/restore round trip and rejects corrupted ciphertext; production still needs a scheduled off-host restore drill.
 - Recovery runbook owned by IT Administrator.
 - No deletion of audit history through the normal user interface.
 
