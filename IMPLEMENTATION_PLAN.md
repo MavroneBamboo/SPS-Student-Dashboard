@@ -18,6 +18,10 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. The existing audited XLSX exports remain available. Attendance publishing coordination remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
 
+- Browser brand increment (28 October): added a custom scalable SPS Student Dashboard mark, reused in the sign-in/application header and SVG favicon. The production-image asset gate and browser sign-in test verify the packaged logo and favicon reference.
+
+- Front-end redesign (28 October): refreshed the sign-in experience, typography, color system, cards, forms, buttons, tables and timetable controls. The signed-in workspace uses a responsive navigation rail, active-section semantics and a stacked mobile layout. The browser suite checks narrow-screen overflow and active navigation while preserving the existing role-based workflows.
+
 - Operational role increment (26 October): students and attendance require Operator access. Dashboards and exports allow Operator or Executive; audit allows Superuser or IT. Tests use named Operator identities and cover all four roles. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
 - Identity increment (26 October): versioned account-wide token revocation, explicit logout, IT management of non-Superuser accounts, administrator reset, case-insensitive unique usernames and preserved last administrators. Verify migration, API and browser cases in CI. Complete least-privilege permissions, setup/recovery and deployment controls in later slices. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).

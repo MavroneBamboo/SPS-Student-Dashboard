@@ -55,4 +55,4 @@ skip_covered = true
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["static/*.html", "static/*.css", "static/*.js", "static/*.png"]
+app = ["static/*.html", "static/*.css", "static/*.js", "static/*.png", "static/*.svg"]

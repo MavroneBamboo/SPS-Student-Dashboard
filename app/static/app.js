@@ -178,6 +178,14 @@ function showPanel(name) {
   $("profiles-panel").hidden = name !== "profiles";
   $("attendance-panel").hidden = name !== "attendance";
   $("timetable-panel").hidden = name !== "timetable";
+  const navIds = {users: "users-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
+  for (const [panel, id] of Object.entries(navIds)) {
+    const button = $(id);
+    const active = panel === name;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
   $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule"}[name];
 }
 function breakdown(id, values) {
