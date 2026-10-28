@@ -116,11 +116,11 @@ async function acceptSession(session) {
   $("workspace").hidden = false;
   $("identity").textContent = `${identity.username} · ${identity.role}`;
   $("users-nav").hidden = !["Superuser", "IT Administrator"].includes(identity.role);
-  $("dashboard-nav").hidden = ["Superuser", "IT Administrator"].includes(identity.role);
-  $("profiles-nav").hidden = identity.role !== "Operator";
-  $("attendance-nav").hidden = identity.role !== "Operator";
-  $("timetable-nav").hidden = identity.role === "Superuser";
-  if (["Superuser", "IT Administrator"].includes(identity.role)) await showUsers();
+  $("dashboard-nav").hidden = identity.role === "IT Administrator";
+  $("profiles-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
+  $("attendance-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
+  $("timetable-nav").hidden = false;
+  if (identity.role === "IT Administrator") await showUsers();
   else await showDashboard();
 }
 

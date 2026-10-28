@@ -15,7 +15,7 @@ from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
 
-router = APIRouter(prefix="/student-imports", tags=["student imports"], dependencies=[Depends(require_roles("Operator"))])
+router = APIRouter(prefix="/student-imports", tags=["student imports"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 

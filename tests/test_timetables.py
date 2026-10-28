@@ -63,9 +63,9 @@ def _body(ctx, version, **changes):
     }
 
 
-def _place(ctx, version, **changes):
+def _place(ctx, version, role="operator", **changes):
     return ctx["client"].post(
-        f"{BASE}/versions/{version['id']}/placements", json=_body(ctx, version, **changes), headers=ctx["headers"]["operator"]
+        f"{BASE}/versions/{version['id']}/placements", json=_body(ctx, version, **changes), headers=ctx["headers"][role]
     )
 
 
@@ -86,10 +86,11 @@ def test_draft_amend_lock_swap_remove_approve_and_snapshot_history(timetable_con
     assert version["pending"][0]["remaining_periods"] == 4
     assert client.get(path, headers=headers["executive"]).status_code == 404
     assert all(row["id"] != version["id"] for row in client.get(f"{BASE}/versions", headers=headers["executive"]).json())
-    assert client.get(path, headers=headers["superuser"]).status_code == 403
+    assert client.get(path, headers=headers["superuser"]).status_code == 200
     assert client.post(path + "/approve", json={"expected_revision": 1}, headers=headers["operator"]).status_code == 403
+    assert client.post(path + "/approve", json={"expected_revision": 1}, headers=headers["superuser"]).status_code == 409
     assert client.post(path + "/approve", json={"expected_revision": 1}, headers=headers["admin"]).status_code == 409
-    placed = _place(ctx, version)
+    placed = _place(ctx, version, role="superuser")
     assert placed.status_code == 201, placed.text
     version = placed.json()
     first_id = version["placements"][0]["id"]
@@ -133,7 +134,7 @@ def test_draft_amend_lock_swap_remove_approve_and_snapshot_history(timetable_con
     version = replaced.json()
     assert not version["pending"]
     assert version["revision"] == 9
-    approved = client.post(path + "/approve", json={"expected_revision": 9}, headers=headers["admin"])
+    approved = client.post(path + "/approve", json={"expected_revision": 9}, headers=headers["superuser"])
     assert approved.status_code == 200, approved.text
     version = approved.json()
     assert version["status"] == "APPROVED" and version["revision"] == 10
@@ -464,11 +465,11 @@ def test_inconsistent_stored_cells_block_approval_and_all_amendments(timetable_c
         assert list(db.scalars(select(AuditEvent.id).where(AuditEvent.entity_id == str(version["id"]))).all()) == audit_ids
 
 
-def _generate(ctx, version, **changes):
+def _generate(ctx, version, role="operator", **changes):
     return ctx["client"].post(
         f"{BASE}/versions/{version['id']}/generate",
         json={"expected_revision": version["revision"], **changes},
-        headers=ctx["headers"]["operator"],
+        headers=ctx["headers"][role],
     )
 
 
@@ -478,7 +479,7 @@ def test_generation_persists_complete_grid_report_and_preserves_manual_and_locke
     version = _place(ctx, _draft(ctx), weekday="FRI").json()
     path = f"{BASE}/versions/{version['id']}"
     manual = version["placements"][0]
-    generated = _generate(ctx, version)
+    generated = _generate(ctx, version, role="superuser")
     assert generated.status_code == 200, generated.text
     data = generated.json()
     version, report = data["timetable"], data["generation"]
@@ -489,7 +490,7 @@ def test_generation_persists_complete_grid_report_and_preserves_manual_and_locke
     history = client.get(path + "/generation-reports", headers=headers["operator"])
     assert history.status_code == 200 and history.json()[0]["generation"] == report
     assert client.get(path + "/generation-reports", headers=headers["executive"]).status_code == 404
-    assert client.get(path + "/generation-reports", headers=headers["superuser"]).status_code == 403
+    assert client.get(path + "/generation-reports", headers=headers["superuser"]).status_code == 200
     assert client.get(path + "/generation-reports?offset=1", headers=headers["operator"]).json() == []
     no_op = _generate(ctx, version).json()
     assert no_op["generation"]["generated_blocks"] == 0
@@ -545,7 +546,7 @@ def test_generation_rejects_invalid_access_stale_clients_configuration_and_damag
     ctx = timetable_context
     version = _draft(ctx)
     path = f"{BASE}/versions/{version['id']}"
-    for role in ("executive", "superuser"):
+    for role in ("executive",):
         assert ctx["client"].post(path + "/generate", json={"expected_revision": 1}, headers=ctx["headers"][role]).status_code == 403
     for changes in ({"search_budget": 0}, {"search_budget": 10001}, {"mode": "REPLACE_ALL"}, {"overwrite_locked": True}):
         assert _generate(ctx, version, **changes).status_code == 422

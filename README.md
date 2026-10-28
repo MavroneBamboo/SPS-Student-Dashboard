@@ -37,6 +37,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 - Teacher, subject, instructional-class and cluster resource APIs, with inherited period definitions and a non-schedulable third lunch column.
 - Lesson requirements linked to resource IDs, with duplicate prevention, availability/block checks, versioned edits, archive/restore and audit events. Operators and IT Administrators can maintain requirements.
 - Weekly timetable planning with deterministic generation, persistent revisioned drafts, validated manual edits, class-oriented Amend 4-up for 4/8/12/16 classes, and IT approval. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md), [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md) and [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) for current delivery and remaining gaps.
+- The timetable workspace provides redesigned By class/By teacher boards, IT resource setup, Superuser operational access and browser print layouts. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) for current delivery limits.
 - Protected student intake API with duplicate `Pris No.` rejection and application-encrypted name/date-of-birth fields.
 - Student profile updates with append-only status history and audit events.
 - Attendance session and record API with class eligibility checks, duplicate prevention, correction reasons, record review and session close control.

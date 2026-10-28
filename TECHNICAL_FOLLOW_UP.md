@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Current timetable UI status (27 October 2026): the production browser follows the supplied redesign with By class/By teacher boards, Amend 4-up, browser print-to-PDF reports, teacher/class/subject tabs and default/class/cluster period editing. Superuser has full application access. Server-side PDF layout, drag/swap controls, publishing coordination and full deployment/recovery verification remain follow-up items. Earlier delivery notes below describe prior increments.
+
 Operational permissions follow-up (26 October 2026): the server now restricts student/attendance reads and writes to Operators; only Operators/Executives can read the dashboard or attendance CSV, and only Superuser/IT Administrator can read audit. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md). Timetable permissions, setup/recovery and export policy remain separate release checks.
 
 Identity follow-up (26 October 2026): API and browser now support account-wide token revocation on password changes, role/status changes, reset and explicit logout. IT Administrators can manage named users but cannot access Superuser accounts. Migration `0008` adds token versions and lowercase username uniqueness, with an explicit duplicate reconciliation gate. Full role separation, setup/recovery, sign-in abuse controls and deployment security are still required. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).

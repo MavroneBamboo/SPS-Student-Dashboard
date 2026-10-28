@@ -1,6 +1,6 @@
 # Timetable drafts and manual amendments
 
-The timetable API persists weekly drafts, immutable configuration snapshots, lesson blocks and occupied grid cells. The production browser workspace now connects class-oriented Amend 4-up to these APIs: create/open drafts, add/amend/remove/lock blocks by selecting grid cells, page through 4/8/12/16 class panels, generate pending lessons, and allow IT approval after validation. Lunch is displayed in column 3 and cannot be edited. Chromium acceptance tests exercise the main flows. Copy/rebase of drafts, teacher-oriented views, drag/swap controls and timetable exports remain subsequent work.
+The timetable API persists weekly drafts, immutable configuration snapshots, lesson blocks and occupied grid cells. The production browser follows the supplied timetable UI reference with By class and By teacher weekly boards, a report/print screen, resource tabs and period/rule management. Its board mode supports clickable lesson placement/edit/removal/locking; Amend 4-up remains available with 4/8/12/16 class paging. The visible week is P1, P2, P3 Lunch/Muster, P4 and P5, using existing stable API slot codes. Browser print generates class/teacher report layouts for Save as PDF. Copy/rebase of drafts, drag/swap controls, server-side PDF output and publishing coordination remain subsequent work.
 
 ## Create and inspect a draft
 
@@ -39,9 +39,9 @@ A stale client revision returns 409. Failed validation, swaps and database confl
 
 Every edit and approval re-resolves rules for all five dates and compares the live configuration with the stored snapshot under the shared transaction lock. A changed relevant rule/resource/requirement/period makes the draft stale; reconcile live rules if needed and create a replacement draft. This increment preserves the old draft and does not silently rewrite its snapshot. Copy/rebase workflows are not yet implemented.
 
-IT Administrators approve a complete, valid draft using `POST /versions/{id}/approve` with `expected_revision`. Approval fails while any requirement remains unplaced or configuration has changed. Approval records the actor/time and increments the revision. Approved header, blocks, cells and selected classes are immutable; replacements use a new version. Operators cannot approve. Executives can list/read approved versions only, while bootstrap Superusers have no timetable-planning access.
+IT Administrators and Superusers can approve a complete, valid draft using `POST /versions/{id}/approve` with `expected_revision`. Approval fails while any requirement remains unplaced or configuration has changed. Approval records the actor/time and increments the revision. Approved header, blocks, cells and selected classes are immutable; replacements use a new version. Operators cannot approve. Executives can list/read approved versions only.
 
-Each version is a self-contained planning/reporting unit. Clash checks apply within that version; a current-published-version pointer and coordination of separate published plans remain part of the future publishing workflow. The generation API fills pending blocks or explicitly replaces unlocked blocks using the same validations. The initial class-oriented Amend 4-up browser is available; combined-teacher groups, fixed school events and PDF rendering remain outstanding.
+Each version is a self-contained planning/reporting unit. Clash checks apply within that version; a current-published-version pointer and coordination of separate published plans remain part of the future publishing workflow. The generation API fills pending blocks or explicitly replaces unlocked blocks using the same validations. The browser includes By class/By teacher boards, Amend 4-up and print-ready reports; combined-teacher groups, fixed school events, server-generated PDF output and publishing remain outstanding.
 
 ## Verification
 

@@ -18,7 +18,7 @@ from app.models import AttendanceRecord, AttendanceSession, AuditEvent, Student
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-READ_ROLES = ("Operator", "Executive")
+READ_ROLES = ("Superuser", "Operator", "Executive")
 
 
 @router.get("/dashboard", dependencies=[Depends(require_roles(*READ_ROLES))])

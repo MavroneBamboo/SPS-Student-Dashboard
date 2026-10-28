@@ -30,10 +30,10 @@ from app.timetable_planning import (
 router = APIRouter(
     prefix="/timetable/versions",
     tags=["timetable drafts and amendments"],
-    dependencies=[Depends(require_roles("IT Administrator", "Operator", "Executive"))],
+    dependencies=[Depends(require_roles("Superuser", "IT Administrator", "Operator", "Executive"))],
 )
-EDIT_ACCESS = Depends(require_roles("IT Administrator", "Operator"))
-APPROVE_ACCESS = Depends(require_roles("IT Administrator"))
+EDIT_ACCESS = Depends(require_roles("Superuser", "IT Administrator", "Operator"))
+APPROVE_ACCESS = Depends(require_roles("Superuser", "IT Administrator"))
 
 
 def _get(db: DbSession, version_id: int, claims: dict) -> TimetableVersion:

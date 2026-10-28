@@ -1,10 +1,10 @@
 # Production browser workspace increment
 
-Backend role enforcement now matches the daily workspace: only Operators can use student/attendance APIs, Operator and Executive can fetch the dashboard/attendance CSV, and IT/Superuser audit remains separate. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
+Current browser status (27 October 2026): Superuser has full application access. The timetable UI follows the supplied PDF with By class/By teacher weekly boards, Amend 4-up, report printing, teacher/class/subject tabs and period/rule management. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) and [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
 The identity increment extends this workspace with IT Administrator named-account management, explicit account-wide logout and administrator temporary-password reset. Existing bearer tokens are revoked when credentials, roles or account status change. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md) for the versioned-token API and remaining release work.
 
-The attendance increment adds the Operator **Attendance** screen for real daily sessions, records/corrections, count controls, missing review and closure. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md), including version contracts and the current-profile eligibility boundary. Timetable/resource screens, full intake/import/export and deployment hardening remain outstanding.
+The attendance increment adds the Operator **Attendance** screen for real daily sessions, records/corrections, count controls, missing review and closure. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md), including version contracts and the current-profile eligibility boundary. Native server PDF output, full setup/recovery and deployment hardening remain outstanding.
 
 The subsequent profile increment adds the Operator **Student profiles** screen, with paged search, create/edit, status history and version-checked saves. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md). Operators can also upload supported intake workbooks, inspect a sanitized preview and choose create-only or explicit update-existing commit; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md). Class/catalog reconciliation, print/export controls and setup/recovery remain outstanding.
 

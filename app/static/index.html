@@ -207,7 +207,25 @@
         </form>
       </section>
       <section id="timetable-panel" hidden aria-labelledby="timetable-title">
-        <div class="section-bar"><div><h2 id="timetable-title">Timetable / Schedule</h2><p>Work with saved weekly drafts. Amend 4-up keeps lunch visible between periods 2 and 3.</p></div><button id="refresh-timetables" class="secondary">Refresh schedules</button></div>
+        <div class="section-bar"><div><h2 id="timetable-title">Timetable / Schedule</h2><p>Plan, amend and export the weekly timetable.</p></div><button id="refresh-timetables" class="secondary">Refresh schedules</button></div>
+        <div class="timetable-workspace">
+        <aside class="timetable-sidebar" aria-label="Timetable workspace">
+          <p class="eyebrow">SCHEDULING</p>
+          <button type="button" aria-label="Timetable" class="timetable-side-link is-active" data-timetable-page="board">▦ &nbsp; Timetable</button>
+          <button type="button" aria-label="Reports &amp; export" class="timetable-side-link" data-timetable-page="reports">▤ &nbsp; Reports &amp; export</button>
+          <button type="button" aria-label="Classes &amp; teachers" class="timetable-side-link" data-timetable-page="resources">◉ &nbsp; Classes &amp; teachers</button>
+          <button type="button" aria-label="Periods &amp; rules" class="timetable-side-link" data-timetable-page="periods">◷ &nbsp; Periods &amp; rules</button>
+        </aside>
+        <div class="timetable-content">
+        <section id="timetable-board-page" class="timetable-page">
+        <div class="timetable-toolbar panel">
+          <div class="segmented" role="group" aria-label="Timetable grouping"><button type="button" id="timetable-by-class" class="is-selected">By class</button><button type="button" id="timetable-by-teacher">By teacher</button></div>
+          <label id="timetable-class-filter-wrap">Selected class<select id="timetable-class-filter"></select></label>
+          <label id="timetable-teacher-filter-wrap" hidden>Teacher<select id="timetable-teacher-filter"></select></label>
+          <label>Board view<select id="timetable-board-mode"><option value="weekly">Weekly board</option><option value="amend">Amend 4-up</option></select></label>
+          <label>Search<input id="timetable-search" type="search" placeholder="Class or teacher"></label>
+          <button id="timetable-print" class="secondary" type="button">Export / Print</button>
+        </div>
         <form id="timetable-create-form" class="panel profile-fields" hidden>
           <h3>Create weekly draft</h3>
           <label>Draft name<input name="name" maxlength="120" required></label>
@@ -217,69 +235,52 @@
           <p id="timetable-class-help">Select one or more active instructional classes with valid scheduling rules and lesson requirements.</p>
           <button type="submit">Create draft</button>
         </form>
-        <details id="timetable-setup" class="panel" hidden>
-          <summary>Scheduling setup: teachers, subjects, classes, rules and periods</summary>
-          <p>Set up active scheduling resources before creating lesson requirements and weekly drafts. Every selected class must resolve exactly one rule for each day.</p>
-          <div class="columns">
-            <form id="timetable-teacher-form" class="profile-fields">
-              <h3>Create teacher profile</h3><label>Teacher code<input name="short_code" maxlength="24" required></label><label>Teacher name<input name="full_name" maxlength="160" required></label><label><input name="is_adjunct" type="checkbox">Adjunct teacher</label><fieldset id="teacher-availability"><legend>Available teaching periods</legend></fieldset><button type="submit">Create teacher</button>
-            </form>
-            <form id="timetable-subject-form" class="profile-fields">
-              <h3>Create subject</h3><label>Subject code<input name="code" maxlength="24" required></label><label>Subject name<input name="name" maxlength="120" required></label><button type="submit">Create subject</button>
-            </form>
-            <form id="timetable-class-form" class="profile-fields">
-              <h3>Create instructional class</h3><label>Class code<input name="code" maxlength="24" required></label><label>Class name<input name="name" maxlength="120" required></label><button type="submit">Create class</button>
-            </form>
-            <form id="student-class-mapping-form" class="profile-fields">
-              <h3>Map intake class label</h3><p>Link an exact class label from the 2023 intake workbook to an active instructional class. Unmapped labels block that import batch.</p><label>Workbook class label<input name="source_label" maxlength="120" required></label><label>Instructional class<select name="instructional_class_id" required></select></label><button type="submit">Save class mapping</button>
-            </form>
-            <form id="timetable-cluster-form" class="profile-fields">
-              <h3>Create class cluster</h3><label>Cluster code<input name="code" maxlength="24" required></label><label>Cluster name<input name="name" maxlength="120" required></label><button type="submit">Create cluster</button>
-            </form>
-            <form id="timetable-cluster-member-form" class="profile-fields">
-              <h3>Add class to cluster</h3><label>Cluster<select name="cluster_id" required></select></label><label>Instructional class<select name="instructional_class_id" required></select></label><button type="submit">Add class to cluster</button>
-            </form>
-            <form id="timetable-period-form" class="profile-fields">
-              <h3>Override a default period</h3><label>Scope<select name="scope"><option>CLASS</option><option>CLUSTER</option></select></label><label>Class or cluster<select name="target_id" required></select></label><label>Period<select name="slot_code"><option>P1</option><option>P2</option><option>P3</option><option>P4</option></select></label><label>Display label<input name="label" maxlength="80" required></label><label>Starts at<input name="starts_at" type="time" required></label><label>Ends at<input name="ends_at" type="time" required></label><button type="submit">Save period override</button>
-            </form>
-            <form id="timetable-rule-form" class="profile-fields">
-              <h3>Create scheduling rule</h3><label>Academic year<input name="academic_year" maxlength="20" required></label><label>Rule scope<select name="target_type"><option>CLASS</option><option>CLUSTER</option></select></label><label>Class or cluster<select name="target_id" required></select></label><label>Effective from<input name="effective_from" type="date" required></label><label>Effective to (optional)<input name="effective_to" type="date"></label><label>Daily lesson limit<input name="max_lessons_per_day" type="number" min="1" max="4" value="4" required></label><label>Allowed days<select name="allowed_days" multiple size="5"><option selected>MON</option><option selected>TUE</option><option selected>WED</option><option selected>THU</option><option selected>FRI</option></select></label><label>Allowed teaching periods<select name="allowed_periods" multiple size="4"><option selected>P1</option><option selected>P2</option><option selected>P3</option><option selected>P4</option></select></label><button type="submit">Save scheduling rule</button>
-            </form>
-          </div>
-          <p id="timetable-resource-summary"></p>
-          <div class="columns">
-            <section><h3>Teacher profiles</h3><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th></tr></thead><tbody id="timetable-teacher-rows"></tbody></table></div></section>
-            <section><h3>Subjects</h3><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th></tr></thead><tbody id="timetable-subject-rows"></tbody></table></div></section>
-            <section><h3>Instructional classes</h3><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th></tr></thead><tbody id="timetable-class-rows"></tbody></table></div></section>
-            <section><h3>Period definitions</h3><div class="table-wrap"><table><thead><tr><th>Scope</th><th>Target</th><th>Slot</th><th>Label</th><th>Start</th><th>End</th></tr></thead><tbody id="timetable-period-rows"></tbody></table></div></section>
-          </div>
-        </details>
-        <section id="student-class-mapping-section" class="panel" hidden aria-labelledby="student-class-mapping-title">
-          <h3 id="student-class-mapping-title">Student intake class mappings</h3><p>Operators can review how 2023 workbook class labels map to timetable classes. IT Administrators can change these mappings in Scheduling setup.</p>
-          <div class="table-wrap"><table><thead><tr><th>Workbook</th><th>Source label</th><th>Instructional class</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="student-class-mapping-rows"></tbody></table></div>
-        </section>
+        <details id="lesson-requirements" class="panel"><summary>Lesson requirements</summary>
         <form id="timetable-lesson-form" class="panel profile-fields">
           <h3>Create weekly lesson requirement</h3><label>Academic year<input name="academic_year" maxlength="20" required></label><label>Instructional class<select name="instructional_class_id" required></select></label><label>Teacher<select name="teacher_id" required></select></label><label>Subject<select name="subject_id" required></select></label><label>Periods per week<input name="weekly_count" type="number" min="1" max="20" value="1" required></label><label>Preferred block length<input name="block_length" type="number" min="1" max="4" value="1" required></label><button type="submit">Save lesson requirement</button>
         </form>
+        </details>
         <div class="section-bar"><h3>Saved timetables</h3><button id="new-timetable" hidden>Create weekly draft</button></div>
-        <div class="panel table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Week</th><th>Status</th><th>Revision</th><th>Action</th></tr></thead><tbody id="timetable-version-rows"></tbody></table></div>
         <section id="timetable-editor" class="panel" hidden aria-labelledby="timetable-editor-title">
           <div class="section-bar"><div><h3 id="timetable-editor-title">Weekly timetable</h3><p id="timetable-version-detail"></p></div><div class="actions"><label>Classes per page<select id="timetable-density"><option>4</option><option>8</option><option>12</option><option>16</option></select></label><button id="timetable-reload" class="secondary">Reload draft</button><button id="timetable-previous" class="secondary">Previous classes</button><button id="timetable-next" class="secondary">Next classes</button></div></div>
-          <div id="timetable-grid" class="timetable-grid"></div>
+          <div class="timetable-board-layout">
+            <div id="timetable-grid" class="timetable-grid"></div>
+            <div id="timetable-summary" class="timetable-summary" hidden></div>
+            <form id="timetable-placement-form" class="panel profile-fields" hidden>
+              <h3 id="timetable-placement-title">Add lesson</h3><p id="timetable-placement-location"></p>
+              <input name="placement_id" type="hidden">
+              <label>Weekday<select name="weekday" required><option value="MON">Monday</option><option value="TUE">Tuesday</option><option value="WED">Wednesday</option><option value="THU">Thursday</option><option value="FRI">Friday</option></select></label>
+              <label>Starting period<select name="start_period" required><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P4</option><option value="P4">P5</option></select></label>
+              <label>Lesson requirement<select name="lesson_requirement_id" required></select></label>
+              <label>Block length<select name="period_count" required></select></label>
+              <label>Note<input name="note" maxlength="500"></label>
+              <div class="actions"><button type="submit">Save lesson</button><button id="timetable-remove" class="secondary" type="button" hidden>Remove lesson</button><button id="timetable-lock" class="secondary" type="button" hidden>Lock lesson</button><button id="timetable-cancel-placement" class="secondary" type="button">Cancel</button></div>
+            </form>
+          </div>
           <section class="panel"><h3>Unplaced lesson requirements</h3><div class="table-wrap"><table><thead><tr><th>Class</th><th>Subject</th><th>Teacher</th><th>Remaining periods</th><th>Available block sizes</th></tr></thead><tbody id="timetable-pending"></tbody></table></div></section>
           <div class="actions timetable-actions"><label>Generation mode<select id="timetable-generation-mode"><option value="FILL_PENDING">Fill unplaced lessons</option><option value="REPLACE_UNLOCKED">Replace unlocked lessons</option></select></label><label>Search budget<input id="timetable-search-budget" type="number" min="1" max="10000" value="2000"></label><button id="timetable-generate">Generate timetable</button><button id="timetable-approve" hidden>Approve complete draft</button></div>
           <p id="timetable-generation-summary"></p>
-          <form id="timetable-placement-form" class="panel profile-fields" hidden>
-            <h3 id="timetable-placement-title">Add lesson</h3><p id="timetable-placement-location"></p>
-            <input name="placement_id" type="hidden">
-            <label>Weekday<select name="weekday" required><option value="MON">Monday</option><option value="TUE">Tuesday</option><option value="WED">Wednesday</option><option value="THU">Thursday</option><option value="FRI">Friday</option></select></label>
-            <label>Starting period<select name="start_period" required><option value="P1">Period 1</option><option value="P2">Period 2</option><option value="P3">Period 3</option><option value="P4">Period 4</option></select></label>
-            <label>Lesson requirement<select name="lesson_requirement_id" required></select></label>
-            <label>Block length<select name="period_count" required></select></label>
-            <label>Note<input name="note" maxlength="500"></label>
-            <div class="actions"><button type="submit">Save lesson</button><button id="timetable-remove" class="secondary" type="button" hidden>Remove lesson</button><button id="timetable-lock" class="secondary" type="button" hidden>Lock lesson</button><button id="timetable-cancel-placement" class="secondary" type="button">Cancel</button></div>
-          </form>
         </section>
+        </section>
+        <section id="timetable-reports-page" class="timetable-page" hidden>
+          <h3>Reports &amp; export</h3><p>Print or save a clean PDF for sharing. Use the browser print dialog and choose “Save as PDF”.</p>
+          <div class="report-cards">
+            <article class="panel"><span class="report-icon">▦</span><h3>Timetable by class</h3><p>Weekly class schedules, including the lunch and muster row.</p><button type="button" data-print-report="class">Export class report</button></article>
+            <article class="panel"><span class="report-icon">◉</span><h3>Timetable by teacher</h3><p>Teaching schedule, free periods and assigned classes.</p><button type="button" data-print-report="teacher">Export teacher report</button></article>
+          </div>
+          <button type="button" id="timetable-print-both">Export both reports</button>
+          <section class="panel"><h3>Report options</h3><label class="checkline"><input id="print-lunch-row" type="checkbox" checked> Include lunch / muster row</label><label class="checkline"><input id="print-all-periods" type="checkbox" checked> Include all five timetable periods</label></section>
+          <section class="panel"><h3>Saved timetable versions</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Week</th><th>Status</th><th>Revision</th><th></th></tr></thead><tbody id="timetable-version-rows"></tbody></table></div></section>
+        </section>
+        <section id="timetable-resources-page" class="timetable-page" hidden>
+          <h3>Classes &amp; teachers</h3><p>Manage the resources used when building the timetable.</p><p id="timetable-resource-summary"></p>
+          <div class="resource-tabs" role="tablist"><button type="button" class="is-selected" data-resource-tab="teachers">Teachers</button><button type="button" data-resource-tab="classes">Classes &amp; clusters</button><button type="button" data-resource-tab="subjects">Subjects</button></div>
+          <section class="resource-tab-panel" data-resource-panel="teachers"><div class="section-bar"><h3>Teacher profiles</h3><button type="button" data-open-resource-form="timetable-teacher-form">Add teacher</button></div><div class="filters"><label>Search teachers<input id="teacher-search" type="search" placeholder="Name or code"></label></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Available periods / week</th></tr></thead><tbody id="timetable-teacher-rows"></tbody></table></div><form id="timetable-teacher-form" class="profile-fields resource-form" hidden><h3>Create teacher profile</h3><label>Teacher code<input name="short_code" maxlength="24" required></label><label>Teacher name<input name="full_name" maxlength="160" required></label><label><input name="is_adjunct" type="checkbox">Adjunct teacher</label><fieldset id="teacher-availability"><legend>Available teaching periods</legend></fieldset><button type="submit">Create teacher</button></form></section>
+          <section class="resource-tab-panel" data-resource-panel="classes" hidden><div class="columns"><form id="timetable-class-form" class="profile-fields"><h3>Create instructional class</h3><label>Class code<input name="code" maxlength="24" required></label><label>Class name<input name="name" maxlength="120" required></label><button type="submit">Create class</button></form><form id="timetable-cluster-form" class="profile-fields"><h3>Create class cluster</h3><label>Cluster code<input name="code" maxlength="24" required></label><label>Cluster name<input name="name" maxlength="120" required></label><button type="submit">Create cluster</button></form><form id="timetable-cluster-member-form" class="profile-fields"><h3>Add class to cluster</h3><label>Cluster<select name="cluster_id" required></select></label><label>Instructional class<select name="instructional_class_id" required></select></label><button type="submit">Add class to cluster</button></form><form id="student-class-mapping-form" class="profile-fields"><h3>Map intake class label</h3><p>Link an exact class label from the intake workbook to an active instructional class.</p><label>Workbook class label<input name="source_label" maxlength="120" required></label><label>Instructional class<select name="instructional_class_id" required></select></label><button type="submit">Save class mapping</button></form></div><section id="student-class-mapping-section" class="panel" hidden aria-labelledby="student-class-mapping-title"><h3 id="student-class-mapping-title">Student intake class mappings</h3><p>Operators can review how intake workbook class labels map to timetable classes. IT Administrators can change these mappings here.</p><div class="table-wrap"><table><thead><tr><th>Workbook</th><th>Source label</th><th>Instructional class</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="student-class-mapping-rows"></tbody></table></div></section><section class="panel"><h3>Instructional classes</h3><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th></tr></thead><tbody id="timetable-class-rows"></tbody></table></div></section></section>
+          <section class="resource-tab-panel" data-resource-panel="subjects" hidden><form id="timetable-subject-form" class="profile-fields"><h3>Create subject</h3><label>Subject code<input name="code" maxlength="24" required></label><label>Subject name<input name="name" maxlength="120" required></label><button type="submit">Create subject</button></form><section class="panel"><h3>Subjects</h3><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th></tr></thead><tbody id="timetable-subject-rows"></tbody></table></div></section></section>
+        </section>
+        <section id="timetable-periods-page" class="timetable-page" hidden><h3>Periods &amp; rules</h3><p>Default period slots apply to all classes. Class and cluster overrides replace the corresponding default slot for future timetable drafts. Period 3 is lunch / muster.</p><form id="timetable-period-form" class="profile-fields panel"><h3>Create or override a period</h3><label>Scope<select name="scope"><option value="DEFAULT">All classes (default)</option><option value="CLASS">One class</option><option value="CLUSTER">Class cluster</option></select></label><label>Class or cluster<select name="target_id"></select></label><label>Period<select name="slot_code"><option value="P1">P1</option><option value="P2">P2</option><option value="LUNCH">P3 · Lunch / Muster</option><option value="P3">P4</option><option value="P4">P5</option></select></label><label>Display label<input name="label" maxlength="80" required></label><label>Starts at<input name="starts_at" type="time" required></label><label>Ends at<input name="ends_at" type="time" required></label><button type="submit">Save period definition</button></form><section class="panel"><h3>Period definitions</h3><div class="table-wrap"><table><thead><tr><th>Scope</th><th>Target</th><th>Slot</th><th>Label</th><th>Start</th><th>End</th><th>Action</th></tr></thead><tbody id="timetable-period-rows"></tbody></table></div></section><form id="timetable-rule-form" class="profile-fields panel"><h3>Scheduling rule</h3><label>Academic year<input name="academic_year" maxlength="20" required></label><label>Rule scope<select name="target_type"><option>CLASS</option><option>CLUSTER</option></select></label><label>Class or cluster<select name="target_id" required></select></label><label>Effective from<input name="effective_from" type="date" required></label><label>Effective to (optional)<input name="effective_to" type="date"></label><label>Daily lesson limit<input name="max_lessons_per_day" type="number" min="1" max="4" value="4" required></label><label>Allowed days<select name="allowed_days" multiple size="5"><option selected>MON</option><option selected>TUE</option><option selected>WED</option><option selected>THU</option><option selected>FRI</option></select></label><label>Allowed teaching periods<select name="allowed_periods" multiple size="4"><option selected>P1</option><option selected>P2</option><option selected>P3</option><option selected>P4</option></select></label><button type="submit">Save scheduling rule</button></form></section>
+        </div></div>
       </section>
     </section>
     <noscript>JavaScript is required to use the SPS Student Dashboard.</noscript>

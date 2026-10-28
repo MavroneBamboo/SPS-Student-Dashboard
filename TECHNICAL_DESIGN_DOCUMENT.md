@@ -48,24 +48,24 @@ The design assumes an internal server, an approved relational database, browser 
 ## 3. System context
 
 ```text
-┌──────────────┐       HTTPS        ┌───────────────────┐
-│ Browser users│ ───────────────────▶│ Reverse proxy     │
-└──────────────┘                     │ TLS + headers     │
-                                     └─────────┬─────────┘
-                                               │
-                                               ▼
-                                     ┌───────────────────┐
-                                     │ Web/API application│
-                                     │ Auth + business    │
-                                     │ rules + reports    │
-                                     └─────┬───────┬─────┘
-                                           │       │
-                                           ▼       ▼
-                                   ┌──────────┐ ┌──────────┐
-                                   │ Database │ │ Worker   │
-                                   │ encrypted│ │ imports/ │
-                                   │ storage  │ │ exports  │
-                                   └──────────┘ └──────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”       HTTPS        â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ Browser usersâ”‚ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¶â”‚ Reverse proxy     â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                     â”‚ TLS + headers     â”‚
+                                     â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                               â”‚
+                                               â–¼
+                                     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                                     â”‚ Web/API applicationâ”‚
+                                     â”‚ Auth + business    â”‚
+                                     â”‚ rules + reports    â”‚
+                                     â””â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”˜
+                                           â”‚       â”‚
+                                           â–¼       â–¼
+                                   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                                   â”‚ Database â”‚ â”‚ Worker   â”‚
+                                   â”‚ encryptedâ”‚ â”‚ imports/ â”‚
+                                   â”‚ storage  â”‚ â”‚ exports  â”‚
+                                   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 The frontend is an untrusted client. It receives only data permitted by the backend and never receives database credentials, connection strings or encryption keys.
@@ -234,17 +234,17 @@ The new application should model the timetable as first-class domain data rather
 
 ### 15.1 Timetable entities
 
-- `timetable_versions` — academic period, status, owner, version and approval state.
-- `teachers` — short code, full name, adjunct flag and availability by day/period.
-- `subjects` — code, short code and description.
-- `instructional_classes` — class code, description and reporting order.
-- `class_clusters` and `class_cluster_members` — reusable groups of instructional classes.
-- `period_definitions` — default and override period definitions, including scope, target, start/end time and schedulability.
-- `scheduling_rules` and `scheduling_rule_targets` — versioned planning rules and their class/cluster scope.
-- `lesson_requirements` — subject, teacher, class, weekly count and block length.
-- `timetable_slots` — version, class, teacher, subject, weekday, period, note and lock state.
-- `timetable_conflicts` — detected conflict type, severity, status and resolution.
-- `timetable_audit_events` — every amendment, move, swap, removal, rename and approval.
+- `timetable_versions` â€” academic period, status, owner, version and approval state.
+- `teachers` â€” short code, full name, adjunct flag and availability by day/period.
+- `subjects` â€” code, short code and description.
+- `instructional_classes` â€” class code, description and reporting order.
+- `class_clusters` and `class_cluster_members` â€” reusable groups of instructional classes.
+- `period_definitions` â€” default and override period definitions, including scope, target, start/end time and schedulability.
+- `scheduling_rules` and `scheduling_rule_targets` â€” versioned planning rules and their class/cluster scope.
+- `lesson_requirements` â€” subject, teacher, class, weekly count and block length.
+- `timetable_slots` â€” version, class, teacher, subject, weekday, period, note and lock state.
+- `timetable_conflicts` â€” detected conflict type, severity, status and resolution.
+- `timetable_audit_events` â€” every amendment, move, swap, removal, rename and approval.
 
 Use stable IDs and foreign keys. Do not reproduce the legacy name-only links or list-index IDs as the production identity model. Composite teachers such as `A / B` and `ALL` require explicit membership/rule data so that conflict handling is deliberate and testable.
 
@@ -267,15 +267,15 @@ Generation must create a new draft version or require an explicit replacement co
 
 ### 15.3 Amend 4-up workspace
 
-Amend 4-up is the main timetable editing surface. It displays multiple class or teacher mini-grids on one page, with Monday–Friday rows and five period columns. The page density is selectable (for example 2, 4, 6, 8, 12, 16, 24 or 32 tables per page).
+The production timetable browser follows the supplied redesign with a navy timetable sidebar and four sections: weekly timetable, reports/export, classes/teachers, and periods/rules. The weekly board toggles By class and By teacher. A separate Amend 4-up mode retains 4/8/12/16 class paging for rapid review and editing.
 
 Required interactions:
 
 - Toggle By Class / By Teacher.
 - Search class code, teacher code or teacher full name.
 - Previous/next page.
-- Double-click a cell to edit subject/teacher or class.
-- Click an empty teaching cell to create a placed lesson after validating subject, teacher, class, availability and clashes.
+- Click a populated cell to open the lesson form for amendment.
+- Click an empty teaching cell to add a lesson after validating subject, teacher, class, availability and clashes.
 - Drag a lesson to another slot; validate the destination and swap only when both moves are valid.
 - Right-click a lesson to shift or remove it.
 - Double-click a title to request a controlled rename.
@@ -283,11 +283,13 @@ Required interactions:
 - Save amendments directly to the current draft and record an audit event.
 - Return to the normal Schedule view without losing amendments.
 
-The UI must use the real weekday and period represented by each row/cell, not its current sorted index. This prevents a known legacy failure where editing after sorting changed a different day. The current school layout is five displayed columns—`P1`, `P2`, `Lunch`, `P3`, `P4`—but only four are schedulable teaching periods. The lunch column is rendered for report alignment and must reject lesson drops and edits.
+The current browser implements cell click-to-add/edit, remove, lock/unlock, bounded generation, and approval. Drag/drop, atomic swap controls, right-click actions, and title rename remain design requirements for later increments.
+
+The UI must use the real weekday and period represented by each row/cell. The displayed order is P1, P2, P3 Lunch/Muster, P4, P5; existing API codes remain P1, P2, LUNCH, P3, P4 in that display order. Lunch is rendered for report alignment and rejects placement and edits.
 
 ### 15.4 PDF/report output
 
-The reporting service generates both current formats from the same approved timetable version:
+The browser report screen offers class and teacher report actions from the opened timetable version using a print-ready view that can be saved as PDF. A later reporting service should generate both official formats server-side from the same approved version:
 
 - By Instructional Class: one page per eligible class group, showing subject and teacher.
 - By Teacher: one page per teacher, showing subject and instructional class.
@@ -321,15 +323,15 @@ Legacy availability migration requires an explicit conversion from the current 2
 
 #### First API/schema delivery
 
-The initial timetable-resource API slice is now implemented behind authenticated `/api/v1/timetable` endpoints: teacher, subject, instructional-class and cluster creation/listing; one-cluster-per-class membership; seeded default periods; class/cluster period overrides; and resolved periods for a class. Resource codes are normalized to uppercase and unique. Teacher availability uses weekday keys `MON`–`FRI` and only teaching slots `P1`–`P4`; lunch is not a teacher-availability slot. Writes are restricted to IT Administrators and audited; Superusers remain bootstrap/recovery identities, while Executives can read but cannot change resources.
+The production timetable UI exposes teachers, subjects, instructional classes, clusters, period definitions and scheduling rules through resource tabs and a dedicated periods/rules section. It supports editing default period times and creating class/cluster overrides. API configuration writes are restricted to IT Administrators and Superusers and audited. Teacher availability uses weekday keys MON–FRI and only the four teaching slots; lunch is not an availability slot. Superusers retain full access; Executives can only view approved timetable versions.
 
-The current product-owner-directed display pattern is `P1`, `P2`, `Lunch`, `P3`, `P4`, with lunch at display position 3 and non-schedulable. The latest legacy code instead models five teaching periods (`P1`–`P5`) and its PDF overlays “Lunch / Master” at the P3 time; the replacement intentionally follows the explicit product-owner lunch rule, so direct legacy slot parity remains an import/reconciliation decision. Default times are seeded from the legacy documentation. Class-specific overrides take precedence over the single cluster override, which takes precedence over the default slot. A class may belong to only one cluster so two cluster period patterns cannot ambiguously apply. Duplicate code, membership and scope/slot definitions are rejected by both service checks and database constraints; resolved time intervals are also checked for overlaps. The browser now creates teacher/subject/class/cluster resources, memberships, period overrides, rules and lesson requirements. Resource edit/deactivation remains future work.
+The current product-owner-directed display pattern is `P1`, `P2`, `Lunch`, `P3`, `P4`, with lunch at display position 3 and non-schedulable. The latest legacy code instead models five teaching periods (`P1`â€“`P5`) and its PDF overlays â€œLunch / Masterâ€ at the P3 time; the replacement intentionally follows the explicit product-owner lunch rule, so direct legacy slot parity remains an import/reconciliation decision. Default times are seeded from the legacy documentation. Class-specific overrides take precedence over the single cluster override, which takes precedence over the default slot. A class may belong to only one cluster so two cluster period patterns cannot ambiguously apply. Duplicate code, membership and scope/slot definitions are rejected by both service checks and database constraints; resolved time intervals are also checked for overlaps. The browser now creates teacher/subject/class/cluster resources, memberships, period overrides, rules and lesson requirements. Resource edit/deactivation remains future work.
 
 #### Lesson-requirement delivery
 
-`lesson_requirements` stores stable teacher, subject and instructional-class foreign keys, a normalized academic year, total weekly count (1–20), block length (1–4), active state, edit version and audit ownership. A database unique constraint prevents duplicate academic-year/class/teacher/subject combinations even after archival; restoration uses the existing row. Numeric limits and resource foreign keys are also database constraints.
+`lesson_requirements` stores stable teacher, subject and instructional-class foreign keys, a normalized academic year, total weekly count (1â€“20), block length (1â€“4), active state, edit version and audit ownership. A database unique constraint prevents duplicate academic-year/class/teacher/subject combinations even after archival; restoration uses the existing row. Numeric limits and resource foreign keys are also database constraints.
 
-Authenticated Operators and IT Administrators can create, list, retrieve, replace, archive and restore requirements at `/api/v1/timetable/lessons`. Executives and bootstrap Superusers cannot access draft requirements. Replacement and archival use an atomic version predicate; stale writes return 409 without an audit entry or data loss. Writes and audit events commit together. The initial implementation checks each requirement against active resources, resolved class periods and teacher availability. Full blocks plus a shorter remainder preserve the exact weekly total, matching legacy count splitting. Availability, lunch and configured time gaps split contiguous runs; disjoint block packing prevents reusing a period. This does not prove that all requirements can be scheduled together: collective workloads, rule completeness and class/teacher clashes remain scheduler checks.
+Authenticated Operators, IT Administrators and Superusers can create, list, retrieve, replace, archive and restore requirements at `/api/v1/timetable/lessons`. Executives are read-only and can view approved timetable versions.
 
 Period and cluster-membership changes revalidate active requirements. A shared PostgreSQL transaction advisory lock coordinates those changes with lesson creation/edit/archive across API workers, preventing a concurrent period edit and lesson save from jointly committing an invalid configuration. SQLite is for development and does not provide that coordination proof. CI exercises PostgreSQL race/constraint tests plus an additive-schema preservation rehearsal on SQLite. The shared period/lesson validation services are intended for reuse by generation and Amend 4-up.
 
@@ -337,10 +339,10 @@ Period and cluster-membership changes revalidate active requirements. A shared P
 
 Rules now use explicit class/cluster foreign keys, effective date windows and atomic edit versions. Definition schema version 1 validates allowed weekdays, allowed teaching slots and maximum daily lessons. IT Administrators own writes; Operators can read and resolve. The shared bulk resolver returns one validated rule per active class or rejects the entire request for missing/ambiguous rules, invalid definitions or unresolved legacy targets. Class rules do not override cluster rules: any shared scope/date overlap is an error.
 
-PostgreSQL statement/row triggers coordinate rule and membership writes through the shared transaction lock, rejecting overlap even for direct SQL callers. The app uses READ COMMITTED and triggers reject unsupported isolation levels. Revision `0004` preserves old text-only rows as unresolved; IT must explicitly bind/archive applicable rows before planning. Rule and membership service checks also run in development SQLite, while PostgreSQL is required for database-level concurrency guarantees. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md) for the complete API, reconciliation and concurrency contract. Draft editing, generation and an initial class-oriented Amend 4-up browser now consume the shared services. Teacher-oriented grids, swap/drag controls, exports and publishing coordination remain outstanding.
+PostgreSQL statement/row triggers coordinate rule and membership writes through the shared transaction lock, rejecting overlap even for direct SQL callers. The app uses READ COMMITTED and triggers reject unsupported isolation levels. Revision 0004 preserves unresolved legacy rows for explicit reconciliation. Draft editing, generation, By class/By teacher browser boards and Amend 4-up consume shared validation services. Server PDF output, swap/drag controls and publishing coordination remain outstanding.
 
 #### Timetable draft and placement delivery
 
 Revision `0005` introduces `timetable_versions`, selected-class links, lesson blocks and normalized occupied slots. New drafts snapshot current requirements/resources/periods and resolved rules for each weekday of a Monday-based week. Every mutation checks configuration currentness and the expected draft revision, validates the full proposed grid and commits the block/cell changes with an audit event. Shared validation enforces block/remainder quantities, lunch/gap exclusion, allowed days/periods, daily limits, availability and actual-time teacher/class conflicts. Swaps validate both directions before replacing either block's cells.
 
-PostgreSQL guards enforce snapshot/class-selection immutability, occupied-cell uniqueness, actual-time clashes, snapshotted cell resource/time values, locked blocks and approved records. Full-grid reads use the transaction lock for consistent header/cell revisions. IT Administrators can approve only complete, current drafts; Executives can read approved versions. Historical rendering uses snapshots. Automatic generation uses the same validations and transaction services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). The browser currently pages through 4/8/12/16 class grids, renders the non-editable lunch column, and supports manual block changes, generation and IT approval. Published-version coordination, draft copy/rebase, teacher-oriented grids, drag/swap controls, composite teachers, fixed events and exports remain to implement. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+PostgreSQL guards enforce snapshot/class-selection immutability, occupied-cell uniqueness, actual-time clashes, snapshotted cell resource/time values, locked blocks and approved records. Full-grid reads use the transaction lock for consistent header/cell revisions. IT Administrators and Superusers can approve only complete, current drafts; Executives can read approved versions. Historical rendering uses snapshots. Automatic generation uses the same validations and transaction services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). The browser offers By class/By teacher weekly views, clickable Amend 4-up, browser print-to-PDF reports, resource tabs and period/rule management. Published-version coordination, draft copy/rebase, composite teachers and fixed events remain to implement. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).

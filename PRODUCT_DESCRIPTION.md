@@ -1,6 +1,6 @@
 # SPS Student Dashboard
 
-Operational role increment (26 October 2026): student and attendance APIs now require Operator, dashboards/attendance CSV require Operator or Executive, and audit remains with Superuser/IT Administrator. The Superuser browser remains for setup and account recovery. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md) for the current matrix and unresolved export policy.
+Superuser access increment (27 October 2026): Superuser can use every workspace and action, including student intake, attendance, reports, timetable setup/planning/approval and account administration. The Superuser lands on the dashboard with all workspace navigation visible. API tests enforce this full-access role while preserving the separate IT Administrator, Operator and Executive boundaries. See [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
 Identity increment (26 October 2026): IT Administrators can manage named non-Superuser accounts and reset temporary passwords. Password change, role/status change, reset and explicit logout revoke existing account tokens; the browser clears credentials on sign-out. Setup/recovery, complete API permission separation and deployment hardening remain required. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md).
 
@@ -8,7 +8,7 @@ Attendance browser increment (26 October 2026): Operators can create/review sess
 
 Profile and intake increment (28 October 2026): the Operator profile form/API cover the supported intake workbook fields, and Operators can upload the 2023 intake sheet, review sanitized row errors, and choose create-only or explicit update-existing commit. IT Administrators map workbook class labels to active timetable classes through a versioned crosswalk; source files and staged personal data are encrypted, and commits are atomic and version checked. Category/institution catalogs, older workbook mapping and full historical reconciliation remain to implement. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md) and [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
-Browser increment (26 October 2026): the actual application opens at the server root with sign-in, mandatory temporary-password change, Superuser account/role administration and committed-data dashboards. Operator profile and attendance workflows are now connected. The timetable browser increment adds IT resource setup and class-oriented Amend 4-up with clickable lesson placement/edit/remove/lock, generation and IT approval. Teacher-oriented timetable grids, swap/drag, imports/exports and complete setup/recovery remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) and [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+Browser increment (27 October 2026): the application follows the supplied timetable redesign with By class/By teacher weekly boards, separate report/print, classes/teachers, and periods/rules sections. Clickable Amend 4-up remains available with 4/8/12/16 class paging; period display shows P1, P2, P3 Lunch/Muster, P4 and P5. Superuser retains full application access. Browser print currently provides Save as PDF; native PDF generation and remaining setup/recovery gates are follow-up work. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md), [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) and [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 
 Generation delivery note (26 October 2026): the API and production browser support generating weekly drafts while preserving existing lessons by default. Operators can explicitly regenerate unlocked lessons; locked lessons and approved timetables are protected. Each run saves a report of unplaced blocks and reasons, and incomplete schedules cannot be approved. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
 
@@ -51,6 +51,9 @@ The superuser can:
 - Assign and revoke roles.
 - Create the first IT Administrator account.
 - Review security and system audit events.
+- Use every application workspace and operation after setup, including student profiles/imports, attendance, reporting, timetable planning and approval.
+
+After first-run setup, the Superuser retains full access. The dashboard is its initial workspace; account administration remains available from navigation. Superuser actions are audited. Named Operator, IT Administrator and Executive accounts remain the normal accounts for routine role-specific work.
 
 The initial credential must not be documented as a permanent password. It must be supplied through a secure deployment mechanism or environment configuration, expire after first use, and require a password change. The application must prevent normal production use while the initial credential remains unchanged. A recovery procedure must exist for a lost superuser account and must be restricted to authorised IT personnel.
 

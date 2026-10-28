@@ -31,7 +31,7 @@ from app.timetable_periods import validate_period_intervals as _validate_period_
 
 router = APIRouter(prefix="/timetable", tags=["timetable resource setup"])
 READ_ROLES = ("Superuser", "IT Administrator", "Operator", "Executive")
-EDIT_ROLES = ("IT Administrator",)
+EDIT_ROLES = ("IT Administrator", "Superuser")
 READ_ACCESS = Depends(require_roles(*READ_ROLES))
 EDIT_ACCESS = Depends(require_roles(*EDIT_ROLES))
 
