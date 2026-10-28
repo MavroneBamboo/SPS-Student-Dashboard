@@ -1,14 +1,14 @@
 """Track the single currently published timetable for each academic week.
 
 Revision ID: 20261028_0013
-Revises: 20261028_0011
+Revises: 20261028_0012
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "20261028_0013"
-down_revision = "20261028_0011"
+down_revision = "20261028_0012"
 branch_labels = None
 depends_on = None
 
