@@ -178,7 +178,7 @@
               <label>Correction reason<textarea name="correction_reason" maxlength="1000"></textarea></label>
               <div class="actions"><button type="submit">Save attendance</button><button id="cancel-correction" class="secondary" type="button" hidden>Cancel correction</button></div>
             </form>
-            <h3>Find an eligible student</h3><p>This lookup uses current active class membership, not a historical roster. Refine your search if more than 25 students match.</p>
+            <h3>Find a roster student</h3><p>Attendance uses the roster captured when this session was created. A legacy session from before roster snapshots may show only students with existing attendance records.</p>
             <form id="attendance-student-search" class="filters"><label>Eligible student identifier or name<input name="q" maxlength="120"></label><button type="submit">Find eligible students</button></form>
             <p id="eligible-summary"></p><div class="table-wrap"><table><thead><tr><th>Pris No.</th><th>Student</th><th>Action</th></tr></thead><tbody id="eligible-student-rows"></tbody></table></div>
             <h3>Adjust expected count</h3><form id="attendance-count-form" class="filters"><label>Revised expected count<input name="expected_count" type="number" min="1" max="10000" required></label><label>Count change reason<input name="reason" maxlength="1000" required></label><button type="submit">Update expected count</button></form>

@@ -5,7 +5,6 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
   let hasMore = false;
   let listSequence = 0;
   let detailSequence = 0;
-  let eligibleSequence = 0;
   const createForm = $("new-session-form");
   const recordForm = $("attendance-record-form");
   const countForm = $("attendance-count-form");
@@ -23,7 +22,6 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     current = null;
     detailSequence += 1;
     listSequence += 1;
-    eligibleSequence += 1;
     offset = 0;
     resetRecord();
     for (const id of ["attendance-session-rows", "attendance-record-rows", "eligible-student-rows"]) $(id).replaceChildren();
@@ -57,26 +55,24 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
   }
   async function eligible() {
     if (!current || current.session.status !== "OPEN") return;
-    const sequence = ++eligibleSequence;
-    const sessionId = current.session.id;
-    const query = new URLSearchParams({class_name: current.session.class_name, status: "ACTIVE", limit: "26", q: $("attendance-student-search").elements.q.value});
-    const students = await api(`/students?${query}`);
-    if (sequence !== eligibleSequence || current?.session.id !== sessionId) return;
+    const query = $("attendance-student-search").elements.q.value.trim().toLocaleLowerCase();
+    const matches = current.roster.filter(student => !query || student.pris_no.toLocaleLowerCase().includes(query) || student.student_name.toLocaleLowerCase().includes(query));
+    const students = matches.slice(0, 26);
     $("eligible-student-rows").replaceChildren();
     for (const student of students.slice(0,25)) {
-      const row = document.createElement("tr"); cell(row, student.pris_no); cell(row, student.name);
+      const row = document.createElement("tr"); cell(row, student.pris_no); cell(row, student.student_name);
       const select = document.createElement("button");
-      const recorded = current.records.some(record => record.pris_no === student.pris_no);
+      const recorded = student.attendance_status !== null;
       select.textContent = recorded ? "Recorded" : "Select"; select.disabled = recorded;
       select.setAttribute("aria-label", `Select ${student.pris_no}`);
       select.addEventListener("click", () => { resetRecord(); recordForm.elements.pris_no.value = student.pris_no; recordForm.elements.attendance_status.focus(); });
       cell(row, "").append(select); $("eligible-student-rows").append(row);
     }
-    $("eligible-summary").textContent = students.length > 25 ? "More than 25 students match; refine your search." : `${students.length} current eligible students match.`;
+    const prefix = current.roster_snapshot_complete ? "Captured roster" : "Legacy partial roster";
+    $("eligible-summary").textContent = `${prefix}: ${students.length > 25 ? "more than 25 students match; refine your search." : `${matches.length} students match.`}`;
   }
   async function load(id) {
     const sequence = ++detailSequence;
-    eligibleSequence += 1;
     const data = await api(`/attendance/sessions/${id}`);
     if (sequence !== detailSequence) return;
     current = data;
@@ -84,7 +80,7 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     closeForm.elements.reason.required = false;
     $("new-session-panel").hidden = true; $("attendance-editor").hidden = false;
     $("attendance-editor-title").textContent = `${data.session.class_name} · ${data.session.session_date} · ${data.session.session_type}`;
-    $("attendance-summary").textContent = `${data.session.status} · version ${data.session.version} · ${data.records.length}/${data.session.expected_count} recorded · ${data.missing} not entered · ${data.marked_missing} marked missing`;
+    $("attendance-summary").textContent = `${data.session.status} · version ${data.session.version} · roster ${data.roster_count}${data.roster_snapshot_complete ? " captured" : " legacy partial"} · ${data.records.length}/${data.session.expected_count} recorded · ${data.missing} not entered · ${data.marked_missing} marked missing`;
     $("attendance-notes").textContent = data.session.notes ? `Notes: ${data.session.notes}` : "";
     $("attendance-write-panel").hidden = data.session.status !== "OPEN";
     countForm.elements.expected_count.value = data.session.expected_count;
@@ -109,7 +105,7 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
   }
   async function show() { showPanel("attendance"); await list(); }
   $("new-attendance-session").addEventListener("click", () => run($("new-attendance-session"), async () => {
-    const sequence = ++detailSequence; current = null; eligibleSequence += 1;
+    const sequence = ++detailSequence; current = null;
     $("attendance-editor").hidden = true; $("new-session-panel").hidden = false;
     createForm.reset(); createForm.elements.session_date.value = today(); createForm.elements.class_name.replaceChildren();
     const data = await api("/reports/dashboard");

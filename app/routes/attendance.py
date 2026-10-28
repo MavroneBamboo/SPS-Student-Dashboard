@@ -7,11 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from app.audit import record_event
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
-from app.models import AttendanceRecord, AttendanceSession, Student
+from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, Student
 from app.schemas import (
     AttendanceRecordCorrection,
     AttendanceRecordCreate,
     AttendanceRecordResponse,
+    AttendanceRosterEntryResponse,
     AttendanceSessionClose,
     AttendanceSessionCount,
     AttendanceSessionCreate,
@@ -31,17 +32,18 @@ def session_response(row: AttendanceSession) -> AttendanceSessionResponse:
         expected_count=row.expected_count,
         notes=row.notes,
         status=row.status,
+        roster_snapshot_state=row.roster_snapshot_state,
     )
 
 
-def record_response(row: AttendanceRecord, student: Student, session: AttendanceSession) -> AttendanceRecordResponse:
+def record_response(row: AttendanceRecord, roster_entry: AttendanceRosterEntry, session: AttendanceSession) -> AttendanceRecordResponse:
     return AttendanceRecordResponse(
         id=row.id,
         version=row.version,
         session_version=session.version,
         session_id=row.session_id,
-        pris_no=student.pris_no,
-        student_name=decrypt_sensitive(student.name_encrypted) or "",
+        pris_no=roster_entry.pris_no_snapshot,
+        student_name=decrypt_sensitive(roster_entry.student_name_encrypted) or "",
         attendance_status=row.attendance_status,
         correction_reason=row.correction_reason,
     )
@@ -76,23 +78,75 @@ def _advance(db: DbSession, session: AttendanceSession, expected_version: int) -
 
 def _records(db: DbSession, session: AttendanceSession) -> list[AttendanceRecordResponse]:
     return [
-        record_response(record, student, session)
-        for record, student in db.execute(
-            select(AttendanceRecord, Student)
-            .join(Student, Student.id == AttendanceRecord.student_id)
+        record_response(record, roster_entry, session)
+        for record, roster_entry in db.execute(
+            select(AttendanceRecord, AttendanceRosterEntry)
+            .join(
+                AttendanceRosterEntry,
+                (AttendanceRosterEntry.session_id == AttendanceRecord.session_id)
+                & (AttendanceRosterEntry.student_id == AttendanceRecord.student_id),
+            )
             .where(AttendanceRecord.session_id == session.id)
-            .order_by(Student.pris_no)
+            .order_by(AttendanceRosterEntry.pris_no_snapshot)
         )
+    ]
+
+
+def _roster(db: DbSession, session: AttendanceSession) -> list[AttendanceRosterEntryResponse]:
+    recorded = {
+        row.student_id: row.attendance_status
+        for row in db.scalars(select(AttendanceRecord).where(AttendanceRecord.session_id == session.id)).all()
+    }
+    return [
+        AttendanceRosterEntryResponse(
+            student_id=entry.student_id,
+            pris_no=entry.pris_no_snapshot,
+            student_name=decrypt_sensitive(entry.student_name_encrypted) or "",
+            student_status=entry.student_status,
+            attendance_status=recorded.get(entry.student_id),
+        )
+        for entry in db.scalars(
+            select(AttendanceRosterEntry)
+            .where(AttendanceRosterEntry.session_id == session.id)
+            .order_by(AttendanceRosterEntry.pris_no_snapshot)
+        ).all()
     ]
 
 
 @router.post("/sessions", response_model=AttendanceSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Claims) -> AttendanceSessionResponse:
-    if db.scalar(select(Student.id).where(Student.class_name == payload.class_name, Student.status == "ACTIVE")) is None:
+    eligible = db.scalars(
+        select(Student)
+        .where(Student.class_name == payload.class_name, Student.status == "ACTIVE")
+        .order_by(Student.pris_no)
+        .with_for_update()
+    ).all()
+    if not eligible:
         raise HTTPException(status_code=422, detail="Class has no eligible active students")
-    row = AttendanceSession(**payload.model_dump(), created_by=int(claims["sub"]), status="OPEN", version=1)
+    actor_id = int(claims["sub"])
+    row = AttendanceSession(
+        **payload.model_dump(),
+        created_by=actor_id,
+        status="OPEN",
+        version=1,
+        roster_snapshot_state="CAPTURED",
+    )
     try:
         db.add(row)
+        db.flush()
+        db.add_all(
+            [
+                AttendanceRosterEntry(
+                    session_id=row.id,
+                    student_id=student.id,
+                    pris_no_snapshot=student.pris_no,
+                    student_name_encrypted=student.name_encrypted,
+                    student_status=student.status,
+                    created_by=actor_id,
+                )
+                for student in eligible
+            ]
+        )
         db.flush()
         record_event(
             db,
@@ -100,7 +154,14 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
             "attendance.session.created",
             "attendance_session",
             str(row.id),
-            {"class_name": row.class_name, "session_date": row.session_date.isoformat(), "session_type": row.session_type, "version": 1},
+            {
+                "class_name": row.class_name,
+                "session_date": row.session_date.isoformat(),
+                "session_type": row.session_type,
+                "version": 1,
+                "roster_count": len(eligible),
+                "roster_snapshot_state": row.roster_snapshot_state,
+            },
         )
         result = session_response(row)
         db.commit()
@@ -141,9 +202,13 @@ def list_sessions(
 def get_session(session_id: int, db: DbSession, claims: Claims) -> dict:
     session = _session(db, session_id)
     records = _records(db, session)
+    roster = _roster(db, session)
     return {
         "session": session_response(session),
         "records": records,
+        "roster": roster,
+        "roster_count": len(roster),
+        "roster_snapshot_complete": session.roster_snapshot_state == "CAPTURED",
         "missing": max(0, session.expected_count - len(records)),
         "marked_missing": sum(row.attendance_status == "MISSING" for row in records),
     }
@@ -213,11 +278,17 @@ def change_expected_count(session_id: int, payload: AttendanceSessionCount, db: 
 @router.post("/sessions/{session_id}/records", response_model=AttendanceRecordResponse, status_code=status.HTTP_201_CREATED)
 def create_record(session_id: int, payload: AttendanceRecordCreate, db: DbSession, claims: Claims) -> AttendanceRecordResponse:
     session = _session(db, session_id, payload.expected_session_version)
-    student = db.scalar(select(Student).where(Student.pris_no == payload.pris_no.upper(), Student.status == "ACTIVE").with_for_update())
+    student = db.scalar(select(Student).where(Student.pris_no == payload.pris_no.upper()).with_for_update())
     if student is None:
-        raise HTTPException(status_code=422, detail="Student is not active or does not exist")
-    if student.class_name != session.class_name:
-        raise HTTPException(status_code=422, detail="Student does not belong to the session class")
+        raise HTTPException(status_code=422, detail="Student does not exist")
+    roster_entry = db.scalar(
+        select(AttendanceRosterEntry).where(
+            AttendanceRosterEntry.session_id == session_id,
+            AttendanceRosterEntry.student_id == student.id,
+        )
+    )
+    if roster_entry is None:
+        raise HTTPException(status_code=422, detail="Student is not on this attendance session's roster snapshot")
     if db.scalar(select(AttendanceRecord.id).where(AttendanceRecord.session_id == session_id, AttendanceRecord.student_id == student.id)):
         raise HTTPException(status_code=409, detail="Attendance record already exists")
     if (
@@ -254,7 +325,7 @@ def create_record(session_id: int, payload: AttendanceRecordCreate, db: DbSessio
                 "version": row.version,
             },
         )
-        result = record_response(row, student, session)
+        result = record_response(row, roster_entry, session)
         db.commit()
         return result
     except IntegrityError as exc:
@@ -271,8 +342,13 @@ def correct_record(record_id: int, payload: AttendanceRecordCorrection, db: DbSe
     db.refresh(existing)
     if existing.version != payload.expected_version:
         raise HTTPException(status_code=409, detail="Attendance record changed; reload before correcting")
-    student = db.get(Student, existing.student_id)
-    if payload.pris_no.upper() != student.pris_no:
+    roster_entry = db.scalar(
+        select(AttendanceRosterEntry).where(
+            AttendanceRosterEntry.session_id == session.id,
+            AttendanceRosterEntry.student_id == existing.student_id,
+        )
+    )
+    if payload.pris_no.upper() != roster_entry.pris_no_snapshot:
         raise HTTPException(status_code=422, detail="A correction cannot change the attendance student")
     previous = {
         "attendance_status": existing.attendance_status,
@@ -312,6 +388,6 @@ def correct_record(record_id: int, payload: AttendanceRecordCorrection, db: DbSe
         },
     )
     db.flush()
-    result = record_response(existing, student, session)
+    result = record_response(existing, roster_entry, session)
     db.commit()
     return result

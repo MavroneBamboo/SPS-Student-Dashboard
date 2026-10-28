@@ -284,6 +284,19 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
             )
             assert response.status_code == 201
 
+        transferred = client.patch(
+            f"/api/v1/students/{created.json()['id']}",
+            json={
+                "expected_version": created.json()["version"],
+                "name": "Renamed After Attendance",
+                "class_name": "MONTHLY-TRANSFERRED",
+                "status": "INACTIVE",
+                "status_effective": "2026-10-04",
+            },
+            headers=headers,
+        )
+        assert transferred.status_code == 200
+
         export = client.get(f"/api/v1/reports/attendance/monthly.xlsx?month=2026-10&class_name={class_name}", headers=headers)
         assert export.status_code == 200
         workbook = load_workbook(io.BytesIO(export.content), data_only=True)
@@ -295,6 +308,10 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
         assert sheet["E4"].value == "PM"
         assert sheet["H5"].value == "P"
         assert sheet["I5"].value == "L"
+        assert sheet["A5"].value == "ACTIVE"
+        assert sheet["B5"].value == pris_no.upper()
+        assert sheet["C5"].value == "Monthly Report Student"
+        assert "session snapshots" in sheet["A3"].value
         assert sheet.freeze_panes == "D5"
         assert sheet.page_setup.orientation == "landscape"
         assert export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

@@ -18,7 +18,7 @@ The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTST
 
 ## Current implemented slice
 
-- Operator attendance browser: session creation/search, current eligible lookup, mark/correction, missing review, audited count adjustment and explicit incomplete closure. Sessions/records use version checks and session locking; duplicate sessions are rejected. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md) for required API-client changes and historical-roster boundaries.
+- Operator attendance browser: session creation/search, captured-roster lookup, mark/correction, missing review, audited count adjustment and explicit incomplete closure. Sessions/records use version checks and session locking; duplicate sessions are rejected. The monthly attendance export uses captured identities and labels partial legacy rosters. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md) for the API contract and historical-roster limits.
 
 - Operator student profile browser: filtered/paged search, create/edit, status history, duplicate detection and version-checked saves. `PATCH /students/{id}` now requires `expected_version`; see [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
