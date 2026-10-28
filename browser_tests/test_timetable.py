@@ -4,7 +4,7 @@ from uuid import uuid4
 from playwright.sync_api import expect
 
 
-def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, make_account, live_url):
+def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, make_account, live_url, tmp_path):
     admin = make_account("IT Administrator")
     login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
     assert login.status == 200
@@ -102,6 +102,13 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     page.get_by_role("button", name="Approve complete draft", exact=True).click()
     expect(page.locator("#timetable-version-detail")).to_contain_text("APPROVED")
     assert page.locator("#timetable-pending").inner_text().find("All weekly lesson requirements are placed") >= 0
+    with page.expect_download() as download_event:
+        page.get_by_role("button", name="Download class and teacher reports", exact=True).click()
+    download = download_event.value
+    assert download.suggested_filename.endswith("-both.xlsx")
+    output = tmp_path / download.suggested_filename
+    download.save_as(output)
+    assert output.read_bytes().startswith(b"PK")
 
 
 def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(page, make_account, live_url):
