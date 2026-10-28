@@ -8,7 +8,7 @@ from playwright.sync_api import expect
 
 from app.crypto import encrypt_sensitive
 from app.db import SessionLocal
-from app.models import AttendanceRecord, AttendanceSession, Student, User
+from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, Student, User
 
 
 def login(page, account):
@@ -139,10 +139,21 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
             class_name=class_name,
             expected_count=1,
             created_by=account["id"],
+            roster_snapshot_state="CAPTURED",
         )
         db.add_all([student, session])
         db.flush()
         student_id = student.id
+        db.add(
+            AttendanceRosterEntry(
+                session_id=session.id,
+                student_id=student.id,
+                pris_no_snapshot=student.pris_no,
+                student_name_encrypted=student.name_encrypted,
+                student_status=student.status,
+                created_by=account["id"],
+            )
+        )
         db.add(
             AttendanceRecord(
                 session_id=session.id,
@@ -152,7 +163,9 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
                 updated_by=account["id"],
             )
         )
+        student_id = student.id
         db.commit()
+
     login(page, account)
     expect(page.get_by_role("heading", name="Intake and attendance overview")).to_be_visible()
     expect(page.locator("#users-nav")).to_be_hidden()
@@ -195,9 +208,20 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
             class_name=class_name,
             expected_count=1,
             created_by=account["id"],
+            roster_snapshot_state="CAPTURED",
         )
         db.add_all([student, session])
         db.flush()
+        db.add(
+            AttendanceRosterEntry(
+                session_id=session.id,
+                student_id=student.id,
+                pris_no_snapshot=student.pris_no,
+                student_name_encrypted=student.name_encrypted,
+                student_status=student.status,
+                created_by=account["id"],
+            )
+        )
         db.add(
             AttendanceRecord(
                 session_id=session.id,
@@ -207,6 +231,14 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
                 updated_by=account["id"],
             )
         )
+        student_id = student.id
+        db.commit()
+
+    with SessionLocal() as db:
+        moved = db.get(Student, student_id)
+        moved.name_encrypted = encrypt_sensitive("Renamed Browser Student")
+        moved.class_name = "BROWSER-TRANSFERRED"
+        moved.status = "INACTIVE"
         db.commit()
 
     login(page, account)
@@ -224,6 +256,9 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
     attendance_column = 4 + (session_date.day - 1) * 2
     assert sheet.cell(4, attendance_column).value == "AM"
     assert sheet.cell(5, attendance_column).value == "P"
+    assert sheet.cell(5, 1).value == "ACTIVE"
+    assert sheet.cell(5, 2).value.startswith("B-")
+    assert sheet.cell(5, 3).value == "Monthly Browser Student"
 
 
 def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):

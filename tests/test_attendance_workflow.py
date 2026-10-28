@@ -7,8 +7,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.crypto import decrypt_sensitive
 from app.db import SessionLocal
-from app.models import AttendanceRecord, AttendanceSession, AuditEvent
+from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent
 
 BASE = "/api/v1/attendance"
 
@@ -91,6 +92,66 @@ def test_attendance_full_lifecycle_missing_review_correction_and_close(attendanc
         ).one()
         detail = json.loads(event.details_json)
         assert detail["before"]["attendance_status"] == "MISSING" and detail["after"]["attendance_status"] == "ABSENT"
+
+
+def test_session_roster_snapshot_survives_student_transfer_and_rejects_later_enrollment(attendance_context):
+    ctx = attendance_context
+    client, headers, payload, students = ctx
+    session = _session(ctx)
+    detail_url = f"{BASE}/sessions/{session['id']}"
+    detail = client.get(detail_url, headers=headers["operator"]).json()
+    assert detail["roster_snapshot_complete"] is True
+    assert detail["roster_count"] == 2
+    assert {entry["pris_no"] for entry in detail["roster"]} == {student["pris_no"] for student in students}
+    with SessionLocal() as db:
+        stored = db.scalar(
+            select(AttendanceRosterEntry).where(
+                AttendanceRosterEntry.session_id == session["id"],
+                AttendanceRosterEntry.student_id == students[0]["id"],
+            )
+        )
+        assert stored.student_name_encrypted != "Attendance Student 0"
+        assert decrypt_sensitive(stored.student_name_encrypted) == "Attendance Student 0"
+
+    transferred = client.patch(
+        f"/api/v1/students/{students[0]['id']}",
+        json={
+            "expected_version": students[0]["version"],
+            "name": "Transferred After Session",
+            "class_name": "Another Class",
+            "status": "INACTIVE",
+            "status_effective": "2026-10-27",
+        },
+        headers=headers["operator"],
+    )
+    assert transferred.status_code == 200
+    added = client.post(
+        "/api/v1/students",
+        json={"pris_no": f"{payload['class_name']}-LATE", "name": "Later Student", "class_name": payload["class_name"], "category": "OP"},
+        headers=headers["operator"],
+    )
+    assert added.status_code == 201
+
+    recorded = client.post(
+        f"{BASE}/sessions/{session['id']}/records",
+        json={"pris_no": students[0]["pris_no"], "attendance_status": "ABSENT", "expected_session_version": session["version"]},
+        headers=headers["operator"],
+    )
+    assert recorded.status_code == 201
+    assert recorded.json()["student_name"] == "Attendance Student 0"
+    assert (
+        client.post(
+            f"{BASE}/sessions/{session['id']}/records",
+            json={"pris_no": added.json()["pris_no"], "attendance_status": "PRESENT", "expected_session_version": 2},
+            headers=headers["operator"],
+        ).status_code
+        == 422
+    )
+    final = client.get(detail_url, headers=headers["operator"]).json()
+    frozen = next(entry for entry in final["roster"] if entry["student_id"] == students[0]["id"])
+    assert frozen["student_name"] == "Attendance Student 0"
+    assert frozen["student_status"] == "ACTIVE"
+    assert frozen["attendance_status"] == "ABSENT"
 
 
 def test_duplicate_session_race_and_database_constraint(attendance_context):

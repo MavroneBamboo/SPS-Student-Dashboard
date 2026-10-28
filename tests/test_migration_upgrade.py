@@ -429,5 +429,15 @@ def test_attendance_upgrade_preserves_records_or_refuses_ambiguous_sessions(tmp_
                 current.reflect(bind=connection)
                 for table_name in ("attendance_sessions", "attendance_records"):
                     assert connection.execute(select(current.tables[table_name].c.version)).scalar_one() == 1
+                session = current.tables["attendance_sessions"]
+                roster = current.tables["attendance_roster_entries"]
+                assert connection.execute(select(session.c.roster_snapshot_state)).scalar_one() == "LEGACY_PARTIAL"
+                entry = connection.execute(select(roster)).mappings().one()
+                assert entry["session_id"] == 1
+                assert entry["student_id"] == 1
+                assert entry["pris_no_snapshot"] == "ATT-UPGRADE"
+                assert entry["student_name_encrypted"] == "preserved-ciphertext"
+                assert entry["student_status"] is None
+                assert entry["created_by"] == 1
     finally:
         database.dispose()

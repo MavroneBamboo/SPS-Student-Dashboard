@@ -393,7 +393,10 @@ class StudentImportBatch(Base):
 
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
-    __table_args__ = (Index("uq_session_class_date_type", "class_name", "session_date", "session_type", unique=True),)
+    __table_args__ = (
+        Index("uq_session_class_date_type", "class_name", "session_date", "session_type", unique=True),
+        CheckConstraint("roster_snapshot_state IN ('CAPTURED', 'LEGACY_PARTIAL')", name="ck_attendance_roster_snapshot_state"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -403,9 +406,24 @@ class AttendanceSession(Base):
     expected_count: Mapped[int] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="OPEN")
+    roster_snapshot_state: Mapped[str] = mapped_column(String(24), default="LEGACY_PARTIAL", server_default="LEGACY_PARTIAL")
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class AttendanceRosterEntry(Base):
+    __tablename__ = "attendance_roster_entries"
+    __table_args__ = (UniqueConstraint("session_id", "student_id", name="uq_attendance_roster_session_student"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("attendance_sessions.id"), index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True)
+    pris_no_snapshot: Mapped[str] = mapped_column(String(40))
+    student_name_encrypted: Mapped[str] = mapped_column(Text)
+    student_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AttendanceRecord(Base):

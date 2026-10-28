@@ -46,6 +46,7 @@ def test_operator_attendance_create_lookup_record_correct_count_close_and_dashbo
     _, class_name, students = _students(page, live_url, account)
     login(page, account)
     _new_session(page, class_name)
+    expect(page.locator("#attendance-summary")).to_contain_text("roster 2 captured")
     expect(page.locator("#attendance-summary")).to_contain_text("0/2 recorded")
     page.get_by_role("button", name="Close session", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text("Attendance is incomplete")

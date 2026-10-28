@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
-from app.models import AttendanceRecord, AttendanceSession, AuditEvent, Student
+from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent, Student
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -112,10 +112,14 @@ def attendance_csv(
     date_to: date | None = None,
 ) -> StreamingResponse:
     query = (
-        select(AttendanceSession, AttendanceRecord, Student)
+        select(AttendanceSession, AttendanceRecord, AttendanceRosterEntry)
         .join(AttendanceRecord, AttendanceRecord.session_id == AttendanceSession.id)
-        .join(Student, Student.id == AttendanceRecord.student_id)
-        .order_by(AttendanceSession.session_date, AttendanceSession.class_name, Student.pris_no)
+        .join(
+            AttendanceRosterEntry,
+            (AttendanceRosterEntry.session_id == AttendanceRecord.session_id)
+            & (AttendanceRosterEntry.student_id == AttendanceRecord.student_id),
+        )
+        .order_by(AttendanceSession.session_date, AttendanceSession.class_name, AttendanceRosterEntry.pris_no_snapshot)
     )
     if class_name:
         query = query.where(AttendanceSession.class_name == class_name)
@@ -126,14 +130,14 @@ def attendance_csv(
     stream = io.StringIO()
     writer = csv.writer(stream)
     writer.writerow(["Session date", "Session", "Class", "Pris No.", "Student", "Attendance"])
-    for session, record, student in db.execute(query):
+    for session, record, roster_entry in db.execute(query):
         writer.writerow(
             [
                 session.session_date.isoformat(),
                 session.session_type,
                 session.class_name,
-                student.pris_no,
-                decrypt_sensitive(student.name_encrypted) or "",
+                roster_entry.pris_no_snapshot,
+                decrypt_sensitive(roster_entry.student_name_encrypted) or "",
                 record.attendance_status,
             ]
         )
@@ -152,9 +156,6 @@ def attendance_monthly_xlsx(
     year, month_number = (int(part) for part in month.split("-"))
     first_day = date(year, month_number, 1)
     last_day = date(year, month_number, calendar.monthrange(year, month_number)[1])
-    students = db.scalars(
-        select(Student).where(Student.class_name == class_name, Student.status == "ACTIVE").order_by(Student.pris_no)
-    ).all()
     sessions = db.scalars(
         select(AttendanceSession)
         .where(
@@ -165,23 +166,43 @@ def attendance_monthly_xlsx(
         .order_by(AttendanceSession.session_date, AttendanceSession.id)
     ).all()
     sessions_by_id = {session.id: session for session in sessions}
-    attendance: dict[tuple[int, int, str], str] = {}
-    if sessions_by_id and students:
-        records = db.execute(
-            select(AttendanceRecord, Student)
-            .join(Student, Student.id == AttendanceRecord.student_id)
-            .where(
-                AttendanceRecord.session_id.in_(sessions_by_id),
-                Student.class_name == class_name,
-                Student.status == "ACTIVE",
+    roster_entries: dict[int, AttendanceRosterEntry] = {}
+    if sessions_by_id:
+        for entry in db.scalars(
+            select(AttendanceRosterEntry)
+            .where(AttendanceRosterEntry.session_id.in_(sessions_by_id))
+            .order_by(AttendanceRosterEntry.session_id, AttendanceRosterEntry.id)
+        ).all():
+            roster_entries.setdefault(entry.student_id, entry)
+    else:
+        # Preserve a useful blank register when no attendance sessions have
+        # been entered for the requested month; label this nonhistorical basis.
+        for student in db.scalars(
+            select(Student).where(Student.class_name == class_name, Student.status == "ACTIVE").order_by(Student.pris_no)
+        ).all():
+            roster_entries[student.id] = AttendanceRosterEntry(
+                student_id=student.id,
+                pris_no_snapshot=student.pris_no,
+                student_name_encrypted=student.name_encrypted,
+                student_status=student.status,
             )
+    attendance: dict[tuple[int, int, str], str] = {}
+    if sessions_by_id and roster_entries:
+        records = db.execute(
+            select(AttendanceRecord, AttendanceRosterEntry)
+            .join(
+                AttendanceRosterEntry,
+                (AttendanceRosterEntry.session_id == AttendanceRecord.session_id)
+                & (AttendanceRosterEntry.student_id == AttendanceRecord.student_id),
+            )
+            .where(AttendanceRecord.session_id.in_(sessions_by_id))
         )
         status_codes = {"PRESENT": "P", "ABSENT": "A", "LATE": "L", "EXCUSED": "E", "MISSING": "M"}
-        for record, student in records:
+        for record, _roster_entry in records:
             session = sessions_by_id[record.session_id]
             slots = ("AM", "PM") if session.session_type == "FULL_DAY" else (("AM",) if session.session_type == "MORNING" else ("PM",))
             for slot in slots:
-                attendance[(student.id, session.session_date.day, slot)] = status_codes[record.attendance_status]
+                attendance[(record.student_id, session.session_date.day, slot)] = status_codes[record.attendance_status]
 
     workbook = Workbook()
     sheet = workbook.active
@@ -196,6 +217,14 @@ def attendance_monthly_xlsx(
     sheet.cell(1, 1, f"MONTHLY ATTENDANCE | {first_day.strftime('%B %Y')}")
     sheet.cell(2, 1, "CLASS")
     write_literal(2, 3, class_name)
+    legacy_sessions = [session for session in sessions if session.roster_snapshot_state != "CAPTURED"]
+    if legacy_sessions:
+        roster_note = "Roster source: captured entries; legacy rosters include recorded students only and migration-time names."
+    elif sessions:
+        roster_note = "Roster source: session snapshots."
+    else:
+        roster_note = "Roster source: current active profiles; no sessions exist in this month."
+    sheet.cell(3, 1, roster_note)
     sheet.cell(4, 1, "STATUS")
     sheet.cell(4, 2, "PRIS NO.")
     sheet.cell(4, 3, "NAME")
@@ -216,14 +245,15 @@ def attendance_monthly_xlsx(
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
-    for row_number, student in enumerate(students, start=5):
-        write_literal(row_number, 1, student.status)
-        write_literal(row_number, 2, student.pris_no)
-        write_literal(row_number, 3, decrypt_sensitive(student.name_encrypted) or "")
+    ordered_roster = sorted(roster_entries.values(), key=lambda entry: entry.pris_no_snapshot)
+    for row_number, entry in enumerate(ordered_roster, start=5):
+        write_literal(row_number, 1, entry.student_status or "")
+        write_literal(row_number, 2, entry.pris_no_snapshot)
+        write_literal(row_number, 3, decrypt_sensitive(entry.student_name_encrypted) or "")
         for day in range(1, days_in_month + 1):
             for slot_index, slot in enumerate(("AM", "PM")):
                 column = 4 + (day - 1) * 2 + slot_index
-                code = attendance.get((student.id, day, slot))
+                code = attendance.get((entry.student_id, day, slot))
                 if code:
                     sheet.cell(row_number, column, code)
     sheet.freeze_panes = "D5"
@@ -239,7 +269,7 @@ def attendance_monthly_xlsx(
     sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.print_title_rows = "1:4"
-    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(4, 4 + len(students))}"
+    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(4, 4 + len(ordered_roster))}"
     output = io.BytesIO()
     workbook.save(output)
     safe_class = quote(class_name.strip().replace(" ", "_"), safe="")

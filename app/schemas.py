@@ -484,6 +484,15 @@ class AttendanceSessionResponse(AttendanceSessionCreate):
     id: int
     version: int
     status: str
+    roster_snapshot_state: str
+
+
+class AttendanceRosterEntryResponse(BaseModel):
+    student_id: int
+    pris_no: str
+    student_name: str
+    student_status: str | None
+    attendance_status: str | None
 
 
 class AttendanceRecordCreate(BaseModel):
