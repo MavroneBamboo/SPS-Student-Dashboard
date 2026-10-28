@@ -27,6 +27,10 @@ def test_first_login_rotation_account_creation_role_change_disable_and_reload(pa
     logo = page.locator(".brand-logo")
     expect(logo).to_be_visible()
     assert page.evaluate("document.querySelector('.brand-logo').naturalWidth") == 128
+    screenshot(page, "signin")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.set_viewport_size({"width": 1280, "height": 900})
 
     account = make_account("Superuser", must_change=True)
     login(page, {**account, "password": "incorrect-password"})
@@ -42,12 +46,15 @@ def test_first_login_rotation_account_creation_role_change_disable_and_reload(pa
     page.get_by_label("Confirm new password", exact=True).fill("browser-new-password")
     page.get_by_role("button", name="Save new password").click()
     expect(page.get_by_role("heading", name="Intake and attendance overview", exact=True)).to_be_visible()
+    expect(page.locator("#dashboard-nav")).to_have_attribute("aria-current", "page")
     for nav_id in ("dashboard-nav", "profiles-nav", "attendance-nav", "timetable-nav", "users-nav"):
         expect(page.locator(f"#{nav_id}")).to_be_visible()
     page.get_by_role("button", name="Student profiles", exact=True).click()
     expect(page.locator("#profiles-panel")).to_be_visible()
+    expect(page.locator("#profiles-nav")).to_have_attribute("aria-current", "page")
     page.get_by_role("button", name="Attendance", exact=True).click()
     expect(page.locator("#attendance-panel")).to_be_visible()
+    expect(page.locator("#attendance-nav")).to_have_attribute("aria-current", "page")
     page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
     expect(page.locator("#timetable-board-page")).to_be_visible()
     expect(page.get_by_role("button", name="By teacher", exact=True)).to_be_visible()

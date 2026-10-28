@@ -1,6 +1,6 @@
 # Production browser workspace increment
 
-Current browser status (28 October 2026): Superuser has full application access. The SPS Student Dashboard mark is shown in the sign-in/application header and as the browser favicon. The timetable UI follows the supplied PDF with By class/By teacher weekly boards, Amend 4-up, report printing, teacher/class/subject tabs and period/rule management. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) and [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
+Current browser status (28 October 2026): Superuser has full application access. The SPS Student Dashboard mark is shown in the sign-in/application header and as the browser favicon. The sign-in page uses a branded two-panel layout; signed-in users get a responsive left navigation rail with a visible active section, which becomes a horizontal tab row on narrow screens. The timetable UI follows the supplied PDF with By class/By teacher weekly boards, Amend 4-up, report printing, teacher/class/subject tabs and period/rule management. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md) and [ROLE_BOUNDARIES.md](ROLE_BOUNDARIES.md).
 
 The identity increment extends this workspace with IT Administrator named-account management, explicit account-wide logout and administrator temporary-password reset. Existing bearer tokens are revoked when credentials, roles or account status change. See [IDENTITY_SECURITY.md](IDENTITY_SECURITY.md) for the versioned-token API and remaining release work.
 

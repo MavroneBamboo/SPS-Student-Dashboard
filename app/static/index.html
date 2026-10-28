@@ -13,13 +13,23 @@
   <main>
     <div id="notice" role="status" aria-live="polite"></div>
     <section id="signin" class="auth-card" aria-labelledby="signin-title">
-      <p class="eyebrow">SPS WORKSPACE</p><h1 id="signin-title">Sign in</h1>
-      <p>Use your assigned network application account.</p>
-      <form id="login-form">
-        <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
-        <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="200" required></label>
-        <button type="submit">Sign in</button>
-      </form>
+      <div class="auth-welcome">
+        <p class="eyebrow">SPS OPERATIONS</p>
+        <h2>Student operations,<br>in one workspace.</h2>
+        <p>Manage student profiles, attendance, and weekly timetables through one secure internal workspace.</p>
+        <div class="auth-feature"><span>01</span><div><strong>Student profiles</strong><small>Intake records and status history</small></div></div>
+        <div class="auth-feature"><span>02</span><div><strong>Daily operations</strong><small>Attendance, schedules, and reports</small></div></div>
+      </div>
+      <div class="auth-form-panel">
+        <p class="eyebrow">STAFF ACCESS</p><h1 id="signin-title">Sign in</h1>
+        <p>Use your assigned network application account.</p>
+        <form id="login-form">
+          <label>Username<input name="username" autocomplete="username" maxlength="120" required></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="200" required></label>
+          <button type="submit">Sign in <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="auth-footnote">Authorized accounts only · Access is role-based</p>
+      </div>
     </section>
     <section id="password-screen" class="auth-card" aria-labelledby="password-title" hidden>
       <h1 id="password-title">Change your password</h1>
