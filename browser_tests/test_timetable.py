@@ -109,6 +109,16 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     output = tmp_path / download.suggested_filename
     download.save_as(output)
     assert output.read_bytes().startswith(b"PK")
+    page.get_by_role("button", name="Publish timetable", exact=True).click()
+    expect(page.locator("#timetable-version-detail")).to_contain_text("PUBLISHED")
+    assert page.locator("#timetable-publish").is_hidden()
+    expect(page.locator("#timetable-unpublish")).to_be_visible()
+    published = page.request.get(live_url + "/api/v1/timetable/published?academic_year=2026&week_start=2026-10-26", headers=headers)
+    assert published.status == 200
+    assert len(published.json()) == 1
+    page.get_by_role("button", name="Unpublish timetable", exact=True).click()
+    expect(page.locator("#timetable-unpublish")).to_be_hidden()
+    assert page.request.get(live_url + "/api/v1/timetable/published?academic_year=2026&week_start=2026-10-26", headers=headers).json() == []
 
 
 def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(page, make_account, live_url):

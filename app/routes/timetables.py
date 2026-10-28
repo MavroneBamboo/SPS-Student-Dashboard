@@ -55,6 +55,9 @@ def _summary(row: TimetableVersion) -> dict:
         "created_at": row.created_at,
         "approved_by": row.approved_by,
         "approved_at": row.approved_at,
+        "is_published": row.is_published,
+        "published_by": row.published_by,
+        "published_at": row.published_at,
     }
 
 

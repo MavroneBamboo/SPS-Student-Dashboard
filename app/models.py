@@ -15,6 +15,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column
@@ -231,6 +232,22 @@ class TimetableVersion(Base):
             "(status = 'APPROVED' AND approved_by IS NOT NULL AND approved_at IS NOT NULL)",
             name="ck_timetable_approval",
         ),
+        CheckConstraint(
+            "(published_by IS NULL AND published_at IS NULL) OR (published_by IS NOT NULL AND published_at IS NOT NULL)",
+            name="ck_timetable_publication_metadata_pair",
+        ),
+        CheckConstraint(
+            "is_published = false OR (status = 'APPROVED' AND published_by IS NOT NULL AND published_at IS NOT NULL)",
+            name="ck_timetable_published_approved",
+        ),
+        Index(
+            "uq_timetable_current_publication",
+            "academic_year",
+            "week_start",
+            unique=True,
+            postgresql_where=text("is_published IS TRUE"),
+            sqlite_where=text("is_published = 1"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -243,6 +260,9 @@ class TimetableVersion(Base):
     created_by: Mapped[int] = mapped_column(Integer)
     approved_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    published_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
