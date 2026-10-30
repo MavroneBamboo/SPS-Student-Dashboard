@@ -10,7 +10,7 @@ dependencies = [
   "alembic==1.14.0",
   "fastapi==0.161.1",
   "uvicorn[standard]==0.34.0",
-  "sqlalchemy==2.0.37",
+  "sqlalchemy==2.1.6",
   "psycopg[binary]==3.3.6",
   "PyJWT==2.15.0",
   "pydantic-settings==2.7.1",
