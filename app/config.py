@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_env: str = "development"
+    app_build_sha: str = "unknown"
     database_url: str = "sqlite:///./sps-dashboard.db"
     jwt_secret: str = "development-only-change-me"
     jwt_issuer: str = "sps-student-dashboard"

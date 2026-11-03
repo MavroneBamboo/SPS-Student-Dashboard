@@ -15,6 +15,7 @@ The initial release should be delivered in phases over approximately 16–20 wee
 ### Current delivery checkpoint (3 November 2026)
 
 - Amend 4-up swap increment: operators can explicitly select two unlocked lesson blocks and exchange their weekday/start-period positions. The existing revision-guarded API revalidates both destinations and the entire timetable atomically; failed swaps preserve the draft. Chromium coverage exercises selection, disabled/enabled confirmation, a successful swap and locked-block rejection. Drag-and-drop, one-block shifting and title rename remain future Amend 4-up work.
+- Staging build identity increment (3 November): readiness now reports the full commit SHA running in the application, and the staging deploy smoke check requires it to match the tested GitHub revision. This distinguishes database/application health from evidence that the expected commit was actually rolled out. See [STAGING_DEPLOYMENT.md](STAGING_DEPLOYMENT.md).
 
 - Application encryption key rotation increment (28 October): new ciphertext carries a non-secret key identifier, legacy Fernet values remain readable during the migration window, and a dry-run-first command verifies and transactionally re-encrypts student fields, attendance roster names and staged intake workbook payloads. The command runs with the least-privilege runtime database role. See [ENCRYPTION_KEY_ROTATION.md](ENCRYPTION_KEY_ROTATION.md); production key custody and a witnessed restore/rotation drill remain release gates.
 
