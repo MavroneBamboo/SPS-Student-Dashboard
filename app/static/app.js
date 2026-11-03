@@ -209,10 +209,29 @@ async function showDashboard() {
   const fields = Object.fromEntries(new FormData($("dashboard-filter")));
   if (fields.date_from && fields.date_to && fields.date_from > fields.date_to) throw new Error("Attendance from must be on or before attendance to.");
   const query = new URLSearchParams(Object.entries(fields).filter(([, value]) => value));
-  const data = await api(`/reports/dashboard?${query}`);
+  const [categories, institutions, data] = await Promise.all([
+    api("/student-reference/categories"),
+    api("/student-reference/institutions"),
+    api(`/reports/dashboard?${query}`),
+  ]);
   if (requestId !== dashboardRequest) return;
+  const categorySelect = $("dashboard-filter").elements.category_id;
+  const institutionSelect = $("dashboard-filter").elements.institution_id;
+  const selectedCategory = categorySelect.value;
+  const selectedInstitution = institutionSelect.value;
+  categorySelect.replaceChildren(new Option("All categories", ""));
+  for (const item of categories) {
+    categorySelect.add(new Option(`${item.code} · ${item.name}${item.is_active ? "" : " (inactive)"}`, String(item.id)));
+  }
+  institutionSelect.replaceChildren(new Option("All institutions", ""));
+  for (const item of institutions) {
+    institutionSelect.add(new Option(`${item.code} · ${item.name}${item.is_active ? "" : " (inactive)"}`, String(item.id)));
+  }
+  if ([...categorySelect.options].some((option) => option.value === selectedCategory)) categorySelect.value = selectedCategory;
+  if ([...institutionSelect.options].some((option) => option.value === selectedInstitution)) institutionSelect.value = selectedInstitution;
   $("metrics").replaceChildren();
   for (const [label, value] of [
+    ["Matching profiles", data.students.total],
     ["Active students", data.students.active],
     ["Attendance", data.attendance.rate === null ? "No sessions" : `${data.attendance.rate}%`],
     ["Missing attendance records", data.attendance.missing],

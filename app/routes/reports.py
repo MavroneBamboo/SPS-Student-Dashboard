@@ -26,12 +26,24 @@ def dashboard(
     db: DbSession,
     claims: Claims,
     class_name: str | None = Query(default=None, max_length=120),
+    category_id: int | None = Query(default=None, ge=1),
+    institution_id: int | None = Query(default=None, ge=1),
+    student_status: str | None = Query(default=None, max_length=40),
+    academic_year: str | None = Query(default=None, max_length=20),
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict:
     student_query = select(Student)
     if class_name:
-        student_query = student_query.where(Student.class_name == class_name)
+        student_query = student_query.where(Student.class_name == class_name.strip())
+    if category_id is not None:
+        student_query = student_query.where(Student.category_id == category_id)
+    if institution_id is not None:
+        student_query = student_query.where(Student.institution_id == institution_id)
+    if student_status:
+        student_query = student_query.where(Student.status == student_status.strip().upper())
+    if academic_year:
+        student_query = student_query.where(Student.academic_year == academic_year.strip())
     students = db.scalars(student_query).all()
     active_students = [student for student in students if student.status == "ACTIVE"]
     by_class: dict[str, int] = {}
@@ -81,12 +93,17 @@ def dashboard(
         )
     return {
         "filters": {
-            "class_name": class_name,
+            "class_name": class_name.strip() if class_name else None,
+            "category_id": category_id,
+            "institution_id": institution_id,
+            "student_status": student_status.strip().upper() if student_status else None,
+            "academic_year": academic_year.strip() if academic_year else None,
             "date_from": date_from.isoformat() if date_from else None,
             "date_to": date_to.isoformat() if date_to else None,
         },
         "refreshed_at": datetime.now(UTC).isoformat(),
         "students": {
+            "total": len(students),
             "active": len(active_students),
             "by_class": dict(sorted(by_class.items())),
             "by_category": dict(sorted(by_category.items())),

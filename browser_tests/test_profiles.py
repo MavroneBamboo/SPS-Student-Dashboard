@@ -121,6 +121,7 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     page.get_by_label("Student class", exact=True).fill("Catalog browser class")
     page.locator('#profile-form select[name="category"]').select_option(label=f"{category_code} · Updated browser category")
     page.locator('#profile-form select[name="institution_id"]').select_option(label=f"{institution_code} · Browser created institution")
+    page.locator("#profile-form").get_by_label("Academic year", exact=True).fill("2026")
     page.get_by_label("Status effective date", exact=True).fill("2026-11-03")
     page.get_by_role("button", name="Save profile", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text(f"Saved student {pris_no}")
@@ -131,6 +132,17 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
         assert student.category == category_code
         assert student.category_ref.name == "Updated browser category"
         assert student.institution_ref.code == institution_code
+        category_id = student.category_id
+        institution_id = student.institution_id
+
+    page.get_by_role("button", name="Dashboard", exact=True).click()
+    page.locator('#dashboard-filter [name="category_id"]').select_option(str(category_id))
+    page.locator('#dashboard-filter [name="institution_id"]').select_option(str(institution_id))
+    page.locator('#dashboard-filter [name="student_status"]').fill("ACTIVE")
+    page.locator('#dashboard-filter [name="academic_year"]').fill("2026")
+    page.get_by_role("button", name="Apply filters", exact=True).click()
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
+    expect(page.locator("#metrics .metric").nth(1)).to_have_text("Active students1")
 
 
 def test_stale_profile_save_preserves_form_requires_reload_and_revoked_access_clears_data(page, make_account, live_url):

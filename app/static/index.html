@@ -49,12 +49,16 @@
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
         <form id="dashboard-filter" class="filters">
           <label>Class<input name="class_name" maxlength="120" placeholder="All classes"></label>
+          <label>Category<select name="category_id"><option value="">All categories</option></select></label>
+          <label>Institution<select name="institution_id"><option value="">All institutions</option></select></label>
+          <label>Student status<input name="student_status" maxlength="40" list="student-statuses" placeholder="All statuses"></label>
+          <label>Academic year<input name="academic_year" maxlength="20" placeholder="All years"></label>
           <label>Attendance from<input name="date_from" type="date"></label>
           <label>Attendance to<input name="date_to" type="date"></label>
           <button type="submit">Apply filters</button>
         </form>
         <p id="dashboard-freshness"></p>
-        <p>Student totals show current active profiles. Date filters apply to attendance sessions.</p>
+        <p>Category, institution, status and academic-year filters apply to current student profiles. Attendance dates filter sessions; class filters apply to both.</p>
         <section class="panel" aria-labelledby="monthly-report-title">
           <h3 id="monthly-report-title">Monthly attendance register</h3>
           <form id="monthly-attendance-report" class="filters">
