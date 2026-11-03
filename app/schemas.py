@@ -290,6 +290,64 @@ class StudentClassMappingResponse(BaseModel):
     version: int
 
 
+class StudentCategoryCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=80)
+
+
+class StudentCategoryUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def reject_null_values(self):
+        if any(getattr(self, field) is None for field in self.model_fields_set - {"expected_version"}):
+            raise ValueError("Category fields cannot be null")
+        if not self.model_fields_set - {"expected_version"}:
+            raise ValueError("At least one category field must be provided")
+        return self
+
+
+class StudentCategoryResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    is_active: bool
+    version: int
+
+
+class InstitutionCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class InstitutionUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def reject_null_values(self):
+        if any(getattr(self, field) is None for field in self.model_fields_set - {"expected_version"}):
+            raise ValueError("Institution fields cannot be null")
+        if not self.model_fields_set - {"expected_version"}:
+            raise ValueError("At least one institution field must be provided")
+        return self
+
+
+class InstitutionResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    is_active: bool
+    version: int
+
+
 class AttendanceClassMappingCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     student_class_name: str = Field(min_length=1, max_length=120)
@@ -400,6 +458,7 @@ class StudentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     class_name: str = Field(min_length=1, max_length=120)
     category: str = Field(min_length=1, max_length=40)
+    institution_id: int | None = Field(default=None, ge=1)
     status: str = Field(default="ACTIVE", min_length=1, max_length=40)
     status_effective: date | None = None
     date_of_birth: date | None = None
@@ -445,6 +504,8 @@ class StudentCreate(BaseModel):
 class StudentResponse(StudentCreate):
     id: int
     version: int
+    category_id: int | None = None
+    institution_name: str | None = None
 
 
 class StudentUpdate(BaseModel):
@@ -453,6 +514,7 @@ class StudentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=240)
     class_name: str | None = Field(default=None, min_length=1, max_length=120)
     category: str | None = Field(default=None, min_length=1, max_length=40)
+    institution_id: int | None = Field(default=None, ge=1)
     status: str | None = Field(default=None, min_length=1, max_length=40)
     status_effective: date | None = None
     date_of_birth: date | None = None

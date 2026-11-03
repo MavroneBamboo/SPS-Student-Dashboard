@@ -305,6 +305,37 @@ def test_unmapped_intake_class_blocks_import_without_echoing_student_data(lesson
     assert denied.status_code == 409
 
 
+def test_unknown_category_blocks_intake_import_without_echoing_student_data(lesson_context):
+    client, headers, _ = lesson_context
+    row = intake_row(category="Unknown category " + uuid4().hex[:8])
+    response = upload(client, headers, workbook([row]))
+    assert response.status_code == 201, response.text
+    preview = response.json()
+    assert preview["invalid_count"] == 1
+    assert preview["row_errors"] == [{"row_number": 2, "field": "category", "code": "unknown_category"}]
+    assert row["category"] not in response.text and row["pris_no"] not in response.text
+    denied = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert denied.status_code == 409
+
+
+def test_category_change_after_preview_requires_a_fresh_import_preview(lesson_context):
+    client, headers, _ = lesson_context
+    category = next(
+        row for row in client.get("/api/v1/student-reference/categories", headers=headers["admin"]).json() if row["code"] == "OP"
+    )
+    preview = upload(client, headers, workbook([intake_row(category=" op ")]))
+    assert preview.status_code == 201, preview.text
+    changed = client.patch(
+        f"/api/v1/student-reference/categories/{category['id']}",
+        json={"expected_version": category["version"], "name": "Updated OP display"},
+        headers=headers["admin"],
+    )
+    assert changed.status_code == 200
+    commit = client.post(f"{BASE}/{preview.json()['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert commit.status_code == 409
+    assert "category changed after preview" in commit.json()["detail"]
+
+
 def test_class_mappings_are_it_managed_normalized_and_versioned(lesson_context):
     client, headers, references = lesson_context
     mapping_path = "/api/v1/student-reference/class-mappings"

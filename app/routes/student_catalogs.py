@@ -1,0 +1,144 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+
+from app.audit import record_event
+from app.deps import Claims, DbSession, require_roles
+from app.models import Institution, StudentCategory
+from app.schemas import (
+    InstitutionCreate,
+    InstitutionResponse,
+    InstitutionUpdate,
+    StudentCategoryCreate,
+    StudentCategoryResponse,
+    StudentCategoryUpdate,
+)
+from app.student_catalogs import normalize_catalog_code
+
+router = APIRouter(prefix="/student-reference", tags=["student reference catalogs"])
+READ_ACCESS = Depends(require_roles("Operator", "IT Administrator", "Executive", "Superuser"))
+EDIT_ACCESS = Depends(require_roles("IT Administrator", "Superuser"))
+
+
+@router.get("/categories", response_model=list[StudentCategoryResponse], dependencies=[READ_ACCESS])
+def list_student_categories(db: DbSession) -> list[StudentCategoryResponse]:
+    rows = db.scalars(select(StudentCategory).order_by(StudentCategory.code_key)).all()
+    return [StudentCategoryResponse.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.post("/categories", response_model=StudentCategoryResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
+def create_student_category(payload: StudentCategoryCreate, db: DbSession, claims: Claims) -> StudentCategoryResponse:
+    try:
+        code, code_key = normalize_catalog_code(payload.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if db.scalar(select(StudentCategory.id).where(StudentCategory.code_key == code_key)) is not None:
+        raise HTTPException(status_code=409, detail="A student category with this code already exists")
+    row = StudentCategory(code=code, code_key=code_key, name=payload.name.strip(), created_by=int(claims["sub"]))
+    db.add(row)
+    try:
+        db.flush()
+        record_event(db, int(claims["sub"]), "student.category.created", "student_category", str(row.id), {"code": row.code})
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A student category with this code already exists") from exc
+    db.refresh(row)
+    return StudentCategoryResponse.model_validate(row, from_attributes=True)
+
+
+@router.patch("/categories/{category_id}", response_model=StudentCategoryResponse, dependencies=[EDIT_ACCESS])
+def update_student_category(category_id: int, payload: StudentCategoryUpdate, db: DbSession, claims: Claims) -> StudentCategoryResponse:
+    row = db.get(StudentCategory, category_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Student category not found")
+    values = {
+        key: value
+        for key, value in payload.model_dump(exclude={"expected_version"}, exclude_unset=True).items()
+        if value != getattr(row, key)
+    }
+    if not values:
+        raise HTTPException(status_code=422, detail="Category update contains no change")
+    previous_version = row.version
+    changed = db.execute(
+        update(StudentCategory)
+        .where(StudentCategory.id == category_id, StudentCategory.version == payload.expected_version)
+        .values(**values, version=StudentCategory.version + 1)
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Student category changed; reload it before saving")
+    record_event(
+        db,
+        int(claims["sub"]),
+        "student.category.updated",
+        "student_category",
+        str(category_id),
+        {"fields": sorted(values), "previous_version": previous_version, "version": previous_version + 1},
+    )
+    db.commit()
+    db.expire_all()
+    return StudentCategoryResponse.model_validate(db.get(StudentCategory, category_id), from_attributes=True)
+
+
+@router.get("/institutions", response_model=list[InstitutionResponse], dependencies=[READ_ACCESS])
+def list_institutions(db: DbSession) -> list[InstitutionResponse]:
+    rows = db.scalars(select(Institution).order_by(Institution.code_key)).all()
+    return [InstitutionResponse.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.post("/institutions", response_model=InstitutionResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
+def create_institution(payload: InstitutionCreate, db: DbSession, claims: Claims) -> InstitutionResponse:
+    try:
+        code, code_key = normalize_catalog_code(payload.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if db.scalar(select(Institution.id).where(Institution.code_key == code_key)) is not None:
+        raise HTTPException(status_code=409, detail="An institution with this code already exists")
+    row = Institution(code=code, code_key=code_key, name=payload.name.strip(), created_by=int(claims["sub"]))
+    db.add(row)
+    try:
+        db.flush()
+        record_event(db, int(claims["sub"]), "student.institution.created", "institution", str(row.id), {"code": row.code})
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An institution with this code already exists") from exc
+    db.refresh(row)
+    return InstitutionResponse.model_validate(row, from_attributes=True)
+
+
+@router.patch("/institutions/{institution_id}", response_model=InstitutionResponse, dependencies=[EDIT_ACCESS])
+def update_institution(institution_id: int, payload: InstitutionUpdate, db: DbSession, claims: Claims) -> InstitutionResponse:
+    row = db.get(Institution, institution_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Institution not found")
+    values = {
+        key: value
+        for key, value in payload.model_dump(exclude={"expected_version"}, exclude_unset=True).items()
+        if value != getattr(row, key)
+    }
+    if not values:
+        raise HTTPException(status_code=422, detail="Institution update contains no change")
+    previous_version = row.version
+    changed = db.execute(
+        update(Institution)
+        .where(Institution.id == institution_id, Institution.version == payload.expected_version)
+        .values(**values, version=Institution.version + 1)
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Institution changed; reload it before saving")
+    record_event(
+        db,
+        int(claims["sub"]),
+        "student.institution.updated",
+        "institution",
+        str(institution_id),
+        {"fields": sorted(values), "previous_version": previous_version, "version": previous_version + 1},
+    )
+    db.commit()
+    db.expire_all()
+    return InstitutionResponse.model_validate(db.get(Institution, institution_id), from_attributes=True)

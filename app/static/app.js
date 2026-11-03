@@ -1,6 +1,7 @@
 import {createStudentWorkspace} from "./students.js";
 import {createAttendanceWorkspace} from "./attendance.js";
 import {createTimetableWorkspace} from "./timetable.js";
+import {createStudentCatalogWorkspace} from "./student-catalogs.js";
 
 const $ = (id) => document.getElementById(id);
 const roles = ["Superuser", "IT Administrator", "Operator", "Executive"];
@@ -16,6 +17,7 @@ function clearData() {
   attendance.clear();
   timetable.clear();
   students.clear();
+  studentCatalogs.clear();
   for (const id of ["user-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
@@ -338,6 +340,7 @@ async function showUsers() {
     $("user-rows").append(row);
   }
   await refreshImportRetention();
+  await studentCatalogs.refresh();
 }
 
 function renderImportRetention(data, applied = false) {
@@ -363,6 +366,7 @@ async function requestImportPurge(apply) {
 }
 
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
+const studentCatalogs = createStudentCatalogWorkspace({$, api, run, notice});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
 const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role, downloadXlsx});
 $("profiles-nav").addEventListener("click", () => run($("profiles-nav"), students.show));

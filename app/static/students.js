@@ -5,17 +5,19 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   let detailRequest = 0;
   let hasMore = false;
   let importBatch = null;
+  let categories = [];
+  let institutions = [];
   const pageSize = 25;
   const form = $("profile-form");
   const profileFields = [
-    "name", "class_name", "category", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
+    "name", "class_name", "category", "institution_id", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
     "admission_type", "exam_level", "academic_year", "age_in_academic_year", "gender", "language_1", "language_2",
     "math_1", "math_2", "cpa", "science", "humanities", "commerce_1", "commerce_2", "commerce_3", "aa",
     "nationality", "citizenship", "birthplace", "religion", "race", "marital_status", "next_of_kin_name",
     "next_of_kin_nric", "next_of_kin_relationship", "next_of_kin_contact", "next_of_kin_address_ports",
     "next_of_kin_address_from_student", "student_contact",
   ];
-  const optionalTextFields = profileFields.filter((key) => !["name", "class_name", "category", "status", "status_effective", "date_of_birth", "age_in_academic_year"].includes(key));
+  const optionalTextFields = profileFields.filter((key) => !["name", "class_name", "category", "institution_id", "status", "status_effective", "date_of_birth", "age_in_academic_year"].includes(key));
   const today = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -30,6 +32,9 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   }
   function clear() {
     close();
+    categories = [];
+    institutions = [];
+    $("new-student").disabled = true;
     offset = 0;
     listRequest += 1;
     $("profile-rows").replaceChildren();
@@ -54,7 +59,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     $("profile-rows").replaceChildren();
     for (const profile of profiles.slice(0, pageSize)) {
       const row = document.createElement("tr");
-      for (const value of [profile.pris_no, profile.name, profile.class_name, profile.category, profile.status]) cell(row, value);
+      for (const value of [profile.pris_no, profile.name, profile.class_name, profile.category, profile.institution_name ?? "—", profile.status]) cell(row, value);
       const open = document.createElement("button");
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open ${profile.pris_no}`);
@@ -64,7 +69,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     }
     if (!profiles.length) {
       const row = document.createElement("tr");
-      cell(row, "No student profiles match the search.").colSpan = 6;
+      cell(row, "No student profiles match the search.").colSpan = 7;
       $("profile-rows").append(row);
     }
     $("profile-page").textContent = profiles.length ? `Showing ${offset + 1}–${offset + Math.min(profiles.length, pageSize)} profiles` : "No results";
@@ -78,6 +83,22 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   function render(profile) {
     form.reset();
     selected = profile;
+    const categorySelect = form.elements.category;
+    categorySelect.replaceChildren(new Option("Select a category", ""));
+    const activeCategories = categories.filter((item) => item.is_active);
+    if (profile?.category_id && !activeCategories.some((item) => item.id === profile.category_id)) {
+      const historical = categories.find((item) => item.id === profile.category_id);
+      if (historical) categorySelect.add(new Option(`${historical.code} · ${historical.name} (inactive)`, historical.code));
+    }
+    for (const item of activeCategories) categorySelect.add(new Option(`${item.code} · ${item.name}`, item.code));
+    const institutionSelect = form.elements.institution_id;
+    institutionSelect.replaceChildren(new Option("No institution selected", ""));
+    const activeInstitutions = institutions.filter((item) => item.is_active);
+    if (profile?.institution_id && !activeInstitutions.some((item) => item.id === profile.institution_id)) {
+      const historical = institutions.find((item) => item.id === profile.institution_id);
+      if (historical) institutionSelect.add(new Option(`${historical.code} · ${historical.name} (inactive)`, String(historical.id)));
+    }
+    for (const item of activeInstitutions) institutionSelect.add(new Option(`${item.code} · ${item.name}`, String(item.id)));
     $("profile-editor").hidden = false;
     $("profile-editor-title").textContent = profile ? "Edit student profile" : "New student profile";
     $("profile-version").textContent = profile ? `Saved version ${profile.version}. Reload if another operator has changed this record.` : "Create a new student using a unique Pris No.";
@@ -105,7 +126,17 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   }
   async function show() {
     showPanel("profiles");
-    await list();
+    const newStudentButton = $("new-student");
+    newStudentButton.disabled = true;
+    try {
+      [categories, institutions] = await Promise.all([
+        api("/student-reference/categories"),
+        api("/student-reference/institutions"),
+      ]);
+      await list();
+    } finally {
+      newStudentButton.disabled = !categories.some((item) => item.is_active);
+    }
   }
   function importIssueText(item) {
     const messages = {
@@ -216,6 +247,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
       fields.status = fields.status.toUpperCase();
       for (const key of [...optionalTextFields, "date_of_birth"]) fields[key] = fields[key] || null;
       fields.age_in_academic_year = fields.age_in_academic_year === "" ? null : Number(fields.age_in_academic_year);
+      fields.institution_id = fields.institution_id === "" ? null : Number(fields.institution_id);
       let payload = fields;
       if (selected) {
         payload = {expected_version: selected.version};

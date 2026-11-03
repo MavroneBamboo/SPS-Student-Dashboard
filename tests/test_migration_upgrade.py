@@ -220,6 +220,71 @@ def test_extended_student_profile_upgrade_preserves_existing_encrypted_profile(t
         database.dispose()
 
 
+def test_student_reference_catalog_migration_maps_legacy_category_without_rewriting_profile(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-catalog-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    migrate("20261103_0015")
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        users, students = metadata.tables["users"], metadata.tables["students"]
+        with database.begin() as connection:
+            connection.execute(
+                users.insert().values(
+                    id=1,
+                    username="catalog-upgrade-admin",
+                    password_hash="fixture-hash",
+                    role="IT Administrator",
+                    must_change_password=False,
+                    is_active=True,
+                )
+            )
+            connection.execute(
+                students.insert().values(
+                    pris_no="CATALOG-UPGRADE-1",
+                    name_encrypted="preserved-ciphertext",
+                    class_name="Preserved Class",
+                    category="  op  ",
+                    status="ACTIVE",
+                    created_by=1,
+                )
+            )
+
+        migrate("head")
+        migrate("head")
+        upgraded = MetaData()
+        upgraded.reflect(bind=database)
+        with database.connect() as connection:
+            saved = connection.execute(select(upgraded.tables["students"])).mappings().one()
+            category = (
+                connection.execute(
+                    select(upgraded.tables["student_categories"]).where(upgraded.tables["student_categories"].c.id == saved["category_id"])
+                )
+                .mappings()
+                .one()
+            )
+            assert saved["category"] == "  op  "
+            assert saved["name_encrypted"] == "preserved-ciphertext"
+            assert category["code"] == "OP" and category["code_key"] == "op"
+            assert set(connection.execute(select(upgraded.tables["student_categories"].c.code)).scalars()) == {"OP", "RT"}
+    finally:
+        database.dispose()
+
+
 def test_student_import_upgrade_adds_encrypted_staging_without_touching_profiles(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-import-upgrade.db').as_posix()}"
     environment = _migration_environment(database_url)
@@ -351,7 +416,7 @@ def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
                     created_by=1,
                 )
             )
-            before = list(connection.execute(select(students)))
+            before = connection.execute(select(students)).mappings().one()
         upgraded = migrate("head")
         assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
         assert migrate("head").returncode == 0
@@ -361,7 +426,9 @@ def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
         columns = {column["name"] for column in inspect(database).get_columns("student_class_mappings")}
         assert {"source_workbook", "source_label", "source_key", "instructional_class_id", "version", "is_active"} <= columns
         with database.connect() as connection:
-            assert list(connection.execute(select(after.tables["students"]))) == before
+            saved = connection.execute(select(after.tables["students"])).mappings().one()
+            assert all(saved[column] == value for column, value in before.items())
+            assert saved["category_id"] is not None
             assert connection.execute(select(after.tables["student_class_mappings"])).first() is None
     finally:
         database.dispose()

@@ -19,7 +19,7 @@ def _fill_profile(page, pris_no, name="Browser Profile Student"):
     page.get_by_label("Pris No.", exact=True).fill(pris_no)
     page.get_by_label("Student name", exact=True).fill(name)
     page.get_by_label("Student class", exact=True).fill("Browser Profile Class")
-    page.get_by_label("Student category", exact=True).fill("OP")
+    page.locator('#profile-form select[name="category"]').select_option("OP")
     page.get_by_label("Status effective date", exact=True).fill("2026-10-01")
     page.get_by_label("Date of birth", exact=True).fill("2000-01-02")
 
@@ -84,6 +84,53 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     expect(page.locator("#profile-history")).to_be_empty()
     expect(page.get_by_label("Student name", exact=True)).to_have_value("")
     expect(page.get_by_label("Next-of-kin NRIC", exact=True)).to_have_value("")
+
+
+def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profiles(page, make_account):
+    admin = make_account("IT Administrator")
+    operator = make_account("Operator")
+    category_code = "WEB-" + uuid4().hex[:8].upper()
+    institution_code = "WEBI-" + uuid4().hex[:8].upper()
+
+    login(page, admin)
+    page.get_by_role("button", name="User administration", exact=True).click()
+    expect(page.get_by_role("heading", name="Student reference data", exact=True)).to_be_visible()
+    category_form = page.locator("#create-category-form")
+    category_form.locator('[name="code"]').fill(category_code)
+    category_form.locator('[name="name"]').fill("Browser created category")
+    category_form.get_by_role("button", name="Add category").click()
+    expect(page.locator("#student-category-rows")).to_contain_text(category_code)
+    category_row = page.locator("#student-category-rows tr").filter(has_text=category_code)
+    category_row.get_by_label(f"{category_code} name").fill("Updated browser category")
+    category_row.get_by_role("button", name=f"Save {category_code}").click()
+    expect(category_row.get_by_label(f"{category_code} name")).to_have_value("Updated browser category")
+
+    institution_form = page.locator("#create-institution-form")
+    institution_form.locator('[name="code"]').fill(institution_code)
+    institution_form.locator('[name="name"]').fill("Browser created institution")
+    institution_form.get_by_role("button", name="Add institution").click()
+    expect(page.locator("#institution-rows")).to_contain_text(institution_code)
+
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    login(page, operator)
+    page.get_by_role("button", name="Student profiles", exact=True).click()
+    page.get_by_role("button", name="New student", exact=True).click()
+    pris_no = "CATALOG-WEB-" + uuid4().hex[:8].upper()
+    page.get_by_label("Pris No.", exact=True).fill(pris_no)
+    page.get_by_label("Student name", exact=True).fill("Catalog browser student")
+    page.get_by_label("Student class", exact=True).fill("Catalog browser class")
+    page.locator('#profile-form select[name="category"]').select_option(label=f"{category_code} · Updated browser category")
+    page.locator('#profile-form select[name="institution_id"]').select_option(label=f"{institution_code} · Browser created institution")
+    page.get_by_label("Status effective date", exact=True).fill("2026-11-03")
+    page.get_by_role("button", name="Save profile", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text(f"Saved student {pris_no}")
+    _search(page, pris_no)
+    expect(page.locator("#profile-rows")).to_contain_text("Browser created institution")
+    with SessionLocal() as db:
+        student = db.scalar(select(Student).where(Student.pris_no == pris_no))
+        assert student.category == category_code
+        assert student.category_ref.name == "Updated browser category"
+        assert student.institution_ref.code == institution_code
 
 
 def test_stale_profile_save_preserves_form_requires_reload_and_revoked_access_clears_data(page, make_account, live_url):

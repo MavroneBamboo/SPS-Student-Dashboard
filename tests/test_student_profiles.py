@@ -94,7 +94,7 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
     assert client.patch(path, json={"expected_version": 1, "name": "Denied"}, headers=headers["executive"]).status_code == 403
     assert client.get(f"{BASE}/999999999", headers=headers["operator"]).status_code == 404
     assert client.get(path, headers=headers["operator"]).json() == profile
-    duplicate = {key: value for key, value in profile.items() if key not in {"id", "version"}}
+    duplicate = {key: value for key, value in profile.items() if key not in {"id", "version", "category_id", "institution_name"}}
     duplicate["pris_no"] = " " + profile["pris_no"].lower() + " "
     assert client.post(BASE, json=duplicate, headers=headers["operator"]).status_code == 409
     assert client.get(BASE + "?limit=101", headers=headers["operator"]).status_code == 422

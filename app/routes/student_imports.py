@@ -11,8 +11,9 @@ from app.audit import record_event
 from app.config import get_settings
 from app.crypto import decrypt_sensitive, decrypt_sensitive_bytes, encrypt_sensitive, encrypt_sensitive_bytes
 from app.deps import Claims, DbSession, require_roles
-from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch, StudentStatusHistory
+from app.models import InstructionalClass, Student, StudentCategory, StudentClassMapping, StudentImportBatch, StudentStatusHistory
 from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
+from app.student_catalogs import normalize_catalog_code
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
 
@@ -277,7 +278,22 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
             .where(StudentClassMapping.source_workbook == STUDENT_INTAKE_2023)
         ).all()
         mappings_by_key = {mapping.source_key: (mapping, instructional_class) for mapping, instructional_class in mapping_rows}
+        categories_by_key = {row.code_key: row for row in db.scalars(select(StudentCategory)).all()}
         for row in rows:
+            source_category = row["fields"].get("category")
+            if source_category:
+                try:
+                    _, category_key = normalize_catalog_code(source_category)
+                except ValueError:
+                    row["errors"].append({"field": "category", "code": "unknown_category"})
+                else:
+                    category = categories_by_key.get(category_key)
+                    if category is None or not category.is_active:
+                        row["errors"].append({"field": "category", "code": "unknown_category"})
+                    else:
+                        row["category_id"] = category.id
+                        row["category_version"] = category.version
+                        row["fields"]["category"] = category.code
             source_label = row["fields"].get("class_name")
             if not source_label:
                 continue
@@ -396,6 +412,25 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
         ):
             db.rollback()
             raise HTTPException(status_code=409, detail="A class mapping changed after preview; upload the workbook again")
+    category_ids = list({row["category_id"] for row in staged if row.get("category_id") is not None})
+    current_categories = (
+        {row.id: row for row in db.scalars(select(StudentCategory).where(StudentCategory.id.in_(category_ids)).with_for_update()).all()}
+        if category_ids
+        else {}
+    )
+    for staged_row in staged:
+        category_id = staged_row.get("category_id")
+        if category_id is None:
+            continue
+        category = current_categories.get(category_id)
+        if (
+            category is None
+            or not category.is_active
+            or category.version != staged_row["category_version"]
+            or category.code != staged_row["fields"]["category"]
+        ):
+            db.rollback()
+            raise HTTPException(status_code=409, detail="A student category changed after preview; upload the workbook again")
     current_rows = db.scalars(select(Student).where(func.upper(func.trim(Student.pris_no)).in_(identifiers)).with_for_update()).all()
     current = {row.pris_no.strip().upper(): row for row in current_rows}
     for staged_row in staged:
@@ -423,6 +458,7 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                     pris_no=key,
                     class_name=fields["class_name"].strip(),
                     category=fields["category"].strip(),
+                    category_id=staged_row["category_id"],
                     status=fields["status"].strip().upper(),
                     status_effective=date.fromisoformat(fields["status_effective"]) if fields.get("status_effective") else None,
                     created_by=actor_id,
@@ -466,7 +502,9 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                 changes["status"] = next_status
                 changes["status_effective"] = fields.get("status_effective") or date.today().isoformat()
             changed_fields = {field: value for field, value in changes.items() if value != previous.get(field)}
-            if not changed_fields:
+            category_id = staged_row.get("category_id")
+            category_reference_changed = category_id is not None and student.category_id != category_id
+            if not changed_fields and not category_reference_changed:
                 unchanged += 1
                 continue
             db_values = _database_values(changed_fields)
@@ -474,10 +512,15 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                 db_values["class_name"] = changed_fields["class_name"].strip()
             if "category" in changed_fields:
                 db_values["category"] = changed_fields["category"].strip()
+            if category_reference_changed:
+                db_values["category_id"] = category_id
             if "status" in changed_fields:
                 db_values["status"] = next_status
             if "status_effective" in changed_fields:
                 db_values["status_effective"] = date.fromisoformat(changed_fields["status_effective"])
+            audit_fields = set(changed_fields)
+            if category_reference_changed:
+                audit_fields.add("category")
             old_version = student.version
             changed = db.execute(
                 update(Student)
@@ -504,7 +547,7 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                 "student",
                 str(student.id),
                 {
-                    "fields": sorted(changed_fields),
+                    "fields": sorted(audit_fields),
                     "import_batch_id": batch.id,
                     "previous_version": old_version,
                     "source_row": staged_row["row_number"],

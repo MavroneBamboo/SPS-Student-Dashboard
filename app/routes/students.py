@@ -9,6 +9,7 @@ from app.crypto import decrypt_sensitive, encrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
 from app.models import Student, StudentStatusHistory
 from app.schemas import StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
+from app.student_catalogs import active_institution, active_student_category
 
 router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
 
@@ -56,7 +57,10 @@ def response(row: Student) -> StudentResponse:
         "pris_no": row.pris_no,
         "name": decrypt_sensitive(row.name_encrypted) or "",
         "class_name": row.class_name,
-        "category": row.category,
+        "category": row.category_ref.code if row.category_ref else row.category,
+        "category_id": row.category_id,
+        "institution_id": row.institution_id,
+        "institution_name": row.institution_ref.name if row.institution_ref else None,
         "status": row.status,
         "status_effective": row.status_effective,
         "date_of_birth": decrypt_sensitive(row.date_of_birth_encrypted),
@@ -72,6 +76,7 @@ def list_students(
     claims: Claims,
     q: str | None = Query(default=None, max_length=120),
     class_name: str | None = Query(default=None, max_length=120),
+    institution_id: int | None = Query(default=None, ge=1),
     student_status: str | None = Query(default=None, alias="status", max_length=40),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
@@ -79,6 +84,8 @@ def list_students(
     query = select(Student).order_by(Student.pris_no)
     if class_name:
         query = query.where(Student.class_name == class_name.strip())
+    if institution_id is not None:
+        query = query.where(Student.institution_id == institution_id)
     if student_status:
         query = query.where(Student.status == student_status.strip().upper())
     rows = db.scalars(query).all()
@@ -107,11 +114,15 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Pris No. already exists")
     values = {field: getattr(payload, field) for field in PLAIN_PROFILE_FIELDS}
     values.update({column: encrypt_sensitive(getattr(payload, field)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
+    category = active_student_category(db, payload.category)
+    institution = active_institution(db, payload.institution_id)
     row = Student(
         pris_no=pris_no,
         name_encrypted=encrypt_sensitive(payload.name.strip()),
         class_name=payload.class_name.strip(),
-        category=payload.category.strip(),
+        category=category.code,
+        category_id=category.id,
+        institution_id=institution.id if institution else None,
         status=payload.status.strip().upper(),
         status_effective=payload.status_effective,
         date_of_birth_encrypted=encrypt_sensitive(payload.date_of_birth.isoformat() if payload.date_of_birth else None),
@@ -153,9 +164,15 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     if age_in_academic_year is not None and not academic_year:
         raise HTTPException(status_code=422, detail="academic_year is required when age_in_academic_year is provided")
     values = {"version": Student.version + 1}
-    for field in ("class_name", "category"):
-        if changes.get(field) is not None:
-            values[field] = changes[field].strip()
+    if changes.get("class_name") is not None:
+        values["class_name"] = changes["class_name"].strip()
+    if "category" in changes:
+        category = active_student_category(db, changes["category"])
+        values["category"] = category.code
+        values["category_id"] = category.id
+    if "institution_id" in changes:
+        institution = active_institution(db, changes["institution_id"])
+        values["institution_id"] = institution.id if institution else None
     if "name" in changes and changes["name"] is not None:
         values["name_encrypted"] = encrypt_sensitive(changes["name"].strip())
     if "date_of_birth" in changes:

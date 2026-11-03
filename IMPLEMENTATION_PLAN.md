@@ -18,6 +18,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - Student import retention increment (3 November): migration `20261103_0015` records payload purge time and permits removal of the encrypted source workbook and parsed staging rows. An optional `STUDENT_IMPORT_RETENTION_DAYS` policy (0 disables until configured) controls eligibility. IT Administrators and Superusers can inspect eligible counts, dry-run and explicitly purge through the UI/API. Student profiles, committed import outcomes and audit events are preserved; expired previews cannot be committed. Business-approved retention duration and regular operational purge scheduling remain deployment decisions.
 
+- Student reference catalogs increment (3 November): migration `20261103_0016` adds category and institution catalogs and links existing nonblank categories without rewriting their legacy values or profile ciphertext. IT Administrators and Superusers manage entries through User administration; profile creation/editing and 2023 intake imports validate active categories, and profiles can optionally reference an institution. Version conflicts, role restrictions, safe deactivation and catalog audit events are covered by API and browser tests.
+
 - Timetable interface redesign (27 October): production UI implements By class/By teacher weekly views, browser print-to-PDF reports, teacher/class/subject tabs, period and rule management, and clickable Amend 4-up at 4/8/12/16 classes per page. Display maps the lunch interval to P3 while preserving stable database/API slot codes. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md).
 
 - Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. The existing audited XLSX exports remain available. Attendance publishing coordination remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
@@ -159,14 +161,13 @@ Exit criteria: unauthorised API calls fail, tokens cannot bypass permissions, bo
 
 **Estimated duration:** 2–3 weeks
 
-Activities:
+Delivered in increments: student profile search/create/update, encrypted sensitive fields, status history, 2023 category/institution selection, and audited IT-managed catalogs. Instructional classes and the workbook source-class crosswalk are managed separately in timetable setup.
 
-- Implement institutions, classes, categories, academic years and configuration screens.
-- Implement student schema and profile search/create/update.
-- Make `Pris No.` the primary matching identifier.
-- Implement status history, duplicate detection and sensitive-field encryption.
-- Add operator and administrator audit history.
-- Build profile API, frontend forms and validation tests.
+Remaining activities:
+
+- Implement academic-year configuration and historical class assignment.
+- Reconcile source institution values and category/report totals against approved workbooks.
+- Complete production-scale search and the full permission matrix.
 
 Deliverables:
 
@@ -174,7 +175,7 @@ Deliverables:
 - IT reference-data workflow.
 - Profile search and audit trail.
 
-Exit criteria: profile tests pass, sensitive values are protected, duplicate identifiers are blocked and role restrictions are verified.
+Exit criteria: profile tests pass, sensitive values are protected, duplicate identifiers are blocked, reference values resolve to active catalog entries, and role restrictions are verified. Historical class assignment and workbook reconciliation remain broader release gates.
 
 ### Phase 4 — Excel import and migration rehearsal
 

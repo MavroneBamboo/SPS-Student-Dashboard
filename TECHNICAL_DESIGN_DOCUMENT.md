@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Delivered reference-data increment (3 November 2026): migration `20261103_0016` adds versioned student category and institution catalogs, links legacy category values without rewriting profile data, and supports profile/import resolution through active catalog entries. IT Administrators and Superusers maintain catalogs with audited writes; see [STUDENT_PROFILES.md](STUDENT_PROFILES.md) for contracts and migration behavior.
+
 Sign-in rate-limit increment (27 October 2026): the Nginx reverse proxy applies a per-client-IP limit to `POST /api/v1/auth/login` and responds with HTTP 429 when a burst exceeds the configured threshold. CI validates the Nginx config and starts a local mock upstream to verify actual throttling. This is network-level protection; account-level lockout and distributed abuse controls remain follow-up work.
 
 
@@ -22,7 +24,7 @@ Implementation integrity update (26 October 2026): every timetable mutation must
 ## Technical Design Document
 
 **Version:** 1.0  
-**Status:** Proposed for implementation  
+**Status:** Target architecture with delivered increments recorded at the top of this document
 **Related documents:** [PRODUCT_DESCRIPTION.md](PRODUCT_DESCRIPTION.md), [TECHNICAL_FOLLOW_UP.md](TECHNICAL_FOLLOW_UP.md)
 
 ## 1. Purpose and design goals

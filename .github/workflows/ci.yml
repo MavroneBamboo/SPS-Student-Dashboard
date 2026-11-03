@@ -140,7 +140,7 @@ jobs:
         run: bash deploy/test-database-maintenance.sh
 
       - name: Verify browser assets in the production image
-        run: docker run --rm --entrypoint python sps-student-dashboard:ci -c "from importlib.resources import files; assert all(files('app').joinpath('static', name).is_file() for name in ('index.html', 'app.js', 'app.css', 'students.js', 'attendance.js', 'timetable.js', 'timetable-print.css', 'sps-dashboard-logo.svg', 'sps-crest.png'))"
+        run: docker run --rm --entrypoint python sps-student-dashboard:ci -c "from importlib.resources import files; assert all(files('app').joinpath('static', name).is_file() for name in ('index.html', 'app.js', 'app.css', 'students.js', 'student-catalogs.js', 'attendance.js', 'timetable.js', 'timetable-print.css', 'sps-dashboard-logo.svg', 'sps-crest.png'))"
 
       - name: Validate reverse proxy configuration
         run: docker run --rm --add-host app:127.0.0.1 --volume "$PWD/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27.3-alpine nginx -t

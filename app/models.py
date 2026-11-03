@@ -18,7 +18,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql.functions import FunctionElement
 
 from app.db import Base
@@ -356,6 +356,36 @@ class TimetableSlot(Base):
     ends_at: Mapped[time] = mapped_column(Time)
 
 
+class StudentCategory(Base):
+    __tablename__ = "student_categories"
+    __table_args__ = (CheckConstraint("version >= 1", name="ck_student_category_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True)
+    code_key: Mapped[str] = mapped_column(String(120), unique=True)
+    name: Mapped[str] = mapped_column(String(80))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Institution(Base):
+    __tablename__ = "institutions"
+    __table_args__ = (CheckConstraint("version >= 1", name="ck_institution_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True)
+    code_key: Mapped[str] = mapped_column(String(120), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Student(Base):
     __tablename__ = "students"
 
@@ -365,6 +395,10 @@ class Student(Base):
     name_encrypted: Mapped[str] = mapped_column(Text)
     class_name: Mapped[str] = mapped_column(String(120), index=True)
     category: Mapped[str] = mapped_column(String(40))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("student_categories.id"), nullable=True, index=True)
+    institution_id: Mapped[int | None] = mapped_column(ForeignKey("institutions.id"), nullable=True, index=True)
+    category_ref: Mapped[StudentCategory | None] = relationship(foreign_keys=[category_id], lazy="selectin")
+    institution_ref: Mapped[Institution | None] = relationship(foreign_keys=[institution_id], lazy="selectin")
     status: Mapped[str] = mapped_column(String(40), index=True)
     status_effective: Mapped[date | None] = mapped_column(Date, nullable=True)
     date_of_birth_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)

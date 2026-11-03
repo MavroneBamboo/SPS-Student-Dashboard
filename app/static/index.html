@@ -99,7 +99,7 @@
           <button type="submit">Search profiles</button>
         </form>
         <p id="profile-page"></p>
-        <div class="panel table-wrap"><table><thead><tr><th>Pris No.</th><th>Name</th><th>Class</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody id="profile-rows"></tbody></table></div>
+        <div class="panel table-wrap"><table><thead><tr><th>Pris No.</th><th>Name</th><th>Class</th><th>Category</th><th>Institution</th><th>Status</th><th>Action</th></tr></thead><tbody id="profile-rows"></tbody></table></div>
         <div class="actions"><button id="profiles-previous" class="secondary">Previous profiles</button><button id="profiles-next" class="secondary">Next profiles</button></div>
         <section id="profile-editor" class="panel" hidden aria-labelledby="profile-editor-title">
           <div class="section-bar"><h3 id="profile-editor-title">New student profile</h3><button id="cancel-profile" class="secondary">Close profile</button></div>
@@ -109,7 +109,8 @@
             <label>Pris No.<input name="pris_no" maxlength="40" required autocomplete="off"></label>
             <label>Student name<input name="name" maxlength="240" required autocomplete="off"></label>
             <label>Student class<input name="class_name" maxlength="120" required></label>
-            <label>Student category<input name="category" maxlength="40" required></label>
+            <label>Student category<select name="category" required><option value="">Load categories first</option></select></label>
+            <label>Institution (optional)<select name="institution_id"><option value="">No institution selected</option></select></label>
             <label>Student status<input name="status" maxlength="40" list="student-statuses" required></label>
             <label>Status effective date<input name="status_effective" type="date" required></label>
             <label>Date of birth<input name="date_of_birth" type="date" autocomplete="off"></label>
@@ -214,6 +215,22 @@
           <div class="section-bar"><div><h3 id="import-retention-title">Student import data retention</h3><p>Expired encrypted workbook staging can be purged while student profiles and import audit results remain.</p></div><button id="refresh-import-retention" class="secondary" type="button">Refresh retention status</button></div>
           <p id="import-retention-status" aria-live="polite" aria-atomic="true">Loading retention status.</p>
           <div class="actions"><button id="preview-import-purge" class="secondary" type="button">Preview eligible purge</button><button id="apply-import-purge" type="button" disabled>Purge expired staging data</button></div>
+        </section>
+        <section class="panel" aria-labelledby="student-catalogs-title">
+          <div class="section-bar"><div><h3 id="student-catalogs-title">Student reference data</h3><p>Maintain the categories and institutions available when creating or editing student profiles and importing workbooks.</p></div><button id="refresh-student-catalogs" class="secondary" type="button">Refresh reference data</button></div>
+          <div class="columns">
+            <section aria-labelledby="category-catalog-title">
+              <h4 id="category-catalog-title">Student categories</h4>
+              <form id="create-category-form" class="filters"><label>Code<input name="code" maxlength="40" required></label><label>Name<input name="name" maxlength="80" required></label><button type="submit">Add category</button></form>
+              <div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="student-category-rows"></tbody></table></div>
+            </section>
+            <section aria-labelledby="institution-catalog-title">
+              <h4 id="institution-catalog-title">Institutions</h4>
+              <form id="create-institution-form" class="filters"><label>Code<input name="code" maxlength="40" required></label><label>Name<input name="name" maxlength="120" required></label><button type="submit">Add institution</button></form>
+              <div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="institution-rows"></tbody></table></div>
+            </section>
+          </div>
+          <p id="student-catalog-status" aria-live="polite" aria-atomic="true"></p>
         </section>
         <form id="reset-user-form" class="panel filters" hidden>
           <h3 id="reset-user-title">Reset password</h3>
