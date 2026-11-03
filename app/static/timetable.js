@@ -15,6 +15,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let swapMode = false;
   let selectedSwapIds = [];
   let draggedPlacementId = null;
+  let legacyImports = [];
+  let selectedLegacyImport = null;
+  let legacySourceOffset = 0;
   const currentRole = () => typeof role === "function" ? role() : role;
   const canEdit = () => ["Superuser", "Operator", "IT Administrator"].includes(currentRole());
   const canApprove = () => ["Superuser", "IT Administrator"].includes(currentRole());
@@ -26,7 +29,10 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     current = null;
     detailSequence += 1;
     pageOffset = 0;
-    for (const id of ["timetable-version-rows", "timetable-grid", "timetable-pending"]) $(id).replaceChildren();
+    for (const id of ["timetable-version-rows", "timetable-grid", "timetable-pending", "legacy-import-rows", "legacy-import-issues", "legacy-source-rows"]) {
+      const element = $(id);
+      if (element) element.replaceChildren();
+    }
     $("timetable-editor").hidden = true;
     $("timetable-create-form").hidden = true;
     $("new-timetable").hidden = true;
@@ -35,7 +41,13 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     swapMode = false;
     selectedSwapIds = [];
     draggedPlacementId = null;
+    legacyImports = [];
+    selectedLegacyImport = null;
+    legacySourceOffset = 0;
     $("timetable-rename-form").hidden = true;
+    $("legacy-import-detail").hidden = true;
+    $("legacy-pri-upload-form").reset();
+    $("timetable-legacy-imports-nav").hidden = true;
     $("timetable-swap-tools").hidden = true;
     $("timetable-generation-summary").textContent = "";
     viewBy = "class";
@@ -139,6 +151,121 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     fillSelect($("timetable-teacher-filter"), teachers, (row) => `${row.short_code} · ${row.full_name}`);
     await refreshSetup();
   }
+
+  function renderLegacyImports() {
+    const body = $("legacy-import-rows");
+    body.replaceChildren();
+    for (const item of legacyImports) {
+      const row = document.createElement("tr");
+      for (const value of [item.id, item.status, item.counts.teachers, item.counts.subjects, item.counts.classes, item.counts.placements, Object.values(item.issue_counts).reduce((sum, count) => sum + count, 0)]) cell(row, value);
+      const actions = cell(row, "");
+      const review = document.createElement("button");
+      review.type = "button";
+      review.textContent = "Review";
+      review.addEventListener("click", () => run(review, () => openLegacyImport(item.id)));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", () => run(remove, () => deleteLegacyImport(item.id)));
+      actions.append(review, remove);
+      body.append(row);
+    }
+    if (!legacyImports.length) {
+      const row = document.createElement("tr");
+      cell(row, "No legacy projects have been staged.").colSpan = 8;
+      body.append(row);
+    }
+  }
+
+  async function refreshLegacyImports() {
+    if (!["IT Administrator", "Superuser"].includes(currentRole())) return;
+    legacyImports = await api("/timetable/legacy-imports?limit=100");
+    renderLegacyImports();
+  }
+
+  async function openLegacyImport(importId) {
+    const report = await api(`/timetable/legacy-imports/${importId}`);
+    selectedLegacyImport = report;
+    legacySourceOffset = 0;
+    $("legacy-import-detail").hidden = false;
+    $("legacy-import-detail-title").textContent = `Project ${report.id} · ${report.status}${report.import_ready ? " · ready" : " · review required"}`;
+    $("legacy-import-digest").textContent = `SHA-256 ${report.source_sha256} · ${report.counts.lesson_requirements} lesson requirements · ${report.counts.pending_lessons} pending legacy lessons`;
+    const body = $("legacy-import-issues");
+    body.replaceChildren();
+    for (const issue of report.issues) {
+      const row = document.createElement("tr");
+      cell(row, issue.code);
+      cell(row, issue.row === undefined ? issue.count ?? "" : `row ${issue.row + 1}${issue.count === undefined ? "" : ` · count ${issue.count}`}`);
+      body.append(row);
+    }
+    if (!report.issues.length) {
+      const row = document.createElement("tr");
+      cell(row, "No validation issues.").colSpan = 2;
+      body.append(row);
+    }
+    await loadLegacySourceRows();
+    $("legacy-import-detail").scrollIntoView({behavior: "smooth", block: "start"});
+  }
+
+  async function loadLegacySourceRows() {
+    if (!selectedLegacyImport) return;
+    const limit = Number($("legacy-source-limit").value);
+    const kind = $("legacy-source-kind").value;
+    const result = await api(`/timetable/legacy-imports/${selectedLegacyImport.id}/source-rows?kind=${encodeURIComponent(kind)}&offset=${legacySourceOffset}&limit=${limit}`);
+    const body = $("legacy-source-rows");
+    body.replaceChildren();
+    result.items.forEach((item, index) => {
+      const row = document.createElement("tr");
+      cell(row, result.offset + index + 1);
+      cell(row, JSON.stringify(item));
+      body.append(row);
+    });
+    if (!result.items.length) {
+      const row = document.createElement("tr");
+      cell(row, "No source rows in this range.").colSpan = 2;
+      body.append(row);
+    }
+    $("legacy-source-page").textContent = `${result.total ? result.offset + 1 : 0}–${Math.min(result.offset + result.items.length, result.total)} of ${result.total}`;
+    $("legacy-source-previous").disabled = result.offset <= 0;
+    $("legacy-source-next").disabled = result.offset + result.items.length >= result.total;
+  }
+
+  async function deleteLegacyImport(importId) {
+    if (!window.confirm("Permanently delete this encrypted staged project and its reconciliation report? The audit record will remain.")) return;
+    await api(`/timetable/legacy-imports/${importId}?confirm=true`, "DELETE");
+    if (selectedLegacyImport?.id === importId) {
+      selectedLegacyImport = null;
+      $("legacy-import-detail").hidden = true;
+    }
+    await refreshLegacyImports();
+    notice(`Staged project ${importId} was deleted.`);
+  }
+
+  $("legacy-pri-upload-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(event.currentTarget, async () => {
+      const file = $("legacy-pri-file").files[0];
+      if (!file) throw new Error("Select a .pri project first.");
+      if (file.size > 25 * 1024 * 1024) throw new Error("The legacy project exceeds the 25 MB upload limit.");
+      const body = new Blob([file], {type: "application/octet-stream"});
+      const staged = await api("/timetable/legacy-imports", "POST", body);
+      await refreshLegacyImports();
+      await openLegacyImport(staged.id);
+      notice(`Project ${staged.id} staged. Review the issues before any operational import.`);
+    });
+  });
+  $("refresh-legacy-imports").addEventListener("click", () => run($("refresh-legacy-imports"), refreshLegacyImports));
+  $("legacy-source-kind").addEventListener("change", () => run($("legacy-source-kind"), () => { legacySourceOffset = 0; return loadLegacySourceRows(); }));
+  $("legacy-source-limit").addEventListener("change", () => run($("legacy-source-limit"), () => { legacySourceOffset = 0; return loadLegacySourceRows(); }));
+  $("legacy-source-previous").addEventListener("click", () => run($("legacy-source-previous"), () => {
+    legacySourceOffset = Math.max(0, legacySourceOffset - Number($("legacy-source-limit").value));
+    return loadLegacySourceRows();
+  }));
+  $("legacy-source-next").addEventListener("click", () => run($("legacy-source-next"), () => {
+    legacySourceOffset += Number($("legacy-source-limit").value);
+    return loadLegacySourceRows();
+  }));
 
   function fillSelect(select, rows, label) {
     const previous = select.value;
@@ -464,7 +591,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   async function show() {
     showPanel("timetable");
+    $("timetable-legacy-imports-nav").hidden = !["IT Administrator", "Superuser"].includes(currentRole());
     await refresh();
+    await refreshLegacyImports();
   }
 
   function labelFor(block) {
@@ -475,6 +604,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   function setTimetablePage(target) {
+    if (target === "legacy-imports" && !["IT Administrator", "Superuser"].includes(currentRole())) return;
     for (const page of document.querySelectorAll(".timetable-page")) page.hidden = page.id !== `timetable-${target}-page`;
     for (const link of document.querySelectorAll(".timetable-side-link")) link.classList.toggle("is-active", link.dataset.timetablePage === target);
   }
@@ -1219,7 +1349,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
   $("timetable-print-both").addEventListener("click", () => printReports("both"));
   for (const button of document.querySelectorAll("[data-timetable-page]")) {
-    button.addEventListener("click", () => setTimetablePage(button.dataset.timetablePage));
+    button.addEventListener("click", () => {
+      const target = button.dataset.timetablePage;
+      setTimetablePage(target);
+      if (target === "legacy-imports") run(button, refreshLegacyImports);
+    });
   }
   for (const button of document.querySelectorAll("[data-resource-tab]")) {
     button.addEventListener("click", () => {

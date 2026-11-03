@@ -65,7 +65,7 @@ async function api(path, method = "GET", body) {
   const headers = {Accept: "application/json"};
   if (token) headers.Authorization = `Bearer ${token}`;
   const rawFile = typeof Blob !== "undefined" && body instanceof Blob;
-  if (rawFile) headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (rawFile) headers["Content-Type"] = body.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   else if (body !== undefined) headers["Content-Type"] = "application/json";
   let response;
   try {
@@ -339,60 +339,61 @@ async function showUsers() {
   showPanel("users");
   const users = await api("/users");
   [...$("create-user-form").elements.role.options].find((option) => option.value === "Superuser").hidden = identity.role !== "Superuser";
-  $("user-rows").replaceChildren();
-  for (const user of users) {
-    const row = document.createElement("tr");
-    cell(row, user.username);
-    const role = document.createElement("select");
-    role.setAttribute("aria-label", `Role for ${user.username}`);
-    for (const value of roles.filter((value) => identity.role === "Superuser" || value !== "Superuser")) {
-      const option = document.createElement("option");
-      option.textContent = value;
-      option.value = value;
-      option.selected = value === user.role;
-      role.append(option);
-    }
-    cell(row, "").append(role);
-    const active = document.createElement("input");
-    active.type = "checkbox";
-    active.checked = user.is_active;
-    active.setAttribute("aria-label", `Active for ${user.username}`);
-    cell(row, "").append(active);
-    cell(row, user.must_change_password ? "Required" : "Completed");
-    const save = document.createElement("button");
-    save.textContent = "Save";
-    save.setAttribute("aria-label", `Save ${user.username}`);
-    save.addEventListener("click", () => run(save, async () => {
-      await api(`/users/${user.id}`, "PATCH", {role: role.value, is_active: active.checked});
-      identity = await api("/auth/me");
-      if (!["Superuser", "IT Administrator"].includes(identity.role)) {
-        signedOut("Your role changed. Sign in again to load your workspace.");
-        return;
-      }
-      await showUsers();
-      notice(`Updated ${user.username}.`);
-    }));
-    const actions = cell(row, "");
-    actions.append(save);
-    if (user.id !== Number(identity.sub)) {
-      const reset = document.createElement("button");
-      reset.className = "secondary";
-      reset.textContent = "Reset password";
-      reset.setAttribute("aria-label", `Reset password for ${user.username}`);
-      reset.addEventListener("click", () => {
-        const form = $("reset-user-form");
-        form.reset();
-        form.elements.user_id.value = user.id;
-        $("reset-user-title").textContent = `Reset password for ${user.username}`;
-        form.hidden = false;
-        form.elements.temporary_password.focus();
-      });
-      actions.append(reset);
-    }
-    $("user-rows").append(row);
-  }
+  $("user-rows").replaceChildren(...users.map(renderUserRow));
   await refreshImportRetention();
   await studentCatalogs.refresh();
+}
+
+function renderUserRow(user) {
+  const row = document.createElement("tr");
+  cell(row, user.username);
+  const role = document.createElement("select");
+  role.setAttribute("aria-label", `Role for ${user.username}`);
+  for (const value of roles.filter((value) => identity.role === "Superuser" || value !== "Superuser")) {
+    const option = document.createElement("option");
+    option.textContent = value;
+    option.value = value;
+    option.selected = value === user.role;
+    role.append(option);
+  }
+  cell(row, "").append(role);
+  const active = document.createElement("input");
+  active.type = "checkbox";
+  active.checked = user.is_active;
+  active.setAttribute("aria-label", `Active for ${user.username}`);
+  cell(row, "").append(active);
+  cell(row, user.must_change_password ? "Required" : "Completed");
+  const save = document.createElement("button");
+  save.textContent = "Save";
+  save.setAttribute("aria-label", `Save ${user.username}`);
+  save.addEventListener("click", () => run(save, async () => {
+    const updated = await api(`/users/${user.id}`, "PATCH", {role: role.value, is_active: active.checked});
+    identity = await api("/auth/me");
+    if (!["Superuser", "IT Administrator"].includes(identity.role)) {
+      signedOut("Your role changed. Sign in again to load your workspace.");
+      return;
+    }
+    row.replaceWith(renderUserRow(updated));
+    notice(`Updated ${updated.username}.`);
+  }));
+  const actions = cell(row, "");
+  actions.append(save);
+  if (user.id !== Number(identity.sub)) {
+    const reset = document.createElement("button");
+    reset.className = "secondary";
+    reset.textContent = "Reset password";
+    reset.setAttribute("aria-label", `Reset password for ${user.username}`);
+    reset.addEventListener("click", () => {
+      const form = $("reset-user-form");
+      form.reset();
+      form.elements.user_id.value = user.id;
+      $("reset-user-title").textContent = `Reset password for ${user.username}`;
+      form.hidden = false;
+      form.elements.temporary_password.focus();
+    });
+    actions.append(reset);
+  }
+  return row;
 }
 
 function renderImportRetention(data, applied = false) {
@@ -450,9 +451,11 @@ $("create-user-form").addEventListener("submit", (event) => {
   run(event.currentTarget, async () => {
     const payload = Object.fromEntries(new FormData($("create-user-form")));
     try {
-      await api("/users", "POST", payload);
+      const created = await api("/users", "POST", payload);
       $("create-user-form").reset();
-      await showUsers();
+      const rows = $("user-rows");
+      const next = [...rows.rows].find((row) => row.cells[0].textContent.localeCompare(created.username, undefined, {sensitivity: "base"}) > 0);
+      rows.insertBefore(renderUserRow(created), next || null);
       notice(`Created ${payload.username}. Supply the temporary password through your approved secure channel.`);
     } finally { $("create-user-form").elements.temporary_password.value = ""; }
   });

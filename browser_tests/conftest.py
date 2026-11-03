@@ -12,6 +12,7 @@ import uvicorn
 from playwright.sync_api import sync_playwright
 
 os.environ.setdefault("JWT_SECRET", "browser-test-secret-that-is-long-enough-for-hs256")  # gitleaks:allow
+os.environ.setdefault("LEGACY_PRI_KEY_HEX", "000102030405060708090a0b0c0d0e0f")  # gitleaks:allow
 
 from app.db import SessionLocal
 from app.main import app

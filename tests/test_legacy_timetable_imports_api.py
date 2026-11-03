@@ -83,6 +83,9 @@ def test_it_admin_stages_encrypted_project_with_reconciliation_and_duplicate_gua
             assert body["counts"]["placements"] == 1
             assert body["import_ready"] is False
             assert body["issue_counts"]["legacy_period_mapping_required"] == 1
+            source_rows = client.get(f"/api/v1/timetable/legacy-imports/{body['id']}/source-rows?kind=teachers", headers=headers)
+            assert source_rows.status_code == 200
+            assert source_rows.json()["items"][0]["Name"] == "T1"
             with SessionLocal() as db:
                 staged = db.get(LegacyTimetableImport, body["id"])
                 assert staged is not None
@@ -102,7 +105,7 @@ def test_it_admin_stages_encrypted_project_with_reconciliation_and_duplicate_gua
 
         with SessionLocal() as db:
             assert db.get(LegacyTimetableImport, body["id"]) is None
-            assert db.query(AuditEvent).filter_by(entity_type="legacy_timetable_import", entity_id=str(body["id"])).count() == 2
+            assert db.query(AuditEvent).filter_by(entity_type="legacy_timetable_import", entity_id=str(body["id"])).count() == 3
     finally:
         get_settings.cache_clear()
 
@@ -119,6 +122,7 @@ def test_operator_cannot_stage_legacy_project(monkeypatch):
                 headers={**headers, "Content-Type": "application/octet-stream"},
             )
             assert response.status_code == 403
+            assert client.get("/api/v1/timetable/legacy-imports", headers=headers).status_code == 403
     finally:
         get_settings.cache_clear()
 

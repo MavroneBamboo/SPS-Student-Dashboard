@@ -1,7 +1,7 @@
 import hashlib
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
 from app.config import get_settings
-from app.crypto import encrypt_sensitive_bytes
+from app.crypto import decrypt_sensitive_bytes, encrypt_sensitive_bytes
 from app.deps import Claims, DbSession, require_roles
 from app.legacy_pri import MAX_ARCHIVE_BYTES, LegacyPriError, read_legacy_pri, reconcile_legacy_pri
 from app.models import LegacyTimetableImport
@@ -59,6 +59,23 @@ def _summary(row: LegacyTimetableImport) -> LegacyTimetableImportSummary:
         created_by=row.created_by,
         created_at=row.created_at,
     )
+
+
+def _source_data(row: LegacyTimetableImport):
+    key_text = get_settings().legacy_pri_key_hex.strip()
+    if not key_text:
+        raise HTTPException(status_code=503, detail="Legacy timetable decryption key is not configured")
+    try:
+        key = bytes.fromhex(key_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="Legacy timetable decryption key configuration is invalid") from exc
+    try:
+        source = decrypt_sensitive_bytes(row.source_ciphertext)
+        if hashlib.sha256(source).hexdigest() != row.source_sha256:
+            raise ValueError("source digest mismatch")
+        return read_legacy_pri(source, key)
+    except (ValueError, LegacyPriError) as exc:
+        raise HTTPException(status_code=500, detail="Stored legacy timetable source failed integrity validation") from exc
 
 
 @router.post("", response_model=LegacyTimetableImportDetail, status_code=status.HTTP_201_CREATED)
@@ -138,6 +155,31 @@ def get_legacy_timetable_import(import_id: int, db: DbSession) -> LegacyTimetabl
         raise HTTPException(status_code=404, detail="Legacy timetable import not found")
     report = _report(row)
     return LegacyTimetableImportDetail(**_summary(row).model_dump(), issues=report["issues"])
+
+
+@router.get("/{import_id}/source-rows")
+def get_legacy_timetable_source_rows(
+    import_id: int,
+    db: DbSession,
+    claims: Claims,
+    kind: Literal["teachers", "subjects", "classes", "lessons", "placements", "pending"] = Query(...),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> dict[str, Any]:
+    row = db.get(LegacyTimetableImport, import_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Legacy timetable import not found")
+    values = getattr(_source_data(row), kind)
+    record_event(
+        db,
+        int(claims["sub"]),
+        "timetable.legacy_import.source_viewed",
+        "legacy_timetable_import",
+        str(row.id),
+        {"kind": kind, "offset": offset, "limit": limit},
+    )
+    db.commit()
+    return {"kind": kind, "total": len(values), "offset": offset, "limit": limit, "items": values[offset : offset + limit]}
 
 
 @router.delete("/{import_id}", status_code=status.HTTP_204_NO_CONTENT)
