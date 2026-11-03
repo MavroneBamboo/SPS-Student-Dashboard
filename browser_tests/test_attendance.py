@@ -106,3 +106,116 @@ def test_duplicate_session_and_stale_attendance_require_reload(page, make_accoun
     page.get_by_label("Session date", exact=True).fill("2026-10-26")
     page.get_by_role("button", name="Create session", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text("A session already exists")
+
+
+def test_operator_can_create_attendance_from_published_timetable(page, make_account, live_url):
+    admin = make_account("IT Administrator")
+    operator = make_account("Operator")
+
+    def authenticate(account):
+        response = page.request.post(
+            live_url + "/api/v1/auth/login", data={"username": account["username"], "password": account["password"]}
+        )
+        assert response.status == 200
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    admin_headers = authenticate(admin)
+    operator_headers = authenticate(operator)
+    suffix = uuid4().hex[:8].upper()
+    class_name = f"SCHED-{suffix}"
+    academic_year = f"SCHED-{suffix}"
+
+    def post(path, payload, headers):
+        response = page.request.post(live_url + f"/api/v1/{path}", headers=headers, data=payload)
+        assert response.status in (200, 201), f"{path}: {response.status} {response.text()}"
+        return response.json()
+
+    instructional_class = post("timetable/classes", {"code": f"C{suffix}", "name": f"Scheduled {suffix}"}, admin_headers)
+    teacher = post("timetable/teachers", {"short_code": f"T{suffix}", "full_name": f"Teacher {suffix}"}, admin_headers)
+    subject = post("timetable/subjects", {"code": f"S{suffix}", "name": f"Subject {suffix}"}, admin_headers)
+    student = post(
+        "students",
+        {"pris_no": f"{class_name}-1", "name": "Scheduled Attendance Student", "class_name": class_name, "category": "OP"},
+        operator_headers,
+    )
+    assert student["status"] == "ACTIVE"
+    requirement = post(
+        "timetable/lessons",
+        {
+            "academic_year": academic_year,
+            "instructional_class_id": instructional_class["id"],
+            "teacher_id": teacher["id"],
+            "subject_id": subject["id"],
+            "weekly_count": 1,
+            "block_length": 1,
+        },
+        operator_headers,
+    )
+    post(
+        "timetable/rules",
+        {
+            "academic_year": academic_year,
+            "target_type": "CLASS",
+            "target_id": instructional_class["id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        admin_headers,
+    )
+    version = post(
+        "timetable/versions",
+        {
+            "name": f"Attendance {suffix}",
+            "academic_year": academic_year,
+            "week_start": "2026-10-19",
+            "class_ids": [instructional_class["id"]],
+        },
+        operator_headers,
+    )
+    version = post(
+        f"timetable/versions/{version['id']}/placements",
+        {
+            "expected_revision": version["revision"],
+            "lesson_requirement_id": requirement["id"],
+            "weekday": "MON",
+            "start_period": "P1",
+            "period_count": 1,
+        },
+        operator_headers,
+    )
+    version = post(f"timetable/versions/{version['id']}/approve", {"expected_revision": version["revision"]}, admin_headers)
+    version = post(f"timetable/versions/{version['id']}/publish", {"expected_revision": version["revision"]}, admin_headers)
+
+    login(page, admin)
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    page.locator('[data-timetable-page="resources"]').click()
+    page.locator('[data-resource-tab="classes"]').click()
+    mapping_form = page.locator("#attendance-class-mapping-form")
+    mapping_form.get_by_label("Student profile class", exact=True).fill(class_name)
+    mapping_form.locator('select[name="instructional_class_id"]').select_option(str(instructional_class["id"]))
+    mapping_form.get_by_role("button", name="Create attendance mapping", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Attendance class mapped")
+    mappings = page.request.get(live_url + "/api/v1/student-reference/attendance-class-mappings", headers=admin_headers)
+    assert mappings.status == 200
+    assert next(row for row in mappings.json() if row["student_class_name"] == class_name)["active_students"] == 1
+
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    login(page, operator)
+    page.get_by_role("button", name="Attendance", exact=True).click()
+    page.get_by_role("button", name="New session", exact=True).click()
+    page.get_by_label("Session date", exact=True).fill("2026-10-19")
+    page.locator("#scheduled-academic-year").fill(academic_year)
+    page.get_by_role("button", name="Load published classes for date", exact=True).click()
+    expect(page.locator("#scheduled-classes-summary")).to_contain_text("Published timetable for week of")
+    page.locator("#scheduled-class-select").select_option(str(instructional_class["id"]))
+    expect(page.get_by_label("Session class", exact=True)).to_have_value(class_name)
+    expect(page.get_by_label("Expected students", exact=True)).to_have_value("1")
+    page.get_by_role("button", name="Create session", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Created attendance session")
+
+    sessions = page.request.get(live_url + "/api/v1/attendance/sessions", headers=operator_headers, params={"class_name": class_name})
+    assert sessions.status == 200
+    created = sessions.json()[0]
+    assert created["timetable_version_id"] == version["id"]
+    assert created["instructional_class_id"] == instructional_class["id"]

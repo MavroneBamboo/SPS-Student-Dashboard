@@ -145,6 +145,37 @@ class StudentClassMapping(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class AttendanceClassMapping(Base):
+    __tablename__ = "attendance_class_mappings"
+    __table_args__ = (
+        Index(
+            "uq_attendance_class_mapping_active_key",
+            "class_key",
+            unique=True,
+            postgresql_where=text("is_active IS TRUE"),
+            sqlite_where=text("is_active = 1"),
+        ),
+        Index(
+            "uq_attendance_class_mapping_active_instructional_class",
+            "instructional_class_id",
+            unique=True,
+            postgresql_where=text("is_active IS TRUE"),
+            sqlite_where=text("is_active = 1"),
+        ),
+        CheckConstraint("version >= 1", name="ck_attendance_class_mapping_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_class_name: Mapped[str] = mapped_column(String(120))
+    class_key: Mapped[str] = mapped_column(String(120))
+    instructional_class_id: Mapped[int] = mapped_column(ForeignKey("instructional_classes.id"), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class ClassCluster(Base):
     __tablename__ = "class_clusters"
 
@@ -416,6 +447,11 @@ class AttendanceSession(Base):
     __table_args__ = (
         Index("uq_session_class_date_type", "class_name", "session_date", "session_type", unique=True),
         CheckConstraint("roster_snapshot_state IN ('CAPTURED', 'LEGACY_PARTIAL')", name="ck_attendance_roster_snapshot_state"),
+        CheckConstraint(
+            "(timetable_version_id IS NULL AND instructional_class_id IS NULL) OR "
+            "(timetable_version_id IS NOT NULL AND instructional_class_id IS NOT NULL)",
+            name="ck_attendance_schedule_provenance_pair",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -427,6 +463,8 @@ class AttendanceSession(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="OPEN")
     roster_snapshot_state: Mapped[str] = mapped_column(String(24), default="LEGACY_PARTIAL", server_default="LEGACY_PARTIAL")
+    timetable_version_id: Mapped[int | None] = mapped_column(ForeignKey("timetable_versions.id"), nullable=True, index=True)
+    instructional_class_id: Mapped[int | None] = mapped_column(ForeignKey("instructional_classes.id"), nullable=True, index=True)
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

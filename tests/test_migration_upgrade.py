@@ -441,3 +441,53 @@ def test_attendance_upgrade_preserves_records_or_refuses_ambiguous_sessions(tmp_
                 assert entry["created_by"] == 1
     finally:
         database.dispose()
+
+
+def test_attendance_timetable_link_migration_preserves_existing_sessions(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'attendance-timetable-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    migrate("20261028_0013")
+    database = create_engine(database_url)
+    try:
+        before = MetaData()
+        before.reflect(bind=database)
+        sessions = before.tables["attendance_sessions"]
+        session_values = {
+            "session_date": date(2026, 10, 19),
+            "session_type": "MORNING",
+            "class_name": "Preserved Attendance Class",
+            "expected_count": 2,
+            "notes": "Preserve prior session",
+            "status": "OPEN",
+            "version": 3,
+            "roster_snapshot_state": "LEGACY_PARTIAL",
+            "created_by": 7,
+        }
+        with database.begin() as connection:
+            connection.execute(sessions.insert().values(id=42, **session_values))
+
+        migrate("head")
+        with database.connect() as connection:
+            after = MetaData()
+            after.reflect(bind=connection)
+            current = after.tables["attendance_sessions"]
+            row = connection.execute(select(current).where(current.c.id == 42)).mappings().one()
+            for key, value in session_values.items():
+                assert row[key] == value
+            assert row["timetable_version_id"] is None
+            assert row["instructional_class_id"] is None
+    finally:
+        database.dispose()

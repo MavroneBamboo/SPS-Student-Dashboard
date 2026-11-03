@@ -290,6 +290,40 @@ class StudentClassMappingResponse(BaseModel):
     version: int
 
 
+class AttendanceClassMappingCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    student_class_name: str = Field(min_length=1, max_length=120)
+    instructional_class_id: int = Field(ge=1)
+
+
+class AttendanceClassMappingUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    expected_version: int = Field(ge=1)
+    instructional_class_id: int | None = Field(default=None, ge=1)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set - {"expected_version"}:
+            raise ValueError("At least one mapping field must be provided")
+        if ("instructional_class_id" in self.model_fields_set and self.instructional_class_id is None) or (
+            "is_active" in self.model_fields_set and self.is_active is None
+        ):
+            raise ValueError("Mapping fields cannot be null")
+        return self
+
+
+class AttendanceClassMappingResponse(BaseModel):
+    id: int
+    student_class_name: str
+    instructional_class_id: int
+    class_code: str
+    instructional_class_name: str
+    active_students: int
+    is_active: bool
+    version: int
+
+
 class ClusterCreate(BaseModel):
     code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
     name: str = Field(min_length=1, max_length=120)
@@ -478,6 +512,8 @@ class AttendanceSessionCreate(BaseModel):
     class_name: str = Field(min_length=1, max_length=120)
     expected_count: int = Field(ge=1, le=10000)
     notes: str | None = Field(default=None, max_length=1000)
+    timetable_version_id: int | None = Field(default=None, ge=1)
+    instructional_class_id: int | None = Field(default=None, ge=1)
 
 
 class AttendanceSessionResponse(AttendanceSessionCreate):

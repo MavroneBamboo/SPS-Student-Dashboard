@@ -130,7 +130,7 @@ Core entities:
 - `users`, `roles`, `permissions`, `user_roles`, `sessions`
 - `students`, `student_status_history`
 - `institutions`, `classes`, `categories`, `academic_years`
-- `attendance_sessions`, `attendance_records`
+- `attendance_sessions`, `attendance_records`, `attendance_roster_entries`, `attendance_class_mappings`
 - `import_batches`, `import_rows`, `export_jobs`
 - `audit_log`, `system_settings`
 
@@ -141,6 +141,7 @@ Important rules:
 - Attendance uniqueness is enforced by student, session and date according to the agreed attendance policy.
 - Status changes are recorded as history; historical records are not silently overwritten.
 - Reference data is effective-dated when needed for historical reporting.
+- Attendance class mappings explicitly connect normalized student `class_name` values to unique instructional classes. They are separate from source-specific intake-import crosswalks. Sessions created from a published schedule retain nullable `timetable_version_id` and `instructional_class_id` provenance as a pair; existing and manually created sessions retain null provenance.
 - Business records use created/updated timestamps and actor IDs.
 - Normal users cannot hard-delete students, attendance or audit records.
 
