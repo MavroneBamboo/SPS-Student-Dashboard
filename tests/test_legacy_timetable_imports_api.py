@@ -1,14 +1,16 @@
+import hashlib
 import io
 import json
 import zipfile
 from uuid import uuid4
 
+import pytest
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
-from app.crypto import decrypt_sensitive_bytes
+from app.crypto import decrypt_sensitive_bytes, encrypt_sensitive_bytes
 from app.db import SessionLocal
 from app.main import app
 from app.models import AuditEvent, LegacyTimetableImport, User
@@ -110,10 +112,11 @@ def test_it_admin_stages_encrypted_project_with_reconciliation_and_duplicate_gua
         get_settings.cache_clear()
 
 
-def test_operator_cannot_stage_legacy_project(monkeypatch):
+@pytest.mark.parametrize("role", ["Operator", "Executive"])
+def test_operational_roles_cannot_review_legacy_project(monkeypatch, role):
     monkeypatch.setenv("LEGACY_PRI_KEY_HEX", LEGACY_KEY.hex())
     get_settings.cache_clear()
-    headers = _auth_headers("Operator")
+    headers = _auth_headers(role)
     try:
         with TestClient(app) as client:
             response = client.post(
@@ -123,6 +126,7 @@ def test_operator_cannot_stage_legacy_project(monkeypatch):
             )
             assert response.status_code == 403
             assert client.get("/api/v1/timetable/legacy-imports", headers=headers).status_code == 403
+            assert client.get("/api/v1/timetable/legacy-imports/1/source-rows?kind=teachers", headers=headers).status_code == 403
     finally:
         get_settings.cache_clear()
 
@@ -139,5 +143,47 @@ def test_legacy_staging_fails_closed_without_decryption_key(monkeypatch):
                 headers={**headers, "Content-Type": "application/octet-stream"},
             )
             assert response.status_code == 503
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("corrupt_field", ["source_ciphertext", "source_sha256"])
+def test_source_review_fails_closed_for_corrupt_stored_source(monkeypatch, corrupt_field):
+    monkeypatch.setenv("LEGACY_PRI_KEY_HEX", LEGACY_KEY.hex())
+    get_settings.cache_clear()
+    headers = _auth_headers("IT Administrator")
+    raw = _legacy_package()
+    try:
+        with TestClient(app) as client:
+            staged = client.post(
+                "/api/v1/timetable/legacy-imports",
+                content=raw,
+                headers={**headers, "Content-Type": "application/octet-stream"},
+            )
+            assert staged.status_code == 201, staged.text
+            import_id = staged.json()["id"]
+
+            with SessionLocal() as db:
+                events_before_review = (
+                    db.query(AuditEvent).filter_by(entity_type="legacy_timetable_import", entity_id=str(import_id)).count()
+                )
+                row = db.get(LegacyTimetableImport, import_id)
+                if corrupt_field == "source_ciphertext":
+                    row.source_ciphertext = b"corrupted ciphertext"
+                else:
+                    row.source_ciphertext = encrypt_sensitive_bytes(raw)
+                    row.source_sha256 = hashlib.sha256(b"different package").hexdigest()
+                db.commit()
+
+            reviewed = client.get(f"/api/v1/timetable/legacy-imports/{import_id}/source-rows?kind=teachers", headers=headers)
+            assert reviewed.status_code == 500
+            assert reviewed.json()["detail"] == "Stored legacy timetable source failed integrity validation"
+            assert "Test Teacher" not in reviewed.text
+
+        with SessionLocal() as db:
+            assert (
+                db.query(AuditEvent).filter_by(entity_type="legacy_timetable_import", entity_id=str(import_id)).count()
+                == events_before_review
+            )
     finally:
         get_settings.cache_clear()
