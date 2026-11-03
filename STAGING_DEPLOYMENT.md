@@ -45,6 +45,8 @@ chmod 600 "$HOME/.config/sps-student-dashboard/staging.env"
 
 For an existing staging environment file, retain its current `POSTGRES_PASSWORD` because it must continue to unlock the existing named database volume. Generate a separate URL-safe `runtime_password`, then set `DATABASE_RUNTIME_PASSWORD` to it and set `DATABASE_URL` to `postgresql+psycopg://sps_runtime:<runtime_password>@db:5432/sps_dashboard`. Set `DATABASE_ADMIN_URL` to the existing `sps_app` password. The migration service uses that admin URL to upgrade the schema and provision the restricted runtime account; the API receives only the runtime URL. Do not replace an existing staging secrets file with the first-start example. Do not use production secrets. The staging data volume and application encryption key must be retained together; changing or losing the key makes encrypted staging values unreadable.
 
+The application validates staging/production configuration during process startup. It refuses short or built-in JWT/bootstrap credentials, CI/test placeholders, identical JWT and bootstrap secrets, SQLite or non-`sps_runtime` database URLs, short/placeholder runtime database passwords, malformed/duplicate Fernet keys, the built-in development encryption key and access-token lifetimes above 60 minutes. A deployment that fails this check should correct its protected environment file; do not weaken the checks or print secret values while diagnosing it.
+
 For the initial manual smoke test, check out `main`, configure the environment file, then run from the repository:
 
 ```bash
