@@ -131,8 +131,9 @@ The prototype remains synthetic and in-memory. It demonstrates the workflow and 
 3. Compare the By Instructional Class and By Teacher outputs with the latest PDFs.
 4. Implement Amend 4-up and test every edit path.
 5. Publish an approved timetable version.
-6. Link the approved instructional classes to attendance sessions.
-7. Retain the legacy application as a read-only fallback during stabilisation.
+6. Configure the separate IT-managed mapping between each student profile class and its instructional timetable class.
+7. Let Operators load classes scheduled for the attendance date, create a session from the selected published week and retain timetable-version provenance; continue to allow manual sessions where no published schedule applies.
+8. Retain the legacy application as a read-only fallback during stabilisation.
 
 ## 7. Known legacy risks to remove
 

@@ -19,8 +19,12 @@ An approved weekly timetable becomes available to downstream readers only after 
 
 Publication fields are included in timetable summaries. The production timetable workspace shows current publication status and exposes publish/unpublish actions to IT Administrators only.
 
-This slice provides the version pointer and an authenticated read API for downstream consumers. Mapping published instructional classes to student attendance classes and using the published schedule to create or prefill attendance sessions remain separate integration work. The existing intake class crosswalk is explicitly source-specific and is not silently reused as an attendance mapping.
+Attendance integration uses a separate IT-managed mapping from the normalized student profile `class_name` to one instructional class. Each profile class and instructional class can have only one mapping. This is intentionally independent of the Student Intake 2023 crosswalk, whose labels are specific to that workbook. Mapping updates are versioned and audited.
+
+Operators can call `GET /api/v1/attendance/scheduled-classes?academic_year=2026&session_date=2026-10-26` to find classes with teaching slots on a date in the currently published timetable. Results include the immutable version ID, instructional class, mapped profile class, lesson count and current active roster count. `POST /api/v1/attendance/sessions` may include both `timetable_version_id` and `instructional_class_id`; the server revalidates publication, week, weekday, class mapping and lesson availability before it captures the usual roster snapshot. Session provenance remains even if the timetable is later unpublished or replaced. Existing manual session creation remains available and stores null timetable provenance.
+
+Migration `20261103_0014` creates the attendance-specific class mapping and adds paired nullable timetable provenance fields to attendance sessions. Existing session data and roster snapshots are retained. An unmapped instructional class is not offered as a scheduled attendance class; IT must configure the mapping first.
 
 ## Verification
 
-PostgreSQL tests cover IT-only mutation, approved-only publication, stale revisions, replacement of the one current weekly version, unpublish behavior, audit history, Executive visibility and unchanged timetable revision. Browser acceptance covers the IT publish/unpublish controls and published-version lookup.
+PostgreSQL tests cover IT-only mutation, approved-only publication, stale revisions, replacement of the one current weekly version, unpublish behavior, audit history, Executive visibility and unchanged timetable revision. Attendance integration tests cover mapping uniqueness/permissions, active roster counts, scheduled class lookup, date/day validation, saved publication provenance, unpublished-version rejection and unchanged manual session behavior. Browser acceptance covers the IT publish/unpublish controls and published-version lookup.
