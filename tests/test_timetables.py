@@ -71,6 +71,33 @@ def test_rule_and_draft_dates_must_fit_configured_academic_year(timetable_contex
     assert draft.status_code == 422
 
 
+def test_draft_rename_is_revision_checked_audited_and_draft_only(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    version = _draft(ctx)
+    path = f"{BASE}/versions/{version['id']}/name"
+    renamed = client.patch(path, json={"expected_revision": 1, "name": "Revised operating week"}, headers=headers["operator"])
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Revised operating week"
+    assert renamed.json()["revision"] == 2
+    assert client.patch(path, json={"expected_revision": 1, "name": "Stale name"}, headers=headers["operator"]).status_code == 409
+    assert (
+        client.patch(path, json={"expected_revision": 2, "name": "Revised operating week"}, headers=headers["operator"]).status_code == 422
+    )
+    assert client.patch(path, json={"expected_revision": 2, "name": "   "}, headers=headers["operator"]).status_code == 422
+    with SessionLocal() as db:
+        event = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == "timetable_version",
+                AuditEvent.entity_id == str(version["id"]),
+                AuditEvent.action == "timetable.version.renamed",
+            )
+        )
+        assert event is not None
+        assert json.loads(event.details_json)["before"] == "Operational week"
+        assert json.loads(event.details_json)["after"] == "Revised operating week"
+
+
 def _body(ctx, version, **changes):
     return {
         "expected_revision": version["revision"],
@@ -157,6 +184,14 @@ def test_draft_amend_lock_swap_remove_approve_and_snapshot_history(timetable_con
     assert approved.status_code == 200, approved.text
     version = approved.json()
     assert version["status"] == "APPROVED" and version["revision"] == 10
+    assert (
+        client.patch(
+            path + "/name",
+            json={"expected_revision": version["revision"], "name": "Attempt to rename approved timetable"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
     assert client.get(path, headers=headers["executive"]).json() == version
     assert _place(ctx, version).status_code == 409
     old_name = version["snapshot"]["teachers"][str(ctx["lesson"]["teacher_id"])]["full_name"]

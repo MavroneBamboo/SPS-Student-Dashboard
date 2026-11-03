@@ -294,7 +294,9 @@
         </details>
         <div class="section-bar"><h3>Saved timetables</h3><button id="new-timetable" hidden>Create weekly draft</button></div>
         <section id="timetable-editor" class="panel" hidden aria-labelledby="timetable-editor-title">
-          <div class="section-bar"><div><h3 id="timetable-editor-title">Weekly timetable</h3><p id="timetable-version-detail"></p></div><div class="actions"><label>Classes per page<select id="timetable-density"><option>4</option><option>8</option><option>12</option><option>16</option></select></label><button id="timetable-reload" class="secondary">Reload draft</button><button id="timetable-previous" class="secondary">Previous classes</button><button id="timetable-next" class="secondary">Next classes</button></div></div>
+          <div class="section-bar"><div><h3 id="timetable-editor-title">Weekly timetable</h3><p id="timetable-version-detail"></p></div><div class="actions"><button id="timetable-rename-draft" class="secondary" type="button" hidden>Rename draft</button><label>Classes per page<select id="timetable-density"><option>2</option><option>4</option><option>6</option><option>8</option><option>12</option><option>16</option><option>24</option><option>32</option></select></label><button id="timetable-reload" class="secondary">Reload draft</button><button id="timetable-previous" class="secondary">Previous classes</button><button id="timetable-next" class="secondary">Next classes</button></div></div>
+          <form id="timetable-rename-form" class="actions" hidden><label>Draft name<input name="name" maxlength="120" required></label><button type="submit">Save draft name</button><button id="timetable-cancel-rename" class="secondary" type="button">Cancel rename</button></form>
+          <div id="timetable-swap-tools" class="actions amend-tools" hidden><button id="timetable-swap-mode" class="secondary" type="button" aria-pressed="false">Select blocks to swap</button><button id="timetable-swap-selected" type="button" disabled>Swap selected (0/2)</button><button id="timetable-swap-cancel" class="secondary" type="button" hidden>Cancel selection</button><span id="timetable-swap-help" aria-live="polite"></span></div>
           <div class="timetable-board-layout">
             <div id="timetable-grid" class="timetable-grid"></div>
             <div id="timetable-summary" class="timetable-summary" hidden></div>
@@ -306,7 +308,7 @@
               <label>Lesson requirement<select name="lesson_requirement_id" required></select></label>
               <label>Block length<select name="period_count" required></select></label>
               <label>Note<input name="note" maxlength="500"></label>
-              <div class="actions"><button type="submit">Save lesson</button><button id="timetable-remove" class="secondary" type="button" hidden>Remove lesson</button><button id="timetable-lock" class="secondary" type="button" hidden>Lock lesson</button><button id="timetable-cancel-placement" class="secondary" type="button">Cancel</button></div>
+              <div class="actions"><button type="submit">Save lesson</button><button id="timetable-shift-earlier" class="secondary" type="button" hidden>Shift one period earlier</button><button id="timetable-shift-later" class="secondary" type="button" hidden>Shift one period later</button><button id="timetable-remove" class="secondary" type="button" hidden>Remove lesson</button><button id="timetable-lock" class="secondary" type="button" hidden>Lock lesson</button><button id="timetable-cancel-placement" class="secondary" type="button">Cancel</button></div>
             </form>
           </div>
           <section class="panel"><h3>Unplaced lesson requirements</h3><div class="table-wrap"><table><thead><tr><th>Class</th><th>Subject</th><th>Teacher</th><th>Remaining periods</th><th>Available block sizes</th></tr></thead><tbody id="timetable-pending"></tbody></table></div></section>

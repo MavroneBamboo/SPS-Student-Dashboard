@@ -32,7 +32,7 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - Timetable interface redesign (27 October): production UI implements By class/By teacher weekly views, browser print-to-PDF reports, teacher/class/subject tabs, period and rule management, and clickable Amend 4-up at 4/8/12/16 classes per page. Display maps the lunch interval to P3 while preserving stable database/API slot codes. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md).
 
-- Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. The existing audited XLSX exports remain available. Attendance publishing coordination remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
+- Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. Audited XLSX exports and published-timetable attendance coordination are implemented; exact PDF comparison remains open. See [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
 
 - Browser brand increment (28 October): added a custom scalable SPS Student Dashboard mark, reused in the sign-in/application header and SVG favicon. The production-image asset gate and browser sign-in test verify the packaged logo and favicon reference.
 
@@ -65,10 +65,10 @@ The initial release should be delivered in phases over approximately 16–20 wee
 - PR #28 is merged and includes the resource setup, persistent lesson requirements and stable-target rule-resolution foundations originally submitted through #26/#27/#28. The earlier #26/#27 PRs are superseded by that merged code.
 - Rule resolution includes typed definitions, versioned edits/archive/binding, exactly-one-rule bulk resolution and PostgreSQL overlap guards. Legacy text rules require explicit reconciliation; see [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 - The timetable-draft increment adds weekly snapshots, persistent block/cell placement, full-grid validation for manual changes, revision guards, approval and executive reads of approved versions. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
-- The generation increment adds deterministic first-fit plus bounded repair, default preservation of existing lessons, explicit replacement of unlocked blocks and persisted per-revision reports. It uses the manual validator and transactional placement services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Publishing coordination, teacher-oriented views, swap/drag and report exports remain outstanding.
-- The timetable browser increment adds IT forms for teachers/subjects/classes/clusters/membership/period overrides/rules and lesson requirements. Operators create weekly drafts, page through 4/8/12/16 class grids, add/amend/remove/lock lessons by clicking cells and run generation. IT Administrators approve complete drafts. Chromium acceptance tests cover editing, lunch placement, generation, approval and resource setup. Teacher-oriented grids, drag/swap, publishing, legacy reconciliation and report exports remain outstanding.
+- The generation increment adds deterministic first-fit plus bounded repair, default preservation of existing lessons, explicit replacement of unlocked blocks and persisted per-revision reports. It uses the manual validator and transactional placement services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Publishing, teacher-oriented boards, Amend 4-up moves/swaps and audited report exports are implemented. Fixed events, composite teacher groups and legacy project reconciliation remain outstanding.
+- The initial timetable browser increment delivered IT resource forms, weekly drafts, clickable class grids, generation and IT approval. Later slices added By Teacher boards, Amend 4-up drag/swap/shift/rename controls, publication, attendance linkage and report exports. Legacy project reconciliation, fixed events, composite teacher groups and exact PDF comparison remain open.
 - The defensive validation increment (PR #30) compares persisted cells with validated blocks before every amendment and approval. Regression tests cover missing cells, extra cells and changed block anchors, requiring rejection without revision, grid or audit changes.
-- The production timetable browser increment (PR #37) delivers IT resource forms and class-oriented Amend 4-up with 4/8/12/16 class paging, clickable add/edit/remove/lock, generation and IT approval. Teacher-oriented views, swap/drag, publishing, legacy reconciliation and printable report exports remain outstanding.
+- PR #37 delivered the initial production timetable browser with IT resource forms and class-oriented Amend 4-up with 4/8/12/16 class paging, clickable add/edit/remove/lock, generation and IT approval. Subsequent increments provide teacher-oriented views, swap/drag, publishing and reports; legacy reconciliation and exact PDF comparison remain open.
 - The existing pull-request CI job runs the new resource API tests alongside PostgreSQL migration/model-parity gates; covered cases include normalized duplicates, cluster membership, default/cluster/class period resolution, overlap rejection, lunch exclusion and Superuser-vs-IT-Administrator write permissions.
 - Local Python execution is unavailable in the current workstation environment; full GitHub CI is the verification gate for this increment. Docker daemon availability must be rechecked before relying on local Compose.
 
@@ -147,7 +147,7 @@ Exit criteria: a clean checkout can start the Compose stack, run tests and produ
 
 **Estimated duration:** 2–3 weeks
 
-Browser workspace delivery update (26 October 2026): the initial production timetable screen is being added as the next implementation slice. It connects the existing version, requirement, generation, placement, lock and approval APIs. Operators can create weekly drafts, page through 4/8/12/16 class grids, add/amend/remove/lock lesson blocks by clicking cells, and generate pending requirements. IT Administrators can create teacher, subject, class, cluster, membership, period override and rule records, and approve complete drafts. Period 3 is rendered as a non-clickable Lunch column. This slice includes Chromium acceptance tests for these workflows. Drag-and-drop, teacher-oriented grids, swap controls, exports and broader legacy parity remain follow-up work.
+Browser workspace delivery update (26 October 2026, historical): the initial production timetable screen connected version, requirement, generation, placement, lock and approval APIs. Later slices expanded this to the full browser editing, publishing and report functions documented in the current phase-C and phase-D status below.
 
 Activities:
 
@@ -175,7 +175,7 @@ Delivered in increments: student profile search/create/update, encrypted sensiti
 
 Remaining activities:
 
-- Implement academic-year configuration and reconcile verified pre-rollout class assignments; institution history remains current-profile only.
+- Reconcile verified pre-rollout class assignments; academic-year configuration is now delivered. Institution history remains current-profile only.
 - Reconcile source institution values and category/report totals against approved workbooks.
 - Complete production-scale search and the full permission matrix.
 
@@ -405,7 +405,7 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 - Extend CI with lesson permission/lifecycle tests, real simultaneous-save and configuration-change races, database constraint checks, block-packing cases and a baseline-data upgrade preservation rehearsal.
 - Add rule-completeness, rule-overlap, duplicate-placement and exactly-one-applicable-rule tests before generation and Amend 4-up placement.
 - Rule increment tests cover date boundaries/open ends, missing/ambiguous bulk resolution, unresolved legacy binding, direct database overlap rejection and concurrent class/cluster or membership changes.
-- Draft/placement tests cover persistent lifecycle, class/teacher actual-time clashes, rule/availability/lunch/block invariants, midweek rule resolution, stale configuration/revision handling, simultaneous saves, lock protection, swap rollback in both directions and immutable approval. Chromium coverage verifies the operator's two-block selection/swap flow and locked-block rejection. Drag-and-drop, one-block shift and title rename remain unimplemented.
+- Draft/placement tests cover persistent lifecycle, class/teacher actual-time clashes, rule/availability/lunch/block invariants, midweek rule resolution, stale configuration/revision handling, simultaneous saves, lock protection, swap rollback in both directions and immutable approval. Chromium coverage verifies two-block selection/swap, drag movement, one-period shift, draft rename, and locked-block rejection.
 - Timetable Excel exports provide audited By InstClass and By Teacher workbooks from immutable version snapshots, with Executive access restricted to approved timetables. Legacy PDF golden comparison remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
 - Timetable publication records a single current approved version per academic-year/week, with IT-only publish/unpublish, downstream lookup and audit events. Attendance has its own IT-managed class mapping and can create provenance-linked sessions from published classes scheduled on a selected date; it does not reuse the intake workbook crosswalk. See [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md) and [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
@@ -417,17 +417,17 @@ Scheduling-rule exit criteria: no planning run or manual placement can proceed w
 
 ### Timetable phase C — Amend 4-up
 
-The first browser increment covers class-oriented Amend 4-up editing. It is not yet full legacy parity; subsequent increments should add teacher-oriented views, drag/swap and other parity actions.
+Current Amend 4-up status (3 November 2026): class-oriented editing includes click-to-add/edit, remove/lock, validated drag movement and swap, explicit two-block swap selection, one-period shift, audited title rename, saved-draft reopening and 2/4/6/8/12/16/24/32 paging. Teacher-oriented weekly views and audited report exports are also implemented. Remaining parity work includes fixed events, composite teacher grouping, legacy-project reconciliation, draft copy/rebase and exact comparison with the latest legacy PDFs.
 
 **Estimated duration:** 2–3 weeks
 
-- Implement By Class and By Teacher modes.
-- Implement 2/4/6/8/12/16/24/32 table density, paging and search.
-- Implement double-click edit, drag/swap, shift, remove, lock and title rename.
-- Implement click-to-add on empty teaching cells with the same controlled resource and conflict validation as lesson requirements.
+- By Class and By Teacher modes are implemented.
+- 2/4/6/8/12/16/24/32 table density, paging and search are implemented.
+- Click-to-edit, drag/swap, one-period shift, remove, lock and version-checked title rename are implemented.
+- Click-to-add on empty teaching cells uses the same controlled resource and conflict validation as lesson requirements.
 - Validate all moves against teacher/class availability and double-booking.
 - Ensure sort order never changes the real day/period being edited.
-- Add draft save, audit events and return-to-schedule behavior.
+- Draft saving, audit events and return-to-board when opening saved versions are implemented.
 
 Exit criteria: operators can correct a generated draft entirely in Amend 4-up, save it, reopen it and reproduce the same result.
 
@@ -435,11 +435,10 @@ Exit criteria: operators can correct a generated draft entirely in Amend 4-up, s
 
 **Estimated duration:** 1–2 weeks
 
-- Generate By Instructional Class and By Teacher reports from the same approved version.
-- Compare output against the latest supplied PDFs.
-- Add version, timestamp and audit metadata.
-- Add executive read-only timetable view and downloads.
-- Add approval and publish status before attendance users consume the timetable.
+- By Instructional Class and By Teacher reports are generated from the same saved version, with version/timestamp/audit metadata.
+- Executives have approved-only timetable reads and downloads.
+- Approval and publication status gate timetable consumption by attendance.
+- Compare rendered output against the latest supplied PDFs; pixel-level/golden parity remains open.
 
 Exit criteria: both report types reconcile with the approved grid and the report renderer does not mutate timetable data.
 
@@ -452,7 +451,7 @@ Exit criteria: both report types reconcile with the approved grid and the report
 - Locked-slot protection.
 - Drag/swap validation in both directions.
 - Edit-after-sort uses the visible weekday.
-- Rename cascade and audit history.
+- Draft title rename preserves saved history and records an audit event.
 - Draft versus approved version protection.
 - PDF golden-file/layout comparison for both outputs.
 - Import/export reconciliation with representative `.pri` projects.

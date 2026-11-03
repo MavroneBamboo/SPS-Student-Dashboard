@@ -1,6 +1,6 @@
 # Timetable generation API
 
-Weekly drafts can be generated from their frozen configuration in both the API and the production timetable browser. Operators can fill pending lessons or explicitly replace unlocked lessons; the browser displays completion and unplaced requirements. Publishing coordination, fixed events, composite teacher groups and exports remain future work.
+Weekly drafts can be generated from their frozen configuration in both the API and the production timetable browser. Operators can fill pending lessons or explicitly replace unlocked lessons; the browser displays completion and unplaced requirements. Approved timetables can be published for attendance consumption, and audited Excel/print exports are available. Fixed events and composite teacher groups remain future work.
 
 ## Generate
 
@@ -32,4 +32,4 @@ Operators can resolve partial results with manual amendments, revised reference 
 
 ## Verification
 
-Pure planner tests cover deterministic repair beyond first-fit, explicit search exhaustion, full/remainder blocks, lunch/gaps, rules/daily limits, no legal availability, actual-time clashes across different period labels and manual/lock preservation. API tests cover saved reports/grid/revision, repeat runs, explicit replacement, approval restrictions, permissions, invalid inputs, stale revisions/configuration, damaged grids, simultaneous generation and rollback after a database failure. Chromium browser acceptance tests now cover manual placement, editing, locking, generation and approval, plus IT resource setup. Production-scale runtime measurements, teacher-oriented views and report exports remain outstanding.
+Pure planner tests cover deterministic repair beyond first-fit, explicit search exhaustion, full/remainder blocks, lunch/gaps, rules/daily limits, no legal availability, actual-time clashes across different period labels and manual/lock preservation. API tests cover saved reports/grid/revision, repeat runs, explicit replacement, approval restrictions, permissions, invalid inputs, stale revisions/configuration, damaged grids, simultaneous generation and rollback after a database failure. Chromium acceptance tests cover manual placement, editing, locking, generation, approval, resource setup and Amend 4-up swap/move/shift/rename actions. Production-scale runtime measurements, fixed events and composite teacher groups remain outstanding.

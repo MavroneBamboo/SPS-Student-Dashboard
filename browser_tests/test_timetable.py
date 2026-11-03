@@ -176,6 +176,108 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     assert len(teacher_page_boxes) == 1
 
 
+def test_amend_4_up_select_swap_drag_shift_and_rename(page, make_account, live_url):
+    admin = make_account("IT Administrator")
+    login_response = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
+    assert login_response.status == 200
+    headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+    ensure_academic_year(page, headers, "2026", "2026-01-01", "2026-12-31")
+    suffix = uuid4().hex[:8].upper()
+
+    def create(path, payload):
+        response = page.request.post(live_url + path, data=payload, headers=headers)
+        assert response.status == 201, response.text()
+        return response.json()
+
+    availability = {day: ["P1", "P2", "P3", "P4"] for day in ("MON", "TUE", "WED", "THU", "FRI")}
+    teacher = create(
+        "/api/v1/timetable/teachers", {"short_code": f"T{suffix}", "full_name": "Amend parity teacher", "availability": availability}
+    )
+    subject_a = create("/api/v1/timetable/subjects", {"code": f"A{suffix}", "name": "Amend parity subject A"})
+    subject_b = create("/api/v1/timetable/subjects", {"code": f"B{suffix}", "name": "Amend parity subject B"})
+    class_item = create("/api/v1/timetable/classes", {"code": f"C{suffix}", "name": "Amend parity class"})
+    create(
+        "/api/v1/timetable/rules",
+        {
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": class_item["id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+    )
+    requirements = [
+        create(
+            "/api/v1/timetable/lessons",
+            {
+                "academic_year": "2026",
+                "instructional_class_id": class_item["id"],
+                "teacher_id": teacher["id"],
+                "subject_id": subject["id"],
+                "weekly_count": 1,
+                "block_length": 1,
+            },
+        )
+        for subject in (subject_a, subject_b)
+    ]
+    version = create(
+        "/api/v1/timetable/versions",
+        {"name": f"Amend parity {suffix}", "academic_year": "2026", "week_start": "2026-10-26", "class_ids": [class_item["id"]]},
+    )
+    for requirement, day in zip(requirements, ("MON", "TUE"), strict=True):
+        response = page.request.post(
+            live_url + f"/api/v1/timetable/versions/{version['id']}/placements",
+            data={
+                "expected_revision": version["revision"],
+                "lesson_requirement_id": requirement["id"],
+                "weekday": day,
+                "start_period": "P1",
+                "period_count": 1,
+            },
+            headers=headers,
+        )
+        assert response.status == 201, response.text()
+        version = response.json()
+
+    page.goto(live_url + "/ui/")
+    page.get_by_label("Username", exact=True).fill(admin["username"])
+    page.get_by_label("Password", exact=True).fill(admin["password"])
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    page.get_by_role("button", name="Reports & export", exact=True).click()
+    expect(page.locator("#timetable-version-rows")).to_contain_text(f"Amend parity {suffix}")
+    timetable_row = page.locator("#timetable-version-rows tr").filter(has_text=f"Amend parity {suffix}")
+    timetable_row.locator("button").click()
+    page.locator("#timetable-board-mode").select_option("amend")
+
+    page.get_by_role("button", name="Rename draft", exact=True).click()
+    page.locator('#timetable-rename-form input[name="name"]').fill(f"Renamed parity {suffix}")
+    page.get_by_role("button", name="Save draft name", exact=True).click()
+    expect(page.locator("#timetable-editor-title")).to_have_text(f"Renamed parity {suffix}")
+
+    first = page.locator(".amend-grid .lesson-cell").filter(has_text=f"A{suffix}")
+    second = page.locator(".amend-grid .lesson-cell").filter(has_text=f"B{suffix}")
+    page.get_by_role("button", name="Select blocks to swap", exact=True).click()
+    first.click()
+    second.click()
+    expect(page.get_by_role("button", name="Swap selected (2/2)", exact=True)).to_be_enabled()
+    page.get_by_role("button", name="Swap selected (2/2)", exact=True).click()
+    first = page.locator(".amend-grid .lesson-cell").filter(has_text=f"A{suffix}")
+    expect(first).to_have_attribute("aria-label", re.compile(r"TUE.*P1"))
+
+    first.click()
+    page.get_by_role("button", name="Shift one period earlier", exact=True).click()
+    first = page.locator(".amend-grid .lesson-cell").filter(has_text=f"A{suffix}")
+    expect(first).to_have_attribute("aria-label", re.compile(r"MON.*P5"))
+
+    monday = page.locator(".amend-grid tbody tr").filter(has=page.locator("td:first-child", has_text="MON"))
+    target = monday.locator("td").nth(4).locator("button")
+    first.drag_to(target)
+    first = page.locator(".amend-grid .lesson-cell").filter(has_text=f"A{suffix}")
+    expect(first).to_have_attribute("aria-label", re.compile(r"MON.*P4"))
+
+
 def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(page, make_account, live_url):
     admin = make_account("IT Administrator")
     login_response = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})

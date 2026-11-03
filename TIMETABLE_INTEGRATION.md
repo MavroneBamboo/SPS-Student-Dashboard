@@ -2,13 +2,13 @@
 
 Academic-year configuration checkpoint (3 November 2026): student year snapshots and new schedule planning use the managed catalog in [ACADEMIC_YEARS.md](ACADEMIC_YEARS.md). Existing timetable and rule year labels are preserved without inferred date ranges; IT must configure and activate each year before creating new requirements, active rules or weekly drafts. Effective rule dates and the entire Monday-to-Friday draft week are validated against configured boundaries.
 
-Attendance boundary (26 October 2026): the browser supports daily attendance sessions/records but does not create them from unpublished timetable drafts. Published timetable-to-attendance mapping, instructional/student class reconciliation and historical roster policies remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
+Attendance integration (3 November 2026): IT Administrators maintain a dedicated student-class-to-instructional-class map. Operators can load classes from the current published timetable for a selected date and create provenance-linked attendance sessions. This mapping is separate from the intake workbook crosswalk. Pre-rollout class/status history still requires reconciliation for historical sessions. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md) and [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md).
 
-Profile boundary (26 October 2026): the production browser now supports core student profile processing and status history. Student class names still need an explicit mapping to instructional timetable class IDs during reconciliation; this increment does not infer that mapping or create timetable memberships. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
+Profile boundary (3 November 2026): the production browser supports profile processing, status/class history, managed categories/institutions and academic-year selectors. Intake class labels and attendance student classes each have their own IT-managed mapping to instructional classes. Verified pre-rollout history and source workbook reconciliation remain open. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md) and [ACADEMIC_YEARS.md](ACADEMIC_YEARS.md).
 
-UI redesign (27 October 2026): the actual `/ui/` timetable workspace now follows the supplied “SPS Timetable — UI UX Redesign” reference: navy timetable sidebar, By class / By teacher weekly boards, selected class/teacher controls, report export/print view, teacher/class/subject resource tabs, and a separate periods/rules screen. Clickable Amend 4-up remains available as a board mode with 4/8/12/16 class paging. Period display is P1, P2, P3 Lunch/Muster, P4 and P5 while stable API slot codes remain unchanged. Default periods can be edited; class/cluster overrides replace the matching default for future drafts. Superuser, IT and Operator access follows the backend role matrix. PDF export opens a browser print view; native server-generated PDF formatting, drag/swap editing, publishing coordination and fixed events remain follow-up work. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) and [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
+UI redesign (3 November 2026): the actual `/ui/` timetable workspace follows the supplied “SPS Timetable — UI UX Redesign” reference: navy timetable sidebar, By class / By teacher weekly boards, report export/print view, teacher/class/subject resource tabs, and a separate periods/rules screen. Amend 4-up supports 2/4/6/8/12/16/24/32 class paging, click-to-add/edit, drag-to-move, drag or select-to-swap, one-period shifts, locking and audited draft title changes. Period display is P1, P2, P3 Lunch/Muster, P4 and P5 while stable API slot codes remain unchanged. Default periods can be edited; class/cluster overrides replace the matching default for future drafts. PDF export opens a browser print view; server-generated PDF, fixed events and draft copy/rebase remain follow-up work. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) and [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
 
-Generation increment (26 October 2026): the backend supports deterministic weekly generation with bounded iterative repair, shared manual validations, per-block unplaced explanations and persisted revision-linked reports. Fill-pending preserves existing blocks; explicit replace-unlocked retains all locked blocks. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Browser Amend 4-up, fixed events, composite teacher mapping, legacy reconciliation, publishing and PDF rendering remain outstanding; earlier increment descriptions below record their delivery sequence.
+Generation increment (26 October 2026): the backend supports deterministic weekly generation with bounded iterative repair, shared manual validations, per-block unplaced explanations and persisted revision-linked reports. Fill-pending preserves existing blocks; explicit replace-unlocked retains all locked blocks. See [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). Fixed events, composite teacher groups, legacy project reconciliation and server-side PDF rendering remain outstanding; earlier increment descriptions below record their delivery sequence.
 
 ## 1. Source system reviewed
 
@@ -71,28 +71,27 @@ The clickable prototype now exposes this prerequisite through **Resource setup**
 
 ## 3. Why Amend 4-up is the key capability
 
-The production backend persists weekly drafts and the operations required by this workspace: add/amend/move, atomic swap, remove and block lock/unlock. It snapshots rules, resource labels/availability and inherited period times, preserves approved history, and reports pending requirement blocks. Edits revalidate the complete resulting grid and current rules under the timetable transaction lock. Approval is IT Administrator-only and requires completeness; Executive reads are approved-only. Generation uses these services and saves revision-linked planning reports. The first production browser increment now supports class-grid operations and generation; teacher grid modes and report rendering still need implementation. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) and [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
+The production backend persists weekly drafts and the operations required by this workspace: add/amend/move, atomic swap, remove, lock/unlock and version-checked title changes. It snapshots rules, resource labels/availability and inherited period times, preserves approved history, and reports pending requirement blocks. Edits revalidate the complete resulting grid and current rules under the timetable transaction lock. Approval is IT Administrator-only and requires completeness; Executive reads are approved-only. Generation uses these services and saves revision-linked planning reports. The browser provides By class/By teacher views, Amend 4-up, validated drag/swap/shift actions, audited rename, generation, publication and report rendering. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) and [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
 
-Scheduling-rule resolution now has its own implementation slice: stable class/cluster IDs, inclusive effective dates, validated rule definitions and versioned edits. The resolver must find exactly one applicable rule for every planned class; a class rule and its cluster rule may not overlap. PostgreSQL guards and service validation also prevent membership changes from introducing conflicting scopes. Existing text-only rules remain unresolved until IT explicitly binds or archives them. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md). This supplies the prerequisite service for future generation and manual placement; those workflows still require implementation.
+Scheduling-rule resolution uses stable class/cluster IDs, inclusive effective dates, validated rule definitions and versioned edits. The resolver finds exactly one applicable rule for every planned class; a class rule and its cluster rule may not overlap. PostgreSQL guards and service validation also prevent membership changes from introducing conflicting scopes. Existing text-only rules remain unresolved until IT explicitly binds or archives them. These services are used by timetable generation and manual placement. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 
 Amend 4-up is the practical operational tool for finishing a generated timetable. It shows multiple mini-grids on one page and lets an operator inspect and correct the timetable in the same visual arrangement used by the printed reports.
 
-The integrated system should make this the primary timetable workspace, with:
+The implemented Amend 4-up workspace provides:
 
 - By Class / By Teacher toggle.
 - Configurable 2, 4, 6, 8, 12, 16, 24 or 32 tables per page.
 - Previous/Next paging.
 - Search by instructional class, teacher code or full teacher name.
 - Five day rows and five period columns.
-- Double-click cell editing.
-- Drag-and-drop movement and validated swaps.
-- Right-click shift/remove.
+- Click-to-edit, drag-and-drop movement and validated swaps.
+- One-teaching-period shift and remove controls in the lesson editor.
 - Lock/unlock.
-- Double-click title rename with controlled cascade.
+- Version-checked, audited draft title rename.
 - Save amendments directly to the draft timetable.
 - Audit event for every material change.
 
-The new implementation must retain the legacy fixes: the lunch column must render but reject moves, teacher double-booking must be blocked, Amend changes must sync back to Schedule, and editing after Day sorting must operate on the displayed weekday rather than a stale row index.
+The implementation retains these scheduling invariants: the lunch column renders but rejects moves, teacher double-booking is blocked, Amend changes persist to the saved draft, and weekday identifiers remain stable across sorting and paging.
 
 ## 4. Integration with the dashboard system
 
@@ -105,7 +104,7 @@ The timetable becomes a module in the same authenticated application:
 | Operator | Create drafts, generate, amend, save and export |
 | Executive | View approved timetable and download reports |
 
-The 2023 intake workbook's source class labels now map through the IT-managed crosswalk to active instructional classes. Student records remain separate from instructional class schedules: a timetable class is a teaching group, while attendance and intake contain individual students and class/status history. The student profile still stores the class name, so general category/institution catalogs, normalized manual profile references and historical attendance reconciliation remain follow-up work.
+The 2023 intake workbook's source class labels map through the IT-managed crosswalk to active instructional classes. Attendance uses its own IT-managed mapping from student profile class to instructional class; the two mappings are not shared. Student records remain separate from instructional schedules: a timetable class is a teaching group, while attendance and intake contain individual students and class/status history. Profile class entry remains a text label, and verified historical assignment reconciliation and institution-history tracking remain follow-up work.
 
 ## 5. Prototype acceptance walkthrough
 

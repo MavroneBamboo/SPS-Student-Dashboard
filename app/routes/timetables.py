@@ -13,6 +13,7 @@ from app.schemas import (
     TimetableGenerateRequest,
     TimetableLockRequest,
     TimetablePlacementWrite,
+    TimetableRenameRequest,
     TimetableRevisionRequest,
     TimetableSwapRequest,
 )
@@ -249,6 +250,23 @@ def create_draft(payload: TimetableDraftCreate, db: DbSession, claims: Claims) -
 @router.get("/{version_id}")
 def get_version(version_id: int, db: DbSession, claims: Claims) -> dict:
     return _view(db, _get(db, version_id, claims))
+
+
+@router.patch("/{version_id}/name", dependencies=[EDIT_ACCESS])
+def rename_version(version_id: int, payload: TimetableRenameRequest, db: DbSession, claims: Claims) -> dict:
+    version, _, _ = _mutation(db, version_id, payload.expected_revision, claims)
+    if version.name == payload.name:
+        raise HTTPException(status_code=422, detail="Choose a different timetable name")
+    previous_name = version.name
+    version.name = payload.name
+    return _finish(
+        db,
+        version,
+        int(claims["sub"]),
+        payload.expected_revision,
+        "timetable.version.renamed",
+        {"before": previous_name, "after": payload.name},
+    )
 
 
 @router.post("/{version_id}/placements", status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
