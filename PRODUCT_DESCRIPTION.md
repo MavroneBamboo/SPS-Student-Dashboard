@@ -138,7 +138,7 @@ The dashboard will reproduce the business meaning of the current workbook sheets
 - Trends by day, month, academic year and class.
 - Printable executive summaries.
 
-Dashboard results must be based on committed database data and show the last refresh timestamp and active filter context. Class filters apply to student and attendance results; category, institution, status and academic-year filters apply to current student profiles; attendance date filters apply to sessions. Active student summaries include institution breakdown and age values from their recorded academic-year snapshots.
+Dashboard results must be based on committed database data and show the last refresh timestamp and active filter context. Class filters apply to student and attendance results; category, institution, status and academic-year filters apply to current student profiles; attendance date filters apply to sessions. Active student summaries include institution breakdown and age values from their recorded academic-year snapshots. Operators and Executives can download the filtered aggregate dashboard workbook; it contains no student-level personal information and each export is audited.
 
 ### 4.5 Excel and UiPath compatibility
 

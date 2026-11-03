@@ -5,13 +5,14 @@ import json
 from datetime import UTC, date, datetime
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import func, select
 
+from app.audit import record_event
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
 from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent, Student
@@ -33,9 +34,12 @@ def dashboard(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict:
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="Attendance from must be on or before attendance to")
+    class_filter = class_name.strip() if class_name else None
     student_query = select(Student)
-    if class_name:
-        student_query = student_query.where(Student.class_name == class_name.strip())
+    if class_filter:
+        student_query = student_query.where(Student.class_name == class_filter)
     if category_id is not None:
         student_query = student_query.where(Student.category_id == category_id)
     if institution_id is not None:
@@ -60,8 +64,8 @@ def dashboard(
             by_age[age_key] = by_age.get(age_key, 0) + 1
 
     session_query = select(AttendanceSession)
-    if class_name:
-        session_query = session_query.where(AttendanceSession.class_name == class_name)
+    if class_filter:
+        session_query = session_query.where(AttendanceSession.class_name == class_filter)
     if date_from:
         session_query = session_query.where(AttendanceSession.session_date >= date_from)
     if date_to:
@@ -100,7 +104,7 @@ def dashboard(
         )
     return {
         "filters": {
-            "class_name": class_name.strip() if class_name else None,
+            "class_name": class_filter,
             "category_id": category_id,
             "institution_id": institution_id,
             "student_status": student_status.strip().upper() if student_status else None,
@@ -127,6 +131,99 @@ def dashboard(
             "trend": trend,
         },
     }
+
+
+@router.get("/dashboard.xlsx", dependencies=[Depends(require_roles(*READ_ROLES))])
+def dashboard_xlsx(
+    db: DbSession,
+    claims: Claims,
+    class_name: str | None = Query(default=None, max_length=120),
+    category_id: int | None = Query(default=None, ge=1),
+    institution_id: int | None = Query(default=None, ge=1),
+    student_status: str | None = Query(default=None, max_length=40),
+    academic_year: str | None = Query(default=None, max_length=20),
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Response:
+    data = dashboard(db, claims, class_name, category_id, institution_id, student_status, academic_year, date_from, date_to)
+    workbook = Workbook()
+    summary = workbook.active
+    summary.title = "Dashboard Summary"
+    summary.append(["SPS Student Dashboard | Executive Summary"])
+    summary.append(["Refreshed at (UTC)", data["refreshed_at"]])
+    summary.append(["Report note", "Aggregate report; contains no student-level personal data."])
+    summary.append([])
+    summary.append(["Selected filters"])
+    for key, value in data["filters"].items():
+        summary.append([key.replace("_", " ").title(), value if value is not None else "All"])
+    summary.append([])
+    summary.append(["Metric", "Value"])
+    summary_headers = summary[summary.max_row]
+    summary.append(["Matching profiles", data["students"]["total"]])
+    summary.append(["Active students", data["students"]["active"]])
+    summary.append(["Attendance sessions", data["attendance"]["sessions"]])
+    summary.append(["Expected attendance", data["attendance"]["expected"]])
+    summary.append(["Present or late", data["attendance"]["present_or_late"]])
+    summary.append(["Recorded attendance entries", data["attendance"]["recorded"]])
+    summary.append(["Missing attendance entries", data["attendance"]["missing"]])
+    summary.append(["Attendance rate (%)", data["attendance"]["rate"]])
+
+    breakdown = workbook.create_sheet("Student Breakdowns")
+    breakdown.append(["Dimension", "Value", "Active students"])
+    for dimension, key in (
+        ("Class", "by_class"),
+        ("Category", "by_category"),
+        ("Institution", "by_institution"),
+        ("Academic year · age", "by_age"),
+    ):
+        for value, count in data["students"][key].items():
+            breakdown.append([dimension, value, count])
+
+    attendance = workbook.create_sheet("Attendance Sessions")
+    attendance.append(["Date", "Class", "Session", "Present / late", "Recorded", "Expected", "Rate (%)"])
+    for row in data["attendance"]["trend"]:
+        attendance.append(
+            [row["date"], row["class"], row["session"], row["present_or_late"], row["recorded"], row["expected"], row["rate"]]
+        )
+    if attendance.max_row == 1:
+        attendance.append(["No attendance sessions match the selected filters."])
+
+    header_fill = PatternFill("solid", fgColor="17365D")
+    header_font = Font(color="FFFFFF", bold=True)
+    for sheet, header_row in ((summary, summary_headers[0].row), (breakdown, 1), (attendance, 1)):
+        sheet.freeze_panes = f"A{header_row + 1}"
+        sheet.sheet_view.showGridLines = False
+        for cell in sheet[header_row]:
+            if cell.value is not None:
+                cell.fill = header_fill
+                cell.font = header_font
+        for row in sheet.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
+        for column in range(1, sheet.max_column + 1):
+            values = [len(str(sheet.cell(row, column).value or "")) for row in range(1, sheet.max_row + 1)]
+            sheet.column_dimensions[get_column_letter(column)].width = min(max(max(values, default=10) + 2, 12), 50)
+        if sheet is not summary:
+            sheet.auto_filter.ref = sheet.dimensions
+
+    output = io.BytesIO()
+    workbook.save(output)
+    record_event(
+        db,
+        int(claims["sub"]),
+        "report.dashboard.exported",
+        "dashboard_report",
+        data["refreshed_at"],
+        {"filters": data["filters"], "refreshed_at": data["refreshed_at"]},
+    )
+    db.commit()
+    filename = f"dashboard-summary-{datetime.now(UTC):%Y%m%d-%H%M%S}.xlsx"
+    return Response(
+        output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/attendance.csv", dependencies=[Depends(require_roles(*READ_ROLES))])

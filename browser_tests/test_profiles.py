@@ -146,6 +146,11 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     expect(page.locator("#metrics .metric").nth(1)).to_have_text("Active students1")
     expect(page.locator("#institution-counts")).to_contain_text("Browser created institution")
     expect(page.locator("#age-counts")).to_contain_text("2026 · 28")
+    with page.expect_download() as download_info:
+        page.get_by_role("button", name="Download dashboard report", exact=True).click()
+    assert download_info.value.suggested_filename.startswith("dashboard-summary-")
+    assert download_info.value.suggested_filename.endswith(".xlsx")
+    expect(page.get_by_role("status")).to_contain_text("Dashboard report workbook downloaded")
 
 
 def test_stale_profile_save_preserves_form_requires_reload_and_revoked_access_clears_data(page, make_account, live_url):

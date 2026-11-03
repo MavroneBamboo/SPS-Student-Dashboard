@@ -91,7 +91,7 @@ async function api(path, method = "GET", body) {
   return data;
 }
 
-async function downloadXlsx(path) {
+async function downloadXlsx(path, successMessage = "Timetable report workbook downloaded.") {
   const started = epoch;
   const activeToken = token;
   let response;
@@ -130,7 +130,7 @@ async function downloadXlsx(path) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  notice("Timetable report workbook downloaded.");
+  notice(successMessage);
 }
 
 async function run(control, action) {
@@ -444,6 +444,11 @@ $("reset-user-form").addEventListener("submit", (event) => {
 $("cancel-reset-user").addEventListener("click", () => { $("reset-user-form").reset(); $("reset-user-form").hidden = true; });
 $("dashboard-filter").addEventListener("submit", (event) => { event.preventDefault(); run(event.currentTarget, showDashboard); });
 for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener("click", () => run($(id), showDashboard));
+$("download-dashboard-report").addEventListener("click", () => run($("download-dashboard-report"), async () => {
+  const fields = Object.fromEntries(new FormData($("dashboard-filter")));
+  const query = new URLSearchParams(Object.entries(fields).filter(([, value]) => value));
+  await downloadXlsx(`/reports/dashboard.xlsx?${query}`, "Dashboard report workbook downloaded.");
+}));
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
 $("refresh-import-retention").addEventListener("click", () => run($("refresh-import-retention"), refreshImportRetention));
 $("preview-import-purge").addEventListener("click", () => run($("preview-import-purge"), () => requestImportPurge(false)));
