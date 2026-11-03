@@ -34,6 +34,7 @@ def test_dashboard_filters_current_profiles_by_category_institution_status_and_y
             "institution_id": institution_a["id"],
             "status": "ACTIVE",
             "academic_year": "2026",
+            "age_in_academic_year": 30,
         },
         {
             "pris_no": f"DASH-{suffix}-2",
@@ -52,6 +53,7 @@ def test_dashboard_filters_current_profiles_by_category_institution_status_and_y
             "institution_id": institution_a["id"],
             "status": "ACTIVE",
             "academic_year": "2026",
+            "age_in_academic_year": 21,
         },
     ]
     for profile in profiles:
@@ -76,6 +78,8 @@ def test_dashboard_filters_current_profiles_by_category_institution_status_and_y
         "active": 1,
         "by_class": {profiles[0]["class_name"]: 1},
         "by_category": {category_a["code"]: 1},
+        "by_institution": {"Dashboard institution A": 1},
+        "by_age": {"2026 · 30": 1},
     }
     assert result["filters"] == {
         "class_name": profiles[0]["class_name"],
@@ -96,3 +100,4 @@ def test_dashboard_filters_current_profiles_by_category_institution_status_and_y
     assert inactive.json()["students"]["total"] == 1
     assert inactive.json()["students"]["active"] == 0
     assert inactive.json()["students"]["by_class"] == {}
+    assert inactive.json()["students"]["by_institution"] == {}

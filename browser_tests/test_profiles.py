@@ -122,6 +122,7 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     page.locator('#profile-form select[name="category"]').select_option(label=f"{category_code} · Updated browser category")
     page.locator('#profile-form select[name="institution_id"]').select_option(label=f"{institution_code} · Browser created institution")
     page.locator("#profile-form").get_by_label("Academic year", exact=True).fill("2026")
+    page.locator("#profile-form").get_by_label("Age in academic year", exact=True).fill("28")
     page.get_by_label("Status effective date", exact=True).fill("2026-11-03")
     page.get_by_role("button", name="Save profile", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text(f"Saved student {pris_no}")
@@ -143,6 +144,8 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     page.get_by_role("button", name="Apply filters", exact=True).click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
     expect(page.locator("#metrics .metric").nth(1)).to_have_text("Active students1")
+    expect(page.locator("#institution-counts")).to_contain_text("Browser created institution")
+    expect(page.locator("#age-counts")).to_contain_text("2026 · 28")
 
 
 def test_stale_profile_save_preserves_form_requires_reload_and_revoked_access_clears_data(page, make_account, live_url):

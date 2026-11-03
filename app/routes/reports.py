@@ -48,9 +48,16 @@ def dashboard(
     active_students = [student for student in students if student.status == "ACTIVE"]
     by_class: dict[str, int] = {}
     by_category: dict[str, int] = {}
+    by_institution: dict[str, int] = {}
+    by_age: dict[str, int] = {}
     for student in active_students:
         by_class[student.class_name] = by_class.get(student.class_name, 0) + 1
         by_category[student.category] = by_category.get(student.category, 0) + 1
+        institution_name = student.institution_ref.name if student.institution_ref else "Unassigned"
+        by_institution[institution_name] = by_institution.get(institution_name, 0) + 1
+        if student.age_in_academic_year is not None:
+            age_key = f"{student.academic_year or 'Unspecified year'} · {student.age_in_academic_year}"
+            by_age[age_key] = by_age.get(age_key, 0) + 1
 
     session_query = select(AttendanceSession)
     if class_name:
@@ -107,6 +114,8 @@ def dashboard(
             "active": len(active_students),
             "by_class": dict(sorted(by_class.items())),
             "by_category": dict(sorted(by_category.items())),
+            "by_institution": dict(sorted(by_institution.items())),
+            "by_age": dict(sorted(by_age.items())),
         },
         "attendance": {
             "sessions": len(sessions),
