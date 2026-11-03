@@ -6,8 +6,10 @@ does not deserialize .NET BinaryFormatter payloads and never writes to the input
 
 from __future__ import annotations
 
+import io
 import json
 import zipfile
+import zlib
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,15 +58,21 @@ def _decrypt_member(data: bytes, key: bytes, name: str) -> Any:
     return value
 
 
-def read_legacy_pri(path: str | Path, key: bytes) -> LegacyPriData:
+def read_legacy_pri(source: str | Path | bytes, key: bytes) -> LegacyPriData:
     """Read the six known members, with archive bounds and exact-name checks."""
-    source = Path(path)
     if len(key) not in (16, 24, 32):
         raise LegacyPriError("AES key must be 16, 24 or 32 bytes")
     try:
-        if source.stat().st_size > MAX_ARCHIVE_BYTES:
+        if isinstance(source, bytes):
+            archive_bytes = source
+        else:
+            source_path = Path(source)
+            if source_path.stat().st_size > MAX_ARCHIVE_BYTES:
+                raise LegacyPriError(".pri archive exceeds the size limit")
+            archive_bytes = source_path.read_bytes()
+        if len(archive_bytes) > MAX_ARCHIVE_BYTES:
             raise LegacyPriError(".pri archive exceeds the size limit")
-        with zipfile.ZipFile(source) as archive:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             entries = archive.infolist()
             names = [entry.filename for entry in entries]
             if len(names) != len(set(names)):
@@ -76,7 +84,7 @@ def read_legacy_pri(path: str | Path, key: bytes) -> LegacyPriData:
             if any(entry.file_size > MAX_MEMBER_BYTES for entry in entries):
                 raise LegacyPriError(".pri member exceeds the size limit")
             payloads = {entry.filename: _decrypt_member(archive.read(entry), key, entry.filename) for entry in entries}
-    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+    except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError, EOFError, NotImplementedError, zlib.error) as exc:
         raise LegacyPriError("Unable to read the .pri archive") from exc
     return LegacyPriData(
         teachers=payloads["R01.bin"],
@@ -192,8 +200,14 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
         if resource_tuple not in requirements:
             issues.append({"code": "placement_without_lesson_requirement", "count": actual})
 
-    if data.placements:
-        issues.append({"code": "legacy_period_mapping_required", "count": len(data.placements)})
+    if data.teachers or data.placements:
+        issues.append(
+            {
+                "code": "legacy_period_mapping_required",
+                "count": len(data.placements),
+                "availability_vectors": len(data.teachers),
+            }
+        )
 
     codes = Counter(issue["code"] for issue in issues)
     return {

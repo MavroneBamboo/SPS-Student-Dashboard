@@ -529,6 +529,24 @@ class StudentImportBatch(Base):
     payload_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class LegacyTimetableImport(Base):
+    __tablename__ = "legacy_timetable_imports"
+    __table_args__ = (
+        UniqueConstraint("source_sha256", name="uq_legacy_timetable_import_sha256"),
+        CheckConstraint(
+            "status IN ('REVIEW_REQUIRED', 'READY_FOR_IMPORT', 'IMPORTED', 'REJECTED')", name="ck_legacy_timetable_import_status"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    source_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    report_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="REVIEW_REQUIRED", server_default="REVIEW_REQUIRED", index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
     __table_args__ = (

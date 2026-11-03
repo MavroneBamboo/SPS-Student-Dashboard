@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_encryption_key: str = Field(default="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=", repr=False)
     app_encryption_previous_keys: str = Field(default="", repr=False)
     student_import_retention_days: int = Field(default=0, ge=0, le=3650)
+    legacy_pri_key_hex: str = Field(default="", repr=False)
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 

@@ -81,6 +81,7 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
         migrate("head")
         migrate("head")
         assert "lesson_requirements" in inspect(database).get_table_names()
+        assert "legacy_timetable_imports" in inspect(database).get_table_names()
         with database.connect() as connection:
             for table in (users, students, teachers, rules):
                 assert list(connection.execute(select(table))) == snapshots[table.name]

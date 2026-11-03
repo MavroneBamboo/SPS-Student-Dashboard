@@ -12,6 +12,7 @@ from app.routes import (
     attendance,
     auth,
     health,
+    legacy_timetable_imports,
     lessons,
     reports,
     rules,
@@ -50,6 +51,7 @@ app.include_router(health.router)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(rules.router, prefix="/api/v1")
 app.include_router(timetable_resources.router, prefix="/api/v1")
+app.include_router(legacy_timetable_imports.router, prefix="/api/v1")
 app.include_router(lessons.router, prefix="/api/v1")
 app.include_router(timetables.router, prefix="/api/v1")
 app.include_router(timetable_exports.router, prefix="/api/v1")

@@ -5,7 +5,7 @@ import pytest
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from app.legacy_pri import LegacyPriError, read_legacy_pri, reconcile_legacy_pri
+from app.legacy_pri import MAX_ARCHIVE_BYTES, LegacyPriError, read_legacy_pri, reconcile_legacy_pri
 
 KEY = bytes(range(16))
 
@@ -101,6 +101,11 @@ def test_rejects_invalid_key_size(tmp_path):
     write_pri(path)
     with pytest.raises(LegacyPriError, match="AES key"):
         read_legacy_pri(path, b"short")
+
+
+def test_rejects_oversized_archive_before_zip_parsing():
+    with pytest.raises(LegacyPriError, match="size limit"):
+        read_legacy_pri(b"x" * (MAX_ARCHIVE_BYTES + 1), KEY)
 
 
 def test_reports_missing_placement_teacher_without_fabricating_a_clash(tmp_path):
