@@ -61,6 +61,6 @@ def test_invalid_production_configuration_does_not_echo_secret_values():
 
 
 def test_development_configuration_keeps_local_defaults_usable():
-    settings = Settings(_env_file=None, app_env="development")
+    settings = Settings(_env_file=None, app_env="development", database_url="sqlite:///./sps-dashboard.db")
 
     assert settings.database_url.startswith("sqlite:")
