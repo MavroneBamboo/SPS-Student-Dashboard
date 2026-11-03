@@ -1,3 +1,4 @@
+from conftest import ensure_academic_year
 from sqlalchemy import select
 
 from app.db import SessionLocal
@@ -7,6 +8,7 @@ from app.models import AuditEvent, TimetableVersion
 def _approved_week(lesson_context, *, name="Publishable timetable", start_period="P1"):
     client, headers, references = lesson_context
     academic_year = f"PUB-{references['instructional_class_id']}"
+    ensure_academic_year(client, headers, academic_year)
     requirement = client.post(
         "/api/v1/timetable/lessons",
         json={**references, "academic_year": academic_year, "weekly_count": 2, "block_length": 1},

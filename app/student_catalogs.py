@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models import Institution, StudentCategory
+from app.models import AcademicYear, Institution, StudentCategory
 
 
 def normalize_catalog_code(value: str) -> tuple[str, str]:
@@ -29,3 +29,11 @@ def active_institution(db, institution_id: int | None) -> Institution | None:
     if institution is None or not institution.is_active:
         raise HTTPException(status_code=422, detail="Select an active institution")
     return institution
+
+
+def active_academic_year(db, value: str) -> AcademicYear:
+    code_key = " ".join(value.strip().split()).casefold()
+    year = db.scalar(select(AcademicYear).where(AcademicYear.code_key == code_key).with_for_update())
+    if year is None or not year.is_active or year.starts_on is None or year.ends_on is None:
+        raise HTTPException(status_code=422, detail="Select a configured active academic year")
+    return year

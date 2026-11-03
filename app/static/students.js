@@ -7,6 +7,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   let importBatch = null;
   let categories = [];
   let institutions = [];
+  let academicYears = [];
   const pageSize = 25;
   const form = $("profile-form");
   const profileFields = [
@@ -35,6 +36,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     close();
     categories = [];
     institutions = [];
+    academicYears = [];
     $("new-student").disabled = true;
     offset = 0;
     listRequest += 1;
@@ -100,6 +102,15 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
       if (historical) institutionSelect.add(new Option(`${historical.code} · ${historical.name} (inactive)`, String(historical.id)));
     }
     for (const item of activeInstitutions) institutionSelect.add(new Option(`${item.code} · ${item.name}`, String(item.id)));
+    const academicYearSelect = form.elements.academic_year;
+    academicYearSelect.replaceChildren(new Option("No academic year selected", ""));
+    const activeYears = academicYears.filter((item) => item.is_active);
+    const profileYear = profile?.academic_year?.trim().toLocaleUpperCase();
+    if (profileYear && !activeYears.some((item) => item.code === profileYear)) {
+      const historical = academicYears.find((item) => item.code === profileYear);
+      academicYearSelect.add(new Option(`${historical?.label ?? profile.academic_year} (inactive / historical)`, profile.academic_year));
+    }
+    for (const item of activeYears) academicYearSelect.add(new Option(`${item.label} · ${item.code}`, item.code));
     $("profile-editor").hidden = false;
     $("profile-editor-title").textContent = profile ? "Edit student profile" : "New student profile";
     $("profile-version").textContent = profile ? `Saved version ${profile.version}. Reload if another operator has changed this record.` : "Create a new student using a unique Pris No.";
@@ -139,9 +150,10 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     const newStudentButton = $("new-student");
     newStudentButton.disabled = true;
     try {
-      [categories, institutions] = await Promise.all([
+      [categories, institutions, academicYears] = await Promise.all([
         api("/student-reference/categories"),
         api("/student-reference/institutions"),
+        api("/student-reference/academic-years"),
       ]);
       await list();
     } finally {

@@ -208,15 +208,17 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
     page.get_by_label("Attendance from", exact=True).fill("2026-10-20")
     page.get_by_label("Attendance to", exact=True).fill("2026-10-20")
     page.get_by_role("button", name="Apply filters").click()
-    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students1")
-    expect(page.locator("#metrics .metric").nth(1)).to_have_text("Attendance100%")
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
+    expect(page.locator("#metrics .metric").nth(1)).to_have_text("Active students1")
+    expect(page.locator("#metrics .metric").nth(2)).to_have_text("Attendance100%")
     expect(page.locator("#attendance-trend")).to_contain_text(class_name)
     assert page.locator("#class-counts img").count() == 0
     with SessionLocal() as db:
         db.get(Student, student_id).status = "INACTIVE"
         db.commit()
     page.get_by_role("button", name="Refresh data").click()
-    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students0")
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
+    expect(page.locator("#metrics .metric").nth(1)).to_have_text("Active students0")
     screenshot(page, role.lower().replace(" ", "-") + "-dashboard")
     page.get_by_role("button", name="Sign out", exact=True).click()
     expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()

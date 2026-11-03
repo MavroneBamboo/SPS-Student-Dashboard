@@ -1,6 +1,10 @@
+from conftest import ensure_academic_year
+
+
 def _approved_week(lesson_context):
     client, headers, references = lesson_context
     academic_year = f"ATT-{references['instructional_class_id']}"
+    ensure_academic_year(client, headers, academic_year)
     requirement = client.post(
         "/api/v1/timetable/lessons",
         json={**references, "academic_year": academic_year, "weekly_count": 2, "block_length": 1},

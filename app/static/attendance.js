@@ -6,6 +6,7 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
   let listSequence = 0;
   let detailSequence = 0;
   let scheduledRows = new Map();
+  let academicYears = [];
   let selectedScheduled = null;
   const createForm = $("new-session-form");
   const recordForm = $("attendance-record-form");
@@ -110,12 +111,23 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     }
     if (!data.records.length) { const row = document.createElement("tr"); cell(row, "No attendance has been recorded.").colSpan = 5; $("attendance-record-rows").append(row); }
   }
-  async function show() { showPanel("attendance"); await list(); }
+  async function show() {
+    showPanel("attendance");
+    academicYears = await api("/student-reference/academic-years");
+    const select = $("scheduled-academic-year");
+    const selected = select.value;
+    select.replaceChildren(new Option("Select academic year", ""));
+    for (const year of academicYears.filter((item) => item.is_active)) select.add(new Option(`${year.label} · ${year.code}`, year.code));
+    if (academicYears.some((item) => item.code === selected && item.is_active)) select.value = selected;
+    await list();
+  }
   $("new-attendance-session").addEventListener("click", () => run($("new-attendance-session"), async () => {
     const sequence = ++detailSequence; current = null;
     $("attendance-editor").hidden = true; $("new-session-panel").hidden = false;
     createForm.reset(); createForm.elements.session_date.value = today(); createForm.elements.class_name.replaceChildren();
-    $("scheduled-academic-year").value = today().slice(0, 4);
+    const todayValue = today();
+    const currentYear = academicYears.find((year) => year.is_active && year.starts_on <= todayValue && year.ends_on >= todayValue);
+    $("scheduled-academic-year").value = currentYear?.code ?? "";
     $("scheduled-class-select").replaceChildren(new Option("Select a published class", ""));
     $("scheduled-classes-summary").textContent = "";
     scheduledRows = new Map(); selectedScheduled = null;

@@ -9,6 +9,7 @@ from app.deps import Claims, DbSession, require_roles
 from app.models import SchedulingRule
 from app.scheduling_rules import assert_rule_scope_available, resolve_rules, target_resource
 from app.schemas import ResolvedRule, RuleCreate, RuleResolutionRequest, RuleResponse, RuleUpdate
+from app.student_catalogs import active_academic_year
 from app.timetable_lock import lock_timetable_configuration
 
 router = APIRouter(
@@ -88,6 +89,10 @@ def get_rule(rule_id: int, db: DbSession, claims: Claims) -> RuleResponse:
 @router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def create_rule(payload: RuleCreate, db: DbSession, claims: Claims) -> RuleResponse:
     lock_timetable_configuration(db)
+    year = active_academic_year(db, payload.academic_year)
+    payload.academic_year = year.code
+    if payload.effective_from < year.starts_on or (payload.effective_to and payload.effective_to > year.ends_on):
+        raise HTTPException(status_code=422, detail="Scheduling rule dates must fall within the configured academic year")
     target = target_resource(db, payload.target_type, payload.target_id)
     assert_rule_scope_available(
         db, payload.academic_year, payload.target_type, payload.target_id, payload.effective_from, payload.effective_to
@@ -111,6 +116,10 @@ def create_rule(payload: RuleCreate, db: DbSession, claims: Claims) -> RuleRespo
 def update_rule(rule_id: int, payload: RuleUpdate, db: DbSession, claims: Claims) -> RuleResponse:
     lock_timetable_configuration(db)
     row = _get(db, rule_id)
+    if payload.is_active:
+        year = active_academic_year(db, payload.academic_year)
+        if payload.effective_from < year.starts_on or (payload.effective_to and payload.effective_to > year.ends_on):
+            raise HTTPException(status_code=422, detail="Scheduling rule dates must fall within the configured academic year")
     target = target_resource(db, payload.target_type, payload.target_id)
     if payload.is_active:
         assert_rule_scope_available(

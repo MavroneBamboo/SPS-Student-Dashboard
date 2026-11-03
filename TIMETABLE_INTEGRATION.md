@@ -1,5 +1,7 @@
 # Timetable Integration Notes
 
+Academic-year configuration checkpoint (3 November 2026): student year snapshots and new schedule planning use the managed catalog in [ACADEMIC_YEARS.md](ACADEMIC_YEARS.md). Existing timetable and rule year labels are preserved without inferred date ranges; IT must configure and activate each year before creating new requirements, active rules or weekly drafts. Effective rule dates and the entire Monday-to-Friday draft week are validated against configured boundaries.
+
 Attendance boundary (26 October 2026): the browser supports daily attendance sessions/records but does not create them from unpublished timetable drafts. Published timetable-to-attendance mapping, instructional/student class reconciliation and historical roster policies remain required. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
 Profile boundary (26 October 2026): the production browser now supports core student profile processing and status history. Student class names still need an explicit mapping to instructional timetable class IDs during reconciliation; this increment does not infer that mapping or create timetable memberships. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).

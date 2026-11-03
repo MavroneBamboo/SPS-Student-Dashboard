@@ -1,11 +1,13 @@
 from io import BytesIO
 
+from conftest import ensure_academic_year
 from openpyxl import load_workbook
 
 
 def _report_context(lesson_context):
     client, headers, references = lesson_context
     year = f"EXPORT-{references['instructional_class_id']}"
+    ensure_academic_year(client, headers, year)
     requirement = client.post(
         "/api/v1/timetable/lessons",
         json={**references, "academic_year": year, "weekly_count": 4, "block_length": 2},

@@ -7,6 +7,7 @@ from app.deps import Claims, DbSession, require_roles
 from app.lesson_validation import validate_lesson_resources
 from app.models import LessonRequirement
 from app.schemas import LessonRequirementCreate, LessonRequirementResponse, LessonRequirementUpdate
+from app.student_catalogs import active_academic_year
 from app.timetable_lock import lock_timetable_configuration
 
 router = APIRouter(
@@ -55,6 +56,7 @@ def get_lesson(lesson_id: int, db: DbSession, claims: Claims) -> LessonRequireme
 @router.post("", response_model=LessonRequirementResponse, status_code=status.HTTP_201_CREATED)
 def create_lesson(payload: LessonRequirementCreate, db: DbSession, claims: Claims) -> LessonRequirementResponse:
     lock_timetable_configuration(db)
+    payload.academic_year = active_academic_year(db, payload.academic_year).code
     validate_lesson_resources(db, payload)
     actor_id = int(claims["sub"])
     row = LessonRequirement(**payload.model_dump(), is_active=True, version=1, created_by=actor_id, updated_by=actor_id)
@@ -74,6 +76,8 @@ def create_lesson(payload: LessonRequirementCreate, db: DbSession, claims: Claim
 def update_lesson(lesson_id: int, payload: LessonRequirementUpdate, db: DbSession, claims: Claims) -> LessonRequirementResponse:
     lock_timetable_configuration(db)
     row = _get(db, lesson_id)
+    if payload.is_active:
+        payload.academic_year = active_academic_year(db, payload.academic_year).code
     validate_lesson_resources(db, payload, is_active=payload.is_active)
     previous = _response(row).model_dump()
     changes = payload.model_dump(exclude={"expected_version"})

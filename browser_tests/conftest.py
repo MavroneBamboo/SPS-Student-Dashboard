@@ -3,6 +3,7 @@ import socket
 import threading
 import time
 from urllib.error import URLError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 from uuid import uuid4
 
@@ -60,6 +61,32 @@ def page(browser, live_url):
     page.goto(live_url)
     yield page
     context.close()
+
+
+def ensure_academic_year(page, headers, code, starts_on="2026-01-01", ends_on="2026-12-31"):
+    current = urlsplit(page.url)
+    origin = urlunsplit((current.scheme, current.netloc, "", "", ""))
+    base = origin + "/api/v1/student-reference/academic-years"
+    response = page.request.get(base, headers=headers)
+    assert response.status == 200, response.text()
+    row = next((item for item in response.json() if item["code"] == code.upper()), None)
+    if row is None:
+        result = page.request.post(
+            base,
+            headers=headers,
+            data={"code": code, "label": code, "starts_on": starts_on, "ends_on": ends_on, "is_active": True},
+        )
+        assert result.status == 201, result.text()
+        return result.json()
+    if not row["is_active"] or row["starts_on"] != starts_on or row["ends_on"] != ends_on:
+        result = page.request.patch(
+            f"{base}/{row['id']}",
+            headers=headers,
+            data={"expected_version": row["version"], "starts_on": starts_on, "ends_on": ends_on, "is_active": True},
+        )
+        assert result.status == 200, result.text()
+        return result.json()
+    return row
 
 
 @pytest.fixture

@@ -18,7 +18,9 @@ def _staging_settings(**overrides):
     return Settings(**values)
 
 
-def test_development_settings_keep_local_defaults():
+def test_development_settings_keep_local_defaults(monkeypatch):
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     settings = Settings(_env_file=None)
     assert settings.app_env == "development"
     assert settings.database_url.startswith("sqlite:")

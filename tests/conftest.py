@@ -15,6 +15,28 @@ from app.models import User
 from app.security import hash_password
 
 
+def ensure_academic_year(client, headers, code, starts_on="2026-01-01", ends_on="2026-12-31"):
+    years = client.get("/api/v1/student-reference/academic-years", headers=headers["admin"]).json()
+    year = next((item for item in years if item["code"] == code.upper()), None)
+    if year is None:
+        response = client.post(
+            "/api/v1/student-reference/academic-years",
+            json={"code": code, "label": code, "starts_on": starts_on, "ends_on": ends_on, "is_active": True},
+            headers=headers["admin"],
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+    if not year["is_active"]:
+        response = client.patch(
+            f"/api/v1/student-reference/academic-years/{year['id']}",
+            json={"expected_version": year["version"], "starts_on": starts_on, "ends_on": ends_on, "is_active": True},
+            headers=headers["admin"],
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+    return year
+
+
 @pytest.fixture
 def lesson_context():
     suffix = uuid4().hex[:10]
@@ -30,6 +52,8 @@ def lesson_context():
             login = client.post("/api/v1/auth/login", json={"username": username, "password": password})
             assert login.status_code == 200
             headers[key] = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        for code in ("2023", "2025", "2026"):
+            ensure_academic_year(client, headers, code, f"{code}-01-01", f"{code}-12-31")
         references = {}
         for path, payload, key in (
             ("teachers", {"short_code": f"T{suffix}", "full_name": "Lesson Test Teacher"}, "teacher_id"),

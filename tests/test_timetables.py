@@ -5,6 +5,7 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+from conftest import ensure_academic_year
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
@@ -18,6 +19,7 @@ BASE = "/api/v1/timetable"
 def timetable_context(lesson_context):
     client, headers, lesson = lesson_context
     lesson = {**lesson, "academic_year": f"PLAN-{lesson['instructional_class_id']}"}
+    ensure_academic_year(client, headers, lesson["academic_year"])
     requirement = client.post(f"{BASE}/lessons", json=lesson, headers=headers["operator"])
     assert requirement.status_code == 201
     rule_payload = {
@@ -50,6 +52,23 @@ def _draft(ctx, **changes):
     response = ctx["client"].post(f"{BASE}/versions", json={**ctx["draft"], **changes}, headers=ctx["headers"]["operator"])
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_rule_and_draft_dates_must_fit_configured_academic_year(timetable_context):
+    client = timetable_context["client"]
+    headers = timetable_context["headers"]
+    rule = client.post(
+        f"{BASE}/rules",
+        json={**timetable_context["rule"], "effective_from": "2027-01-01", "effective_to": "2027-06-30"},
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 422
+    draft = client.post(
+        f"{BASE}/versions",
+        json={**timetable_context["draft"], "week_start": "2027-01-04"},
+        headers=headers["operator"],
+    )
+    assert draft.status_code == 422
 
 
 def _body(ctx, version, **changes):

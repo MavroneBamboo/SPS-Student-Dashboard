@@ -232,16 +232,19 @@ async function showDashboard() {
   const fields = Object.fromEntries(new FormData($("dashboard-filter")));
   if (fields.date_from && fields.date_to && fields.date_from > fields.date_to) throw new Error("Attendance from must be on or before attendance to.");
   const query = new URLSearchParams(Object.entries(fields).filter(([, value]) => value));
-  const [categories, institutions, data] = await Promise.all([
+  const [categories, institutions, academicYears, data] = await Promise.all([
     api("/student-reference/categories"),
     api("/student-reference/institutions"),
+    api("/student-reference/academic-years"),
     api(`/reports/dashboard?${query}`),
   ]);
   if (requestId !== dashboardRequest) return;
   const categorySelect = $("dashboard-filter").elements.category_id;
   const institutionSelect = $("dashboard-filter").elements.institution_id;
+  const academicYearSelect = $("dashboard-filter").elements.academic_year;
   const selectedCategory = categorySelect.value;
   const selectedInstitution = institutionSelect.value;
+  const selectedAcademicYear = academicYearSelect.value;
   categorySelect.replaceChildren(new Option("All categories", ""));
   for (const item of categories) {
     categorySelect.add(new Option(`${item.code} · ${item.name}${item.is_active ? "" : " (inactive)"}`, String(item.id)));
@@ -250,8 +253,13 @@ async function showDashboard() {
   for (const item of institutions) {
     institutionSelect.add(new Option(`${item.code} · ${item.name}${item.is_active ? "" : " (inactive)"}`, String(item.id)));
   }
+  academicYearSelect.replaceChildren(new Option("All years", ""));
+  for (const item of academicYears) {
+    academicYearSelect.add(new Option(`${item.label} · ${item.code}${item.is_active ? "" : " (inactive)"}`, item.code));
+  }
   if ([...categorySelect.options].some((option) => option.value === selectedCategory)) categorySelect.value = selectedCategory;
   if ([...institutionSelect.options].some((option) => option.value === selectedInstitution)) institutionSelect.value = selectedInstitution;
+  if ([...academicYearSelect.options].some((option) => option.value === selectedAcademicYear)) academicYearSelect.value = selectedAcademicYear;
   $("metrics").replaceChildren();
   for (const [label, value] of [
     ["Matching profiles", data.students.total],

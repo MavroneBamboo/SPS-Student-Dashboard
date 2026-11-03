@@ -3,12 +3,15 @@ from uuid import uuid4
 
 from playwright.sync_api import expect
 
+from .conftest import ensure_academic_year
+
 
 def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, make_account, live_url, tmp_path):
     admin = make_account("IT Administrator")
     login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
     assert login.status == 200
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    ensure_academic_year(page, headers, "2026", "2026-01-01", "2026-12-31")
     suffix = uuid4().hex[:8].upper()
     availability = {day: ["P1", "P2", "P3", "P4"] for day in ("MON", "TUE", "WED", "THU", "FRI")}
 
@@ -60,7 +63,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     page.get_by_role("button", name="Create weekly draft", exact=True).click()
     form = page.locator("#timetable-create-form")
     form.get_by_label("Draft name", exact=True).fill("Browser Amend 4-up")
-    form.get_by_label("Academic year", exact=True).fill("2026")
+    form.locator('select[name="academic_year"]').select_option("2026")
     form.get_by_label("Week starting Monday", exact=True).fill("2026-10-26")
     class_select = form.locator('select[name="class_ids"]')
     expect(class_select).to_be_visible()
@@ -175,6 +178,8 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
 
 def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(page, make_account, live_url):
     admin = make_account("IT Administrator")
+    login_response = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
+    ensure_academic_year(page, {"Authorization": f"Bearer {login_response.json()['access_token']}"}, "2026", "2026-01-01", "2026-12-31")
     page.goto(live_url + "/ui/")
     page.get_by_label("Username", exact=True).fill(admin["username"])
     page.get_by_label("Password", exact=True).fill(admin["password"])
@@ -217,13 +222,13 @@ def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(pa
     period_form.locator('select[name="scope"]').select_option("CLASS")
     period_form.locator('select[name="target_id"]').select_option(label=f"C{suffix} · Setup Workspace Class")
     period_form.locator('select[name="slot_code"]').select_option("P1")
-    page.get_by_label("Display label", exact=True).fill("Early start")
-    page.get_by_label("Starts at", exact=True).fill("08:00")
-    page.get_by_label("Ends at", exact=True).fill("09:00")
+    period_form.get_by_label("Display label", exact=True).fill("Early start")
+    period_form.get_by_label("Starts at", exact=True).fill("08:00")
+    period_form.get_by_label("Ends at", exact=True).fill("09:00")
     page.get_by_role("button", name="Save period definition", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text("Period definition saved")
     rule_form = page.locator("#timetable-rule-form")
-    rule_form.get_by_label("Academic year", exact=True).fill("2026")
+    rule_form.locator('select[name="academic_year"]').select_option("2026")
     rule_form.locator('select[name="target_type"]').select_option("CLASS")
     rule_form.locator('select[name="target_id"]').select_option(label=f"C{suffix} · Setup Workspace Class")
     rule_form.get_by_label("Effective from", exact=True).fill("2026-01-01")
@@ -232,7 +237,7 @@ def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(pa
     page.get_by_role("button", name="Timetable", exact=True).click()
     page.locator("#lesson-requirements summary").click()
     lesson_form = page.locator("#timetable-lesson-form")
-    lesson_form.get_by_label("Academic year", exact=True).fill("2026")
+    lesson_form.locator('select[name="academic_year"]').select_option("2026")
     lesson_form.locator('select[name="instructional_class_id"]').select_option(label=f"C{suffix} · Setup Workspace Class")
     lesson_form.locator('select[name="teacher_id"]').select_option(label=f"T{suffix} · Setup Workspace Teacher")
     lesson_form.locator('select[name="subject_id"]').select_option(label=f"S{suffix} · Setup Workspace Subject")

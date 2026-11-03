@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from playwright.sync_api import expect
 
+from .conftest import ensure_academic_year
 from .test_browser import login, screenshot
 
 
@@ -16,7 +17,14 @@ def _students(page, live_url, account, count=2):
         response = page.request.post(
             live_url + "/api/v1/students",
             headers=headers,
-            data={"pris_no": f"{class_name}-{index}", "name": f"Attendance Browser {index}", "class_name": class_name, "category": "OP"},
+            data={
+                "pris_no": f"{class_name}-{index}",
+                "name": f"Attendance Browser {index}",
+                "class_name": class_name,
+                "class_effective_date": "2026-10-01",
+                "status_effective": "2026-10-01",
+                "category": "OP",
+            },
         )
         assert response.status == 201
         students.append(response.json())
@@ -76,7 +84,7 @@ def test_operator_attendance_create_lookup_record_correct_count_close_and_dashbo
     page.get_by_role("button", name="Dashboard", exact=True).click()
     page.locator("#dashboard-filter").get_by_label("Class", exact=True).fill(class_name)
     page.get_by_role("button", name="Apply filters", exact=True).click()
-    expect(page.locator("#metrics .metric").nth(2)).to_have_text("Missing attendance records1")
+    expect(page.locator("#metrics .metric").nth(3)).to_have_text("Missing attendance records1")
     page.get_by_role("button", name="Sign out", exact=True).click()
     expect(page.locator("#attendance-record-rows")).to_be_empty()
     expect(page.locator("#attendance-session-rows")).to_be_empty()
@@ -124,6 +132,7 @@ def test_operator_can_create_attendance_from_published_timetable(page, make_acco
     suffix = uuid4().hex[:8].upper()
     class_name = f"SCHED-{suffix}"
     academic_year = f"SCHED-{suffix}"
+    ensure_academic_year(page, admin_headers, academic_year)
 
     def post(path, payload, headers):
         response = page.request.post(live_url + f"/api/v1/{path}", headers=headers, data=payload)
@@ -135,7 +144,14 @@ def test_operator_can_create_attendance_from_published_timetable(page, make_acco
     subject = post("timetable/subjects", {"code": f"S{suffix}", "name": f"Subject {suffix}"}, admin_headers)
     student = post(
         "students",
-        {"pris_no": f"{class_name}-1", "name": "Scheduled Attendance Student", "class_name": class_name, "category": "OP"},
+        {
+            "pris_no": f"{class_name}-1",
+            "name": "Scheduled Attendance Student",
+            "class_name": class_name,
+            "class_effective_date": "2026-10-01",
+            "status_effective": "2026-10-01",
+            "category": "OP",
+        },
         operator_headers,
     )
     assert student["status"] == "ACTIVE"
@@ -205,7 +221,7 @@ def test_operator_can_create_attendance_from_published_timetable(page, make_acco
     page.get_by_role("button", name="Attendance", exact=True).click()
     page.get_by_role("button", name="New session", exact=True).click()
     page.get_by_label("Session date", exact=True).fill("2026-10-19")
-    page.locator("#scheduled-academic-year").fill(academic_year)
+    page.locator("#scheduled-academic-year").select_option(academic_year)
     page.get_by_role("button", name="Load published classes for date", exact=True).click()
     expect(page.locator("#scheduled-classes-summary")).to_contain_text("Published timetable for week of")
     page.locator("#scheduled-class-select").select_option(str(instructional_class["id"]))

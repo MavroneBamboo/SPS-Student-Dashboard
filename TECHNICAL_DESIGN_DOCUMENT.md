@@ -139,6 +139,7 @@ Core entities:
 Important rules:
 
 - `students.pris_no` is the preferred unique business identifier.
+- `academic_years` stores a case-insensitive unique code, label, explicit start/end dates, active state, version and audit ownership. Historical labels discovered during migration are inactive and date-null until IT configures them. New profiles, active lesson requirements/rules and timetable drafts validate against this catalog; rule dates and the full teaching week must fit the selected range.
 - Name-only matching is not allowed for an automatic update when duplicates exist.
 - Attendance uniqueness is enforced by student, session and date according to the agreed attendance policy.
 - Status changes are recorded as history; historical records are not silently overwritten.

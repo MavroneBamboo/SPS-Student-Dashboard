@@ -5,6 +5,7 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+from conftest import ensure_academic_year
 from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -21,8 +22,10 @@ BASE = "/api/v1/timetable"
 @pytest.fixture
 def rules_context(lesson_context):
     client, headers, lesson = lesson_context
+    academic_year = f"RULE-{lesson['instructional_class_id']}"
+    ensure_academic_year(client, headers, academic_year)
     payload = {
-        "academic_year": f"RULE-{lesson['instructional_class_id']}",
+        "academic_year": academic_year,
         "target_type": "CLASS",
         "target_id": lesson["instructional_class_id"],
         "effective_from": "2026-01-01",
@@ -77,9 +80,9 @@ def test_rule_permissions_lifecycle_and_inclusive_date_resolution(rules_context)
         assert client.post(f"{BASE}/rules", json=payload, headers=headers[role]).status_code == 403
     for role in ("executive",):
         assert client.get(f"{BASE}/rules", headers=headers[role]).status_code == 403
-    superuser_rule = client.post(
-        f"{BASE}/rules", json={**payload, "academic_year": f"SU-{payload['academic_year']}"}, headers=headers["superuser"]
-    )
+    superuser_year = f"SU-{payload['academic_year']}"
+    ensure_academic_year(client, headers, superuser_year)
+    superuser_rule = client.post(f"{BASE}/rules", json={**payload, "academic_year": superuser_year}, headers=headers["superuser"])
     assert superuser_rule.status_code == 201
     assert client.get(f"{BASE}/rules", headers=headers["superuser"]).status_code == 200
     created = client.post(f"{BASE}/rules", json=payload, headers=headers["admin"])

@@ -398,6 +398,30 @@ class Institution(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class AcademicYear(Base):
+    __tablename__ = "academic_years"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="ck_academic_year_version"),
+        CheckConstraint(
+            "(starts_on IS NULL AND ends_on IS NULL) OR (starts_on IS NOT NULL AND ends_on IS NOT NULL AND ends_on >= starts_on)",
+            name="ck_academic_year_dates",
+        ),
+        CheckConstraint("is_active = false OR (starts_on IS NOT NULL AND ends_on IS NOT NULL)", name="ck_academic_year_active_configured"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(20), unique=True)
+    code_key: Mapped[str] = mapped_column(String(20), unique=True)
+    label: Mapped[str] = mapped_column(String(80))
+    starts_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Student(Base):
     __tablename__ = "students"
 

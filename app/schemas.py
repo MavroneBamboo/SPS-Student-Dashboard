@@ -355,6 +355,53 @@ class InstitutionResponse(BaseModel):
     version: int
 
 
+class AcademicYearCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    code: str = Field(min_length=1, max_length=20)
+    label: str = Field(min_length=1, max_length=80)
+    starts_on: date
+    ends_on: date
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.ends_on < self.starts_on:
+            raise ValueError("Academic year end date must be on or after its start date")
+        return self
+
+
+class AcademicYearUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    expected_version: int = Field(ge=1)
+    label: str | None = Field(default=None, min_length=1, max_length=80)
+    starts_on: date | None = None
+    ends_on: date | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self):
+        supplied = self.model_fields_set - {"expected_version"}
+        if not supplied:
+            raise ValueError("At least one academic year field must be provided")
+        if any(getattr(self, field) is None for field in supplied - {"starts_on", "ends_on"}):
+            raise ValueError("Academic year fields cannot be null")
+        if ("starts_on" in supplied) != ("ends_on" in supplied):
+            raise ValueError("Update both academic year dates together")
+        if self.starts_on and self.ends_on and self.ends_on < self.starts_on:
+            raise ValueError("Academic year end date must be on or after its start date")
+        return self
+
+
+class AcademicYearResponse(BaseModel):
+    id: int
+    code: str
+    label: str
+    starts_on: date | None
+    ends_on: date | None
+    is_active: bool
+    version: int
+
+
 class AttendanceClassMappingCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     student_class_name: str = Field(min_length=1, max_length=120)

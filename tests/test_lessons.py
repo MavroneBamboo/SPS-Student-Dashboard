@@ -4,6 +4,7 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+from conftest import ensure_academic_year
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -15,6 +16,7 @@ BASE = "/api/v1/timetable"
 
 def test_lesson_lifecycle_permissions_and_concurrent_edits(lesson_context):
     client, headers, payload = lesson_context
+    ensure_academic_year(client, headers, "2027", "2027-01-01", "2027-12-31")
     for role in ("executive",):
         assert client.post(f"{BASE}/lessons", json=payload, headers=headers[role]).status_code == 403
         assert client.get(f"{BASE}/lessons", headers=headers[role]).status_code == 403
@@ -24,9 +26,10 @@ def test_lesson_lifecycle_permissions_and_concurrent_edits(lesson_context):
     lesson_id = created.json()["id"]
     assert created.json()["version"] == 1
     assert client.get(f"{BASE}/lessons", headers=headers["superuser"]).status_code == 200
+    superuser_year = f"SU-{uuid4().hex[:8]}"
+    ensure_academic_year(client, headers, superuser_year)
     assert (
-        client.post(f"{BASE}/lessons", json={**payload, "academic_year": f"SU-{uuid4().hex[:8]}"}, headers=headers["superuser"]).status_code
-        == 201
+        client.post(f"{BASE}/lessons", json={**payload, "academic_year": superuser_year}, headers=headers["superuser"]).status_code == 201
     )
     assert client.post(f"{BASE}/lessons", json=payload, headers=headers["admin"]).status_code == 409
     assert client.post(f"{BASE}/lessons", json={**payload, "academic_year": "2027"}, headers=headers["operator"]).status_code == 201

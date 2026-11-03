@@ -7,6 +7,7 @@ from app.crypto import encrypt_sensitive
 from app.db import SessionLocal
 from app.models import Student, User
 
+from .conftest import ensure_academic_year
 from .test_browser import login, screenshot
 
 
@@ -25,8 +26,11 @@ def _fill_profile(page, pris_no, name="Browser Profile Student"):
     page.get_by_label("Date of birth", exact=True).fill("2000-01-02")
 
 
-def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(page, make_account):
+def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(page, make_account, live_url):
     account = make_account()
+    admin = make_account("IT Administrator")
+    admin_login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
+    ensure_academic_year(page, {"Authorization": f"Bearer {admin_login.json()['access_token']}"}, "2023", "2023-01-01", "2023-12-31")
     pris_no = "BP-" + uuid4().hex[:10].upper()
     login(page, account)
     page.get_by_role("button", name="Student profiles", exact=True).click()
@@ -36,7 +40,7 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     page.get_by_role("button", name="New student", exact=True).click()
     _fill_profile(page, pris_no.lower(), "Browser <img src=x onerror=alert(1)>")
     page.get_by_label("IC number", exact=True).fill("SYNTH-IC-BROWSER-1")
-    profile_form.get_by_label("Academic year", exact=True).fill("2023")
+    profile_form.locator('select[name="academic_year"]').select_option("2023")
     profile_form.get_by_label("Age in academic year", exact=True).fill("23")
     page.get_by_label("Next-of-kin NRIC", exact=True).fill("SYNTH-NRIC-BROWSER-1")
     page.get_by_label("Next-of-kin contact number", exact=True).fill("0000-1111")
@@ -47,7 +51,7 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     expect(page.get_by_label("IC number", exact=True)).to_have_value("SYNTH-IC-BROWSER-1")
     expect(page.locator("#profile-class-history tr")).to_have_count(1)
     expect(page.locator("#profile-class-history")).to_contain_text("2026-10-01")
-    expect(profile_form.get_by_label("Academic year", exact=True)).to_have_value("2023")
+    expect(profile_form.locator('select[name="academic_year"]')).to_have_value("2023")
     expect(page.get_by_label("Next-of-kin NRIC", exact=True)).to_have_value("SYNTH-NRIC-BROWSER-1")
     expect(page.locator("#profile-rows")).to_contain_text("Browser <img")
     assert page.locator("#profile-rows img").count() == 0
@@ -98,6 +102,7 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     operator = make_account("Operator")
     category_code = "WEB-" + uuid4().hex[:8].upper()
     institution_code = "WEBI-" + uuid4().hex[:8].upper()
+    year_code = "WEBAY-" + uuid4().hex[:8].upper()
 
     login(page, admin)
     page.get_by_role("button", name="User administration", exact=True).click()
@@ -118,6 +123,14 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     institution_form.get_by_role("button", name="Add institution").click()
     expect(page.locator("#institution-rows")).to_contain_text(institution_code)
 
+    year_form = page.locator("#create-academic-year-form")
+    year_form.locator('[name="code"]').fill(year_code)
+    year_form.locator('[name="label"]').fill("Browser academic year")
+    year_form.locator('[name="starts_on"]').fill("2026-01-01")
+    year_form.locator('[name="ends_on"]').fill("2026-12-31")
+    year_form.get_by_role("button", name="Add academic year", exact=True).click()
+    expect(page.locator("#academic-year-rows")).to_contain_text(year_code)
+
     page.get_by_role("button", name="Sign out", exact=True).click()
     login(page, operator)
     page.get_by_role("button", name="Student profiles", exact=True).click()
@@ -128,7 +141,7 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     page.get_by_label("Student class", exact=True).fill("Catalog browser class")
     page.locator('#profile-form select[name="category"]').select_option(label=f"{category_code} · Updated browser category")
     page.locator('#profile-form select[name="institution_id"]').select_option(label=f"{institution_code} · Browser created institution")
-    page.locator("#profile-form").get_by_label("Academic year", exact=True).fill("2026")
+    page.locator('#profile-form select[name="academic_year"]').select_option(year_code)
     page.locator("#profile-form").get_by_label("Age in academic year", exact=True).fill("28")
     page.get_by_label("Status effective date", exact=True).fill("2026-11-03")
     page.get_by_role("button", name="Save profile", exact=True).click()
@@ -147,12 +160,12 @@ def test_it_admin_manages_reference_catalogs_and_operator_selects_them_for_profi
     page.locator('#dashboard-filter [name="category_id"]').select_option(str(category_id))
     page.locator('#dashboard-filter [name="institution_id"]').select_option(str(institution_id))
     page.locator('#dashboard-filter [name="student_status"]').fill("ACTIVE")
-    page.locator('#dashboard-filter [name="academic_year"]').fill("2026")
+    page.locator('#dashboard-filter [name="academic_year"]').select_option(year_code)
     page.get_by_role("button", name="Apply filters", exact=True).click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
     expect(page.locator("#metrics .metric").nth(1)).to_have_text("Active students1")
     expect(page.locator("#institution-counts")).to_contain_text("Browser created institution")
-    expect(page.locator("#age-counts")).to_contain_text("2026 · 28")
+    expect(page.locator("#age-counts")).to_contain_text(f"{year_code} · 28")
     with page.expect_download() as download_info:
         page.get_by_role("button", name="Download dashboard report", exact=True).click()
     assert download_info.value.suggested_filename.startswith("dashboard-summary-")

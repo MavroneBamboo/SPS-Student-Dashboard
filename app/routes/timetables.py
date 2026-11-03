@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, update
@@ -16,6 +16,7 @@ from app.schemas import (
     TimetableRevisionRequest,
     TimetableSwapRequest,
 )
+from app.student_catalogs import active_academic_year
 from app.timetable_generation import generate_plan
 from app.timetable_lock import lock_timetable_configuration
 from app.timetable_planning import (
@@ -211,6 +212,11 @@ def list_versions(
 @router.post("", status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def create_draft(payload: TimetableDraftCreate, db: DbSession, claims: Claims) -> dict:
     lock_timetable_configuration(db)
+    year = active_academic_year(db, payload.academic_year)
+    friday = payload.week_start + timedelta(days=4)
+    if payload.week_start < year.starts_on or friday > year.ends_on:
+        raise HTTPException(status_code=422, detail="The teaching week must fall within the configured academic year")
+    payload.academic_year = year.code
     snapshot = build_snapshot(db, payload.academic_year, payload.week_start, payload.class_ids)
     row = TimetableVersion(
         name=payload.name,

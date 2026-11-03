@@ -9,7 +9,7 @@ from app.crypto import decrypt_sensitive, encrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
 from app.models import Student, StudentClassHistory, StudentStatusHistory
 from app.schemas import StudentClassHistoryResponse, StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
-from app.student_catalogs import active_institution, active_student_category
+from app.student_catalogs import active_academic_year, active_institution, active_student_category
 from app.student_class_history import class_name_on, record_class_assignment
 
 router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
@@ -114,6 +114,8 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
     if db.scalar(select(Student).where(Student.pris_no == pris_no)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Pris No. already exists")
     values = {field: getattr(payload, field) for field in PLAIN_PROFILE_FIELDS}
+    if payload.academic_year:
+        values["academic_year"] = active_academic_year(db, payload.academic_year).code
     values.update({column: encrypt_sensitive(getattr(payload, field)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
     category = active_student_category(db, payload.category)
     institution = active_institution(db, payload.institution_id)
@@ -176,6 +178,8 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     academic_year = changes.get("academic_year", row.academic_year)
     if age_in_academic_year is not None and not academic_year:
         raise HTTPException(status_code=422, detail="academic_year is required when age_in_academic_year is provided")
+    if "academic_year" in changes and changes["academic_year"]:
+        changes["academic_year"] = active_academic_year(db, changes["academic_year"]).code
     values = {"version": Student.version + 1}
     previous_class_at_effective_date = None
     class_effective_date = None

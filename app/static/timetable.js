@@ -7,6 +7,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let classes = [];
   let current = null;
   let teachers = [];
+  let academicYears = [];
   let draftMutationPending = false;
   let viewBy = "class";
   let pageOffset = 0;
@@ -94,10 +95,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       api("/timetable/versions?limit=100"),
       api("/timetable/classes"),
       api("/timetable/teachers"),
+      api("/student-reference/academic-years"),
     ]);
     versions = data[0];
     classes = data[1].filter((row) => row.is_active);
     teachers = data[2].filter((row) => row.is_active);
+    academicYears = data[3].filter((row) => row.is_active && row.starts_on && row.ends_on);
     renderVersions();
     $("student-class-mapping-section").hidden = !["Operator", "IT Administrator", "Superuser"].includes(currentRole());
     const createForm = $("timetable-create-form");
@@ -109,6 +112,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       option.value = item.id;
       option.textContent = `${item.code} · ${item.name}`;
       select.append(option);
+    }
+    for (const select of [createForm.elements.academic_year, $("timetable-lesson-form").elements.academic_year, $("timetable-rule-form").elements.academic_year]) {
+      const previous = select.value;
+      select.replaceChildren(new Option("Select academic year", ""));
+      for (const year of academicYears) select.add(new Option(`${year.label} · ${year.code}`, year.code));
+      if (academicYears.some((year) => year.code === previous)) select.value = previous;
     }
     $("timetable-lesson-form").hidden = !canEdit();
     fillSelect($("timetable-class-filter"), classes, (row) => `${row.code} · ${row.name}`);

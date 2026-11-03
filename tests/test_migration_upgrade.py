@@ -86,6 +86,9 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
                 assert list(connection.execute(select(table))) == snapshots[table.name]
             upgraded = MetaData()
             upgraded.reflect(bind=connection)
+            academic_year = connection.execute(select(upgraded.tables["academic_years"])).mappings().one()
+            assert academic_year["code"] == "2026"
+            assert academic_year["starts_on"] is None and academic_year["ends_on"] is None and not academic_year["is_active"]
             legacy_rule = connection.execute(select(upgraded.tables["scheduling_rules"])).mappings().one()
             assert connection.execute(select(upgraded.tables["students"].c.version)).scalar_one() == 1
             assert connection.execute(select(upgraded.tables["users"].c.token_version)).scalar_one() == 0
