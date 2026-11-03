@@ -14,6 +14,7 @@ from app.deps import Claims, DbSession, require_roles
 from app.models import InstructionalClass, Student, StudentCategory, StudentClassMapping, StudentImportBatch, StudentStatusHistory
 from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
 from app.student_catalogs import normalize_catalog_code
+from app.student_class_history import record_class_assignment
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
 
@@ -466,6 +467,14 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                 )
                 db.add(student)
                 db.flush()
+                record_class_assignment(
+                    db,
+                    student_id=student.id,
+                    class_name=student.class_name,
+                    effective_date=date.today(),
+                    changed_by=actor_id,
+                    source="IMPORT",
+                )
                 db.add(
                     StudentStatusHistory(
                         student_id=student.id,
@@ -509,7 +518,14 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                 continue
             db_values = _database_values(changed_fields)
             if "class_name" in changed_fields:
-                db_values["class_name"] = changed_fields["class_name"].strip()
+                db_values["class_name"] = record_class_assignment(
+                    db,
+                    student_id=student.id,
+                    class_name=changed_fields["class_name"].strip(),
+                    effective_date=date.today(),
+                    changed_by=actor_id,
+                    source="IMPORT",
+                )
             if "category" in changed_fields:
                 db_values["category"] = changed_fields["category"].strip()
             if category_reference_changed:
@@ -548,6 +564,7 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
                 str(student.id),
                 {
                     "fields": sorted(audit_fields),
+                    "class_effective_date": date.today().isoformat() if "class_name" in changed_fields else None,
                     "import_batch_id": batch.id,
                     "previous_version": old_version,
                     "source_row": staged_row["row_number"],

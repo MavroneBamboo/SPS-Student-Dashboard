@@ -165,7 +165,15 @@ def test_attendance_session_record_duplicate_and_correction_reason():
     with TestClient(app) as client:
         admin_headers = login_headers(client)
         headers = operator_headers(client)
-        student = {"pris_no": "PS-ATT-001", "name": "Attendance Student", "class_name": "TM1 LNP 1", "category": "OP", "status": "ACTIVE"}
+        student = {
+            "pris_no": "PS-ATT-001",
+            "name": "Attendance Student",
+            "class_name": "TM1 LNP 1",
+            "class_effective_date": "2026-10-01",
+            "category": "OP",
+            "status": "ACTIVE",
+            "status_effective": "2026-10-01",
+        }
         assert client.post("/api/v1/students", json=student, headers=headers).status_code == 201
         session = client.post(
             "/api/v1/attendance/sessions",
@@ -227,7 +235,15 @@ def test_dashboard_export_and_audit_are_committed_data_views():
     with TestClient(app) as client:
         admin_headers = login_headers(client)
         headers = operator_headers(client)
-        student = {"pris_no": "PS-REPORT-001", "name": "Report Student", "class_name": "REPORT CLASS", "category": "OP", "status": "ACTIVE"}
+        student = {
+            "pris_no": "PS-REPORT-001",
+            "name": "Report Student",
+            "class_name": "REPORT CLASS",
+            "class_effective_date": "2026-10-01",
+            "category": "OP",
+            "status": "ACTIVE",
+            "status_effective": "2026-10-01",
+        }
         client.post("/api/v1/students", json=student, headers=headers)
         session = client.post(
             "/api/v1/attendance/sessions",
@@ -267,7 +283,15 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
         pris_no = f"PS-MONTHLY-{uuid4().hex[:8]}"
         created = client.post(
             "/api/v1/students",
-            json={"pris_no": pris_no, "name": "Monthly Report Student", "class_name": class_name, "category": "OP", "status": "ACTIVE"},
+            json={
+                "pris_no": pris_no,
+                "name": "Monthly Report Student",
+                "class_name": class_name,
+                "class_effective_date": "2026-10-01",
+                "category": "OP",
+                "status": "ACTIVE",
+                "status_effective": "2026-10-01",
+            },
             headers=headers,
         )
         assert created.status_code == 201

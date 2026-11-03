@@ -10,14 +10,14 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   const pageSize = 25;
   const form = $("profile-form");
   const profileFields = [
-    "name", "class_name", "category", "institution_id", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
+    "name", "class_name", "class_effective_date", "category", "institution_id", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
     "admission_type", "exam_level", "academic_year", "age_in_academic_year", "gender", "language_1", "language_2",
     "math_1", "math_2", "cpa", "science", "humanities", "commerce_1", "commerce_2", "commerce_3", "aa",
     "nationality", "citizenship", "birthplace", "religion", "race", "marital_status", "next_of_kin_name",
     "next_of_kin_nric", "next_of_kin_relationship", "next_of_kin_contact", "next_of_kin_address_ports",
     "next_of_kin_address_from_student", "student_contact",
   ];
-  const optionalTextFields = profileFields.filter((key) => !["name", "class_name", "category", "institution_id", "status", "status_effective", "date_of_birth", "age_in_academic_year"].includes(key));
+  const optionalTextFields = profileFields.filter((key) => !["name", "class_name", "class_effective_date", "category", "institution_id", "status", "status_effective", "date_of_birth", "age_in_academic_year"].includes(key));
   const today = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -28,6 +28,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     form.reset();
     $("profile-editor").hidden = true;
     $("profile-history").replaceChildren();
+    $("profile-class-history").replaceChildren();
     $("profile-version").textContent = "";
   }
   function clear() {
@@ -104,24 +105,33 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     $("profile-version").textContent = profile ? `Saved version ${profile.version}. Reload if another operator has changed this record.` : "Create a new student using a unique Pris No.";
     $("reload-profile").hidden = !profile;
     for (const key of ["pris_no", ...profileFields]) {
-      form.elements[key].value = profile ? profile[key] ?? "" : key === "status" ? "ACTIVE" : key === "status_effective" ? today() : "";
+      form.elements[key].value = profile ? profile[key] ?? (key === "class_effective_date" ? today() : "") : key === "status" ? "ACTIVE" : ["status_effective", "class_effective_date"].includes(key) ? today() : "";
     }
     form.elements.pris_no.readOnly = Boolean(profile);
     form.elements.status_effective.disabled = Boolean(profile);
     form.elements.status_effective.required = !profile;
     $("profile-history").replaceChildren();
+    $("profile-class-history").replaceChildren();
     form.elements.name.focus();
   }
   async function load(id) {
     const request = ++detailRequest;
     const profile = await api(`/students/${id}`);
-    const history = await api(`/students/${id}/status-history`);
+    const [history, classHistory] = await Promise.all([
+      api(`/students/${id}/status-history`),
+      api(`/students/${id}/class-history`),
+    ]);
     if (request !== detailRequest) return;
     render(profile);
     for (const entry of history) {
       const row = document.createElement("tr");
       for (const value of [entry.effective_date, entry.previous_status ?? "Initial record", entry.new_status, entry.changed_by]) cell(row, value);
       $("profile-history").append(row);
+    }
+    for (const entry of classHistory) {
+      const row = document.createElement("tr");
+      for (const value of [entry.effective_date, entry.class_name, entry.source === "BASELINE" ? "Rollout baseline; earlier class unknown" : entry.source, entry.changed_by ?? "—"]) cell(row, value);
+      $("profile-class-history").append(row);
     }
   }
   async function show() {
@@ -254,6 +264,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
         for (const key of profileFields) {
           if (key in fields && fields[key] !== (selected[key] ?? null)) payload[key] = fields[key];
         }
+        if (fields.class_name === selected.class_name) delete payload.class_effective_date;
         if (Object.keys(payload).length === 1) { notice("No profile changes to save."); return; }
       }
       const saved = await api(selected ? `/students/${selected.id}` : "/students", selected ? "PATCH" : "POST", payload);

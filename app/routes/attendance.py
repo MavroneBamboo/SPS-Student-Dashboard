@@ -28,6 +28,7 @@ from app.schemas import (
     AttendanceSessionCreate,
     AttendanceSessionResponse,
 )
+from app.student_class_history import students_active_on
 
 router = APIRouter(prefix="/attendance", tags=["attendance"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
 
@@ -168,23 +169,24 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
             .limit(1)
         ):
             raise HTTPException(status_code=422, detail="The published timetable has no lessons for this class on the session date")
-    student_query = select(Student).where(Student.status == "ACTIVE")
+    resolved_roster = students_active_on(db, payload.session_date)
     if mapped_class_key is None:
-        student_query = student_query.where(Student.class_name == payload.class_name)
+        eligible = [student for student, historic_class in resolved_roster if historic_class == payload.class_name]
     else:
-        candidate_names = db.scalars(select(Student.class_name).where(Student.status == "ACTIVE").distinct()).all()
-        matching_names = []
-        for candidate_name in candidate_names:
+        matching_names = set()
+        for student, historic_class in resolved_roster:
             try:
-                _, candidate_key = normalize_class_name(candidate_name)
+                _, candidate_key = normalize_class_name(historic_class)
             except ValueError:
                 continue
             if candidate_key == mapped_class_key:
-                matching_names.append(candidate_name)
-        student_query = student_query.where(Student.class_name.in_(matching_names))
-    eligible = db.scalars(student_query.order_by(Student.pris_no).with_for_update()).all()
+                matching_names.add(student.id)
+        eligible = [student for student, _ in resolved_roster if student.id in matching_names]
     if not eligible:
-        raise HTTPException(status_code=422, detail="Class has no eligible active students")
+        raise HTTPException(
+            status_code=422,
+            detail="No active roster can be resolved for this class on the selected date; add the effective class assignment first.",
+        )
     actor_id = int(claims["sub"])
     row = AttendanceSession(
         **payload.model_dump(),
@@ -271,16 +273,13 @@ def list_scheduled_classes(
             )
         ).all()
     }
-    counts = db.execute(
-        select(Student.class_name, func.count(Student.id)).where(Student.status == "ACTIVE").group_by(Student.class_name)
-    ).all()
     student_counts: dict[str, int] = {}
-    for name, count in counts:
+    for _student, name in students_active_on(db, session_date):
         try:
             _, key = normalize_class_name(name)
         except ValueError:
             continue
-        student_counts[key] = student_counts.get(key, 0) + count
+        student_counts[key] = student_counts.get(key, 0) + 1
     result = []
     for instructional_class_id, slot_count in rows:
         mapping = mappings.get(instructional_class_id)

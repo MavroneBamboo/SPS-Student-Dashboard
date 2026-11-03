@@ -114,6 +114,7 @@
             <label>Pris No.<input name="pris_no" maxlength="40" required autocomplete="off"></label>
             <label>Student name<input name="name" maxlength="240" required autocomplete="off"></label>
             <label>Student class<input name="class_name" maxlength="120" required></label>
+            <label>Class effective date<input name="class_effective_date" type="date" required></label>
             <label>Student category<select name="category" required><option value="">Load categories first</option></select></label>
             <label>Institution (optional)<select name="institution_id"><option value="">No institution selected</option></select></label>
             <label>Student status<input name="status" maxlength="40" list="student-statuses" required></label>
@@ -156,8 +157,9 @@
             <div class="actions"><button type="submit">Save profile</button><button id="reload-profile" type="button" class="secondary" hidden>Reload saved profile</button></div>
           </form>
           <datalist id="student-statuses"><option value="ACTIVE"></option><option value="INACTIVE"></option></datalist>
-          <p>Pris No. identifies the student and cannot be changed here. For existing profiles, the effective date is recorded when the status changes.</p>
+          <p>Pris No. identifies the student and cannot be changed here. Set the class effective date when changing class; a backdated assignment changes which sessions include the student from that date onward. Legacy membership before system rollout is unknown until reconciled.</p>
           <h3>Status history</h3><div class="table-wrap"><table><thead><tr><th>Effective date</th><th>Previous status</th><th>New status</th><th>Changed by (user ID)</th></tr></thead><tbody id="profile-history"></tbody></table></div>
+          <h3>Class history</h3><div class="table-wrap"><table><thead><tr><th>Effective date</th><th>Class</th><th>Source</th><th>Changed by (user ID)</th></tr></thead><tbody id="profile-class-history"></tbody></table></div>
         </section>
       </section>
       <section id="attendance-panel" hidden aria-labelledby="attendance-title">

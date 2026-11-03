@@ -7,9 +7,10 @@ from sqlalchemy.exc import IntegrityError
 from app.audit import record_event
 from app.crypto import decrypt_sensitive, encrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
-from app.models import Student, StudentStatusHistory
-from app.schemas import StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
+from app.models import Student, StudentClassHistory, StudentStatusHistory
+from app.schemas import StudentClassHistoryResponse, StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
 from app.student_catalogs import active_institution, active_student_category
+from app.student_class_history import class_name_on, record_class_assignment
 
 router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
 
@@ -116,6 +117,9 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
     values.update({column: encrypt_sensitive(getattr(payload, field)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
     category = active_student_category(db, payload.category)
     institution = active_institution(db, payload.institution_id)
+    class_effective_date = payload.class_effective_date or date.today()
+    if class_effective_date > date.today():
+        raise HTTPException(status_code=422, detail="Class effective date cannot be in the future")
     row = Student(
         pris_no=pris_no,
         name_encrypted=encrypt_sensitive(payload.name.strip()),
@@ -144,6 +148,15 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
             changed_by=int(claims["sub"]),
         )
     )
+    db.add(
+        StudentClassHistory(
+            student_id=row.id,
+            class_name=row.class_name,
+            effective_date=class_effective_date,
+            source="PROFILE",
+            changed_by=int(claims["sub"]),
+        )
+    )
     record_event(db, int(claims["sub"]), "student.created", "student", str(row.id))
     db.commit()
     db.refresh(row)
@@ -164,8 +177,19 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     if age_in_academic_year is not None and not academic_year:
         raise HTTPException(status_code=422, detail="academic_year is required when age_in_academic_year is provided")
     values = {"version": Student.version + 1}
+    previous_class_at_effective_date = None
+    class_effective_date = None
     if changes.get("class_name") is not None:
-        values["class_name"] = changes["class_name"].strip()
+        class_effective_date = changes.get("class_effective_date") or date.today()
+        previous_class_at_effective_date = class_name_on(db, row.id, class_effective_date)
+        values["class_name"] = record_class_assignment(
+            db,
+            student_id=row.id,
+            class_name=changes["class_name"].strip(),
+            effective_date=class_effective_date,
+            changed_by=int(claims["sub"]),
+            source="PROFILE",
+        )
     if "category" in changes:
         category = active_student_category(db, changes["category"])
         values["category"] = category.code
@@ -219,6 +243,9 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
             "fields": sorted(changes),
             "status_from": previous_status,
             "status_to": new_status,
+            "class_effective_date": (changes.get("class_effective_date") or date.today()).isoformat() if "class_name" in changes else None,
+            "class_from": previous_class_at_effective_date,
+            "class_to": changes.get("class_name").strip() if "class_name" in changes else None,
             "previous_version": payload.expected_version,
             "version": payload.expected_version + 1,
         },
@@ -242,6 +269,26 @@ def status_history(student_id: int, db: DbSession, claims: Claims) -> list[Stude
     return [
         StudentStatusHistoryResponse(
             previous_status=row.previous_status, new_status=row.new_status, effective_date=row.effective_date, changed_by=row.changed_by
+        )
+        for row in rows
+    ]
+
+
+@router.get("/{student_id}/class-history", response_model=list[StudentClassHistoryResponse])
+def class_history(student_id: int, db: DbSession, claims: Claims) -> list[StudentClassHistoryResponse]:
+    if db.get(Student, student_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    rows = db.scalars(
+        select(StudentClassHistory)
+        .where(StudentClassHistory.student_id == student_id)
+        .order_by(StudentClassHistory.effective_date, StudentClassHistory.id)
+    ).all()
+    return [
+        StudentClassHistoryResponse(
+            class_name=row.class_name,
+            effective_date=row.effective_date,
+            source=row.source,
+            changed_by=row.changed_by,
         )
         for row in rows
     ]

@@ -1,5 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from threading import Barrier
 from uuid import uuid4
 
@@ -22,7 +23,15 @@ def attendance_context(lesson_context):
     for index in range(2):
         response = client.post(
             "/api/v1/students",
-            json={"pris_no": f"{class_name}-{index}", "name": f"Attendance Student {index}", "class_name": class_name, "category": "OP"},
+            json={
+                "pris_no": f"{class_name}-{index}",
+                "name": f"Attendance Student {index}",
+                "class_name": class_name,
+                "class_effective_date": "2026-10-01",
+                "category": "OP",
+                "status": "ACTIVE",
+                "status_effective": "2026-10-01",
+            },
             headers=headers["operator"],
         )
         assert response.status_code == 201
@@ -119,6 +128,7 @@ def test_session_roster_snapshot_survives_student_transfer_and_rejects_later_enr
             "expected_version": students[0]["version"],
             "name": "Transferred After Session",
             "class_name": "Another Class",
+            "class_effective_date": "2026-10-27",
             "status": "INACTIVE",
             "status_effective": "2026-10-27",
         },
@@ -154,6 +164,76 @@ def test_session_roster_snapshot_survives_student_transfer_and_rejects_later_enr
     assert frozen["attendance_status"] == "ABSENT"
 
 
+def test_backdated_attendance_uses_class_and_status_as_of_session_date(lesson_context):
+    client, headers, _ = lesson_context
+    original_class = f"HISTORY-{uuid4().hex[:8]}"
+    moved_class = f"{original_class}-MOVED"
+    profiles = []
+    for index in range(3):
+        response = client.post(
+            "/api/v1/students",
+            json={
+                "pris_no": f"{original_class}-{index}",
+                "name": f"Historical roster student {index}",
+                "class_name": original_class,
+                "class_effective_date": "2026-10-01",
+                "category": "OP",
+                "status": "ACTIVE",
+                "status_effective": "2026-10-01",
+            },
+            headers=headers["operator"],
+        )
+        assert response.status_code == 201, response.text
+        profiles.append(response.json())
+
+    inactive = client.patch(
+        f"/api/v1/students/{profiles[1]['id']}",
+        json={"expected_version": profiles[1]["version"], "status": "INACTIVE", "status_effective": "2026-10-27"},
+        headers=headers["operator"],
+    )
+    assert inactive.status_code == 200, inactive.text
+    changed = client.patch(
+        f"/api/v1/students/{profiles[0]['id']}",
+        json={"expected_version": profiles[0]["version"], "class_name": moved_class, "class_effective_date": "2026-10-27"},
+        headers=headers["operator"],
+    )
+    assert changed.status_code == 200, changed.text
+    history = client.get(f"/api/v1/students/{profiles[0]['id']}/class-history", headers=headers["operator"])
+    assert history.status_code == 200
+    assert [(entry["effective_date"], entry["class_name"]) for entry in history.json()] == [
+        ("2026-10-01", original_class),
+        ("2026-10-27", moved_class),
+    ]
+
+    for class_name, expected_pris_no in ((original_class, profiles[2]["pris_no"]), (moved_class, profiles[0]["pris_no"])):
+        created = client.post(
+            "/api/v1/attendance/sessions",
+            json={"session_date": "2026-10-28", "session_type": "MORNING", "class_name": class_name, "expected_count": 1},
+            headers=headers["operator"],
+        )
+        assert created.status_code == 201, created.text
+        roster = client.get(f"/api/v1/attendance/sessions/{created.json()['id']}", headers=headers["operator"]).json()["roster"]
+        assert [entry["pris_no"] for entry in roster] == [expected_pris_no]
+
+
+def test_attendance_does_not_guess_roster_before_class_history_begins(lesson_context):
+    client, headers, _ = lesson_context
+    class_name = f"NO-HISTORY-{uuid4().hex[:8]}"
+    created = client.post(
+        "/api/v1/students",
+        json={"pris_no": f"{class_name}-1", "name": "No historical membership", "class_name": class_name, "category": "OP"},
+        headers=headers["operator"],
+    )
+    assert created.status_code == 201
+    session = client.post(
+        "/api/v1/attendance/sessions",
+        json={"session_date": "2026-11-02", "session_type": "MORNING", "class_name": class_name, "expected_count": 1},
+        headers=headers["operator"],
+    )
+    assert session.status_code == 422
+    assert "effective class assignment" in session.json()["detail"]
+
+
 def test_duplicate_session_race_and_database_constraint(attendance_context):
     client, headers, payload, _ = attendance_context
     barrier = Barrier(2)
@@ -167,7 +247,7 @@ def test_duplicate_session_race_and_database_constraint(attendance_context):
     assert sorted(response.status_code for response in responses) == [201, 409]
     winner = next(response.json() for response in responses if response.status_code == 201)
     with SessionLocal() as db:
-        db.add(AttendanceSession(**payload, created_by=1, status="OPEN"))
+        db.add(AttendanceSession(**{**payload, "session_date": date.fromisoformat(payload["session_date"])}, created_by=1, status="OPEN"))
         with pytest.raises(IntegrityError):
             db.flush()
         db.rollback()

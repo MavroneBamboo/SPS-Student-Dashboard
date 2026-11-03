@@ -9,7 +9,15 @@ def test_superuser_and_operator_operational_access(lesson_context):
     class_name = f"ROLE CLASS {uuid4().hex[:8]}"
     student = client.post(
         "/api/v1/students",
-        json={"pris_no": identifier, "name": "Restricted Student", "class_name": class_name, "category": "OP"},
+        json={
+            "pris_no": identifier,
+            "name": "Restricted Student",
+            "class_name": class_name,
+            "class_effective_date": "2026-10-26",
+            "category": "OP",
+            "status": "ACTIVE",
+            "status_effective": "2026-10-26",
+        },
         headers=headers["operator"],
     )
     assert student.status_code == 201
@@ -25,6 +33,7 @@ def test_superuser_and_operator_operational_access(lesson_context):
         "/api/v1/students",
         f"/api/v1/students/{student_id}",
         f"/api/v1/students/{student_id}/status-history",
+        f"/api/v1/students/{student_id}/class-history",
         "/api/v1/attendance/sessions",
         f"/api/v1/attendance/sessions/{session_id}",
         f"/api/v1/attendance/sessions/{session_id}/records",
@@ -56,7 +65,15 @@ def test_superuser_and_operator_operational_access(lesson_context):
 
     created = client.post(
         "/api/v1/students",
-        json={"pris_no": f"{identifier}-SUPERUSER", "name": "Superuser Student", "class_name": class_name, "category": "OP"},
+        json={
+            "pris_no": f"{identifier}-SUPERUSER",
+            "name": "Superuser Student",
+            "class_name": class_name,
+            "class_effective_date": "2026-10-27",
+            "category": "OP",
+            "status": "ACTIVE",
+            "status_effective": "2026-10-27",
+        },
         headers=headers["superuser"],
     )
     assert created.status_code == 201

@@ -453,6 +453,22 @@ class StudentStatusHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class StudentClassHistory(Base):
+    __tablename__ = "student_class_history"
+    __table_args__ = (
+        UniqueConstraint("student_id", "effective_date", name="uq_student_class_history_date"),
+        CheckConstraint("source IN ('BASELINE', 'PROFILE', 'IMPORT')", name="ck_student_class_history_source"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"), index=True)
+    class_name: Mapped[str] = mapped_column(String(120))
+    effective_date: Mapped[date] = mapped_column(Date, index=True)
+    source: Mapped[str] = mapped_column(String(20))
+    changed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class StudentImportBatch(Base):
     __tablename__ = "student_import_batches"
     __table_args__ = (

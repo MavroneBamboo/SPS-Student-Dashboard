@@ -20,6 +20,7 @@ def _create(ctx, **changes):
         "pris_no": f"PROFILE-{uuid4().hex[:12]}",
         "name": "Profile Fixture",
         "class_name": "Profile Class",
+        "class_effective_date": "2026-10-01",
         "category": "OP",
         "status": "ACTIVE",
         "status_effective": "2026-10-01",
@@ -78,6 +79,7 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
         {"expected_version": 1, "name": "   "},
         {"expected_version": 1, "class_name": None},
         {"expected_version": 1, "status_effective": "2026-09-01"},
+        {"expected_version": 1, "class_effective_date": "2026-09-01"},
     ):
         assert client.patch(path, json=body, headers=headers["operator"]).status_code == 422
     assert client.patch(path, json={"expected_version": 1, "age_in_academic_year": 121}, headers=headers["operator"]).status_code == 422
@@ -98,6 +100,26 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
     duplicate["pris_no"] = " " + profile["pris_no"].lower() + " "
     assert client.post(BASE, json=duplicate, headers=headers["operator"]).status_code == 409
     assert client.get(BASE + "?limit=101", headers=headers["operator"]).status_code == 422
+
+
+def test_class_history_is_audited_and_rejects_future_effective_dates(lesson_context):
+    client, headers, _ = lesson_context
+    profile = _create(lesson_context)
+    path = f"{BASE}/{profile['id']}"
+    history = client.get(path + "/class-history", headers=headers["operator"])
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    assert history.json()[0]["class_name"] == profile["class_name"]
+    assert history.json()[0]["effective_date"] == "2026-10-01"
+    assert history.json()[0]["source"] == "PROFILE"
+    assert history.json()[0]["changed_by"] > 0
+    future = client.patch(
+        path,
+        json={"expected_version": profile["version"], "class_name": "Future Class", "class_effective_date": "2099-01-01"},
+        headers=headers["operator"],
+    )
+    assert future.status_code == 422
+    assert client.get(path, headers=headers["operator"]).json()["class_name"] == profile["class_name"]
 
 
 def test_extended_intake_profile_round_trip_encrypts_sensitive_fields_and_allows_clearing(lesson_context):

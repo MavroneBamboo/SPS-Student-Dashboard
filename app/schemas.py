@@ -457,6 +457,7 @@ class StudentCreate(BaseModel):
     pris_no: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=240)
     class_name: str = Field(min_length=1, max_length=120)
+    class_effective_date: date | None = None
     category: str = Field(min_length=1, max_length=40)
     institution_id: int | None = Field(default=None, ge=1)
     status: str = Field(default="ACTIVE", min_length=1, max_length=40)
@@ -513,6 +514,7 @@ class StudentUpdate(BaseModel):
     expected_version: int = Field(ge=1)
     name: str | None = Field(default=None, min_length=1, max_length=240)
     class_name: str | None = Field(default=None, min_length=1, max_length=120)
+    class_effective_date: date | None = None
     category: str | None = Field(default=None, min_length=1, max_length=40)
     institution_id: int | None = Field(default=None, ge=1)
     status: str | None = Field(default=None, min_length=1, max_length=40)
@@ -557,6 +559,8 @@ class StudentUpdate(BaseModel):
         for field in ("name", "class_name", "category", "status"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
+        if "class_effective_date" in self.model_fields_set and "class_name" not in self.model_fields_set:
+            raise ValueError("class_effective_date requires a class_name change")
         return self
 
 
@@ -565,6 +569,13 @@ class StudentStatusHistoryResponse(BaseModel):
     new_status: str
     effective_date: date
     changed_by: int
+
+
+class StudentClassHistoryResponse(BaseModel):
+    class_name: str
+    effective_date: date
+    source: str
+    changed_by: int | None
 
 
 class AttendanceSessionCreate(BaseModel):

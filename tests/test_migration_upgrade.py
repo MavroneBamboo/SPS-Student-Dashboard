@@ -285,6 +285,54 @@ def test_student_reference_catalog_migration_maps_legacy_category_without_rewrit
         database.dispose()
 
 
+def test_student_class_history_migration_records_only_a_rollout_baseline(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-class-history-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    migrate("20261103_0016")
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        students = metadata.tables["students"]
+        with database.begin() as connection:
+            connection.execute(
+                students.insert().values(
+                    pris_no="CLASS-HISTORY-UPGRADE-1",
+                    name_encrypted="preserved-ciphertext",
+                    class_name="Baseline Class",
+                    category="OP",
+                    status="ACTIVE",
+                    created_by=1,
+                )
+            )
+        migrate("head")
+        migrate("head")
+        upgraded = MetaData()
+        upgraded.reflect(bind=database)
+        with database.connect() as connection:
+            rows = connection.execute(select(upgraded.tables["student_class_history"])).mappings().all()
+            assert len(rows) == 1
+            assert rows[0]["class_name"] == "Baseline Class"
+            assert rows[0]["effective_date"] == date.today()
+            assert rows[0]["source"] == "BASELINE"
+            assert rows[0]["changed_by"] is None
+    finally:
+        database.dispose()
+
+
 def test_student_import_upgrade_adds_encrypted_staging_without_touching_profiles(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-import-upgrade.db').as_posix()}"
     environment = _migration_environment(database_url)
