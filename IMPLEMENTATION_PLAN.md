@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (28 October 2026)
 
+- Application encryption key rotation increment (28 October): new ciphertext carries a non-secret key identifier, legacy Fernet values remain readable during the migration window, and a dry-run-first command verifies and transactionally re-encrypts student fields, attendance roster names and staged intake workbook payloads. The command runs with the least-privilege runtime database role. See [ENCRYPTION_KEY_ROTATION.md](ENCRYPTION_KEY_ROTATION.md); production key custody and a witnessed restore/rotation drill remain release gates.
+
 - Timetable interface redesign (27 October): production UI implements By class/By teacher weekly views, browser print-to-PDF reports, teacher/class/subject tabs, period and rule management, and clickable Amend 4-up at 4/8/12/16 classes per page. Display maps the lunch interval to P3 while preserving stable database/API slot codes. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md).
 
 - Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. The existing audited XLSX exports remain available. Attendance publishing coordination remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).

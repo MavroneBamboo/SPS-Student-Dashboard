@@ -148,7 +148,7 @@ Student intake attributes include enrolment classifications, academic-year age, 
 
 ### 6.1 Sensitive data
 
-Classify personal identifiers, dates of birth, contact numbers, addresses and next-of-kin data as sensitive. Designated profile fields currently use authenticated Fernet encryption via the external `APP_ENCRYPTION_KEY`. The current ciphertext format does not include an explicit key identifier; versioned key rotation and ciphertext migration remain required. Encryption keys are held outside the database and source repository. Database encryption at rest, TLS database connections and encrypted backups remain required in addition to field encryption.
+Classify personal identifiers, dates of birth, contact numbers, addresses and next-of-kin data as sensitive. Designated profile, roster and import fields use authenticated Fernet encryption. New ciphertext carries a non-secret key identifier; `APP_ENCRYPTION_KEY` encrypts new values and `APP_ENCRYPTION_PREVIOUS_KEYS` supplies temporary decrypt-only keys during migration. The maintenance command verifies and atomically re-encrypts all protected student profile, attendance roster and staged-import values. Existing untagged Fernet ciphertext remains readable during the migration window. Unknown key IDs and authentication failures fail closed. Encryption keys are held outside the database and source repository. Database encryption at rest, TLS database connections and encrypted backups remain required in addition to field encryption. See [ENCRYPTION_KEY_ROTATION.md](ENCRYPTION_KEY_ROTATION.md) for the runbook and backup key-retention requirements.
 
 ## 7. API conventions
 

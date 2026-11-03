@@ -17,7 +17,7 @@ concurrency:
 jobs:
   quality-and-tests:
     name: Python quality, security, migrations, and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17.2-alpine
@@ -107,7 +107,7 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write
@@ -123,7 +123,7 @@ jobs:
 
   container:
     name: Build and scan production container
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out source
         uses: actions/checkout@v7
