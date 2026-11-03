@@ -48,6 +48,7 @@ For an existing staging environment file, retain its current `POSTGRES_PASSWORD`
 For the initial manual smoke test, check out `main`, configure the environment file, then run from the repository:
 
 ```bash
+export APP_BUILD_SHA="$(git rev-parse HEAD)"
 docker compose --project-name sps-student-dashboard-staging \
   --env-file "$HOME/.config/sps-student-dashboard/staging.env" config --quiet
 docker compose --project-name sps-student-dashboard-staging \
@@ -66,7 +67,7 @@ Open `http://localhost:8080/` and complete bootstrap password rotation. The prox
 3. In **Settings > Environments**, create `staging` and restrict deployment branches to `main`. Add a required reviewer if you want a person to approve each staging deployment; otherwise, successful CI on a push to `main` deploys automatically.
 4. Ensure `main` is protected and PR checks/review are required. Never add this runner label to pull request, fork, or untrusted branch jobs. A self-hosted runner can retain data between jobs and has access to the laptop's Docker daemon.
 
-The `deploy-staging` job in `.github/workflows/ci.yml` has these gates. It checks out the exact tested commit, stages it under the runner account's `~/.local/share/sps-student-dashboard-staging/releases/<commit-sha>`, and deploys that immutable source snapshot using the runner-local environment file. The Postgres named volume uses a stable Compose project name and persists across code updates. A readiness request to `http://127.0.0.1:8080/health/ready` is the deployment smoke check.
+The `deploy-staging` job in `.github/workflows/ci.yml` has these gates. It checks out the exact tested commit, stages it under the runner account's `~/.local/share/sps-student-dashboard-staging/releases/<commit-sha>`, and deploys that immutable source snapshot using the runner-local environment file. The workflow passes the full commit SHA as `APP_BUILD_SHA`; `/health/ready` returns it in the `revision` field. Deployment succeeds only when the response reports the exact tested SHA, so an old healthy container cannot cause a false success. The Postgres named volume uses a stable Compose project name and persists across code updates.
 
 The workflow does not publish an image to a registry; the laptop builds the staging image from the tested source revision. The application and proxy bind mounts point into the retained release directory rather than the disposable Actions workspace.
 

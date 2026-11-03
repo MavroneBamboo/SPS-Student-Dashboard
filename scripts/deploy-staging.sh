@@ -54,17 +54,21 @@ compose=(
   --file "$release/docker-compose.yml"
 )
 
+export APP_BUILD_SHA="$revision"
 "${compose[@]}" config --quiet
 "${compose[@]}" up --detach --build --remove-orphans
 
 for attempt in $(seq 1 30); do
-  if curl --fail --silent --show-error http://127.0.0.1:8080/health/ready >/dev/null; then
-    echo "Staging revision $revision is healthy at http://localhost:8080/"
-    exit 0
+  if health_payload="$(curl --fail --silent --show-error http://127.0.0.1:8080/health/ready 2>/dev/null)"; then
+    deployed_revision="$(printf '%s' "$health_payload" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("revision", ""))' 2>/dev/null || true)"
+    if [[ "$deployed_revision" == "$revision" ]]; then
+      echo "Staging revision $revision is healthy at http://localhost:8080/"
+      exit 0
+    fi
   fi
   sleep 2
 done
 
 "${compose[@]}" ps
-echo "Staging did not become healthy; inspect service logs before retrying" >&2
+echo "Staging did not report the expected revision $revision; inspect service logs before retrying" >&2
 exit 1

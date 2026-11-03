@@ -11,11 +11,17 @@ def _fake_commands(tmp_path: Path) -> tuple[Path, Path]:
     fake_bin.mkdir()
     docker_log = tmp_path / "docker.log"
     docker = fake_bin / "docker"
-    docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"\n', encoding="utf-8")
+    docker.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"\nprintf "APP_BUILD_SHA=%s\\n" "${APP_BUILD_SHA:-}" >> "$FAKE_DOCKER_LOG"\n',
+        encoding="utf-8",
+    )
     docker.chmod(0o755)
     curl = fake_bin / "curl"
-    curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    curl.write_text('#!/bin/sh\nprintf \'{"revision":"%s"}\\n\' "${FAKE_HEALTH_REVISION:-}"\n', encoding="utf-8")
     curl.chmod(0o755)
+    sleep = fake_bin / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sleep.chmod(0o755)
     return fake_bin, docker_log
 
 
@@ -30,6 +36,7 @@ def _environment(tmp_path: Path, fake_bin: Path, docker_log: Path) -> dict[str, 
         "GITHUB_WORKSPACE": str(ROOT),
         "GITHUB_SHA": revision,
         "GITHUB_RUN_ID": "staging-test",
+        "FAKE_HEALTH_REVISION": revision,
         "SPS_STAGING_DIR": str(tmp_path / "staging-root"),
         "SPS_STAGING_ENV_FILE": str(env_file),
         "FAKE_DOCKER_LOG": str(docker_log),
@@ -49,6 +56,7 @@ def test_deploy_script_stages_exact_revision_and_runs_health_check(tmp_path: Pat
     assert not (release / ".git").exists()
     assert not (release / ".env").exists()
     calls = docker_log.read_text(encoding="utf-8")
+    assert f"APP_BUILD_SHA={env['GITHUB_SHA']}" in calls
     assert "config --quiet" in calls
     assert "up --detach --build --remove-orphans" in calls
     assert "Staging revision" in result.stdout
@@ -64,6 +72,17 @@ def test_deploy_script_rejects_environment_file_readable_by_others(tmp_path: Pat
     assert result.returncode == 2
     assert "chmod 600" in result.stderr
     assert not docker_log.exists()
+
+
+def test_deploy_script_rejects_a_healthy_but_wrong_revision(tmp_path: Path):
+    fake_bin, docker_log = _fake_commands(tmp_path)
+    env = _environment(tmp_path, fake_bin, docker_log)
+    env["FAKE_HEALTH_REVISION"] = "old-revision"
+
+    result = subprocess.run(["bash", str(DEPLOY_SCRIPT)], cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+
+    assert result.returncode == 1
+    assert "did not report the expected revision" in result.stderr
 
 
 def test_deploy_script_rejects_release_path_inside_checkout(tmp_path: Path):

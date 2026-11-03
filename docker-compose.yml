@@ -19,6 +19,7 @@ services:
         INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
     environment:
       APP_ENV: ${APP_ENV:-development}
+      APP_BUILD_SHA: ${APP_BUILD_SHA:-unknown}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env to the restricted sps_runtime account}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_ISSUER: ${JWT_ISSUER:-sps-student-dashboard}
