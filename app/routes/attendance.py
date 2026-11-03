@@ -5,9 +5,19 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
+from app.class_names import normalize_class_name
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
-from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, Student
+from app.models import (
+    AttendanceClassMapping,
+    AttendanceRecord,
+    AttendanceRosterEntry,
+    AttendanceSession,
+    InstructionalClass,
+    Student,
+    TimetableSlot,
+    TimetableVersion,
+)
 from app.schemas import (
     AttendanceRecordCorrection,
     AttendanceRecordCreate,
@@ -33,6 +43,8 @@ def session_response(row: AttendanceSession) -> AttendanceSessionResponse:
         notes=row.notes,
         status=row.status,
         roster_snapshot_state=row.roster_snapshot_state,
+        timetable_version_id=row.timetable_version_id,
+        instructional_class_id=row.instructional_class_id,
     )
 
 
@@ -115,12 +127,62 @@ def _roster(db: DbSession, session: AttendanceSession) -> list[AttendanceRosterE
 
 @router.post("/sessions", response_model=AttendanceSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Claims) -> AttendanceSessionResponse:
-    eligible = db.scalars(
-        select(Student)
-        .where(Student.class_name == payload.class_name, Student.status == "ACTIVE")
-        .order_by(Student.pris_no)
-        .with_for_update()
-    ).all()
+    provenance = (payload.timetable_version_id, payload.instructional_class_id)
+    mapped_class_key = None
+    if (provenance[0] is None) != (provenance[1] is None):
+        raise HTTPException(status_code=422, detail="Published timetable and instructional class must be provided together")
+    if provenance[0] is not None:
+        version = db.scalar(
+            select(TimetableVersion).where(TimetableVersion.id == provenance[0], TimetableVersion.is_published.is_(True)).with_for_update()
+        )
+        if version is None:
+            raise HTTPException(status_code=409, detail="The selected timetable is no longer published")
+        week_start = payload.session_date.fromordinal(payload.session_date.toordinal() - payload.session_date.weekday())
+        if version.week_start != week_start:
+            raise HTTPException(status_code=422, detail="The selected timetable does not cover the session date")
+        weekday = ("MON", "TUE", "WED", "THU", "FRI")[payload.session_date.weekday()] if payload.session_date.weekday() < 5 else None
+        if weekday is None:
+            raise HTTPException(status_code=422, detail="Published instructional timetable sessions are available Monday to Friday")
+        mapping = db.scalar(
+            select(AttendanceClassMapping).where(
+                AttendanceClassMapping.instructional_class_id == provenance[1],
+                AttendanceClassMapping.is_active.is_(True),
+            )
+        )
+        if mapping is None:
+            raise HTTPException(status_code=422, detail="Create an active attendance class mapping before using this timetable class")
+        try:
+            _, class_key = normalize_class_name(payload.class_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if class_key != mapping.class_key:
+            raise HTTPException(status_code=422, detail="Session class does not match the published timetable class mapping")
+        mapped_class_key = mapping.class_key
+        if not db.scalar(
+            select(TimetableSlot.id)
+            .where(
+                TimetableSlot.version_id == version.id,
+                TimetableSlot.instructional_class_id == provenance[1],
+                TimetableSlot.weekday == weekday,
+            )
+            .limit(1)
+        ):
+            raise HTTPException(status_code=422, detail="The published timetable has no lessons for this class on the session date")
+    student_query = select(Student).where(Student.status == "ACTIVE")
+    if mapped_class_key is None:
+        student_query = student_query.where(Student.class_name == payload.class_name)
+    else:
+        candidate_names = db.scalars(select(Student.class_name).where(Student.status == "ACTIVE").distinct()).all()
+        matching_names = []
+        for candidate_name in candidate_names:
+            try:
+                _, candidate_key = normalize_class_name(candidate_name)
+            except ValueError:
+                continue
+            if candidate_key == mapped_class_key:
+                matching_names.append(candidate_name)
+        student_query = student_query.where(Student.class_name.in_(matching_names))
+    eligible = db.scalars(student_query.order_by(Student.pris_no).with_for_update()).all()
     if not eligible:
         raise HTTPException(status_code=422, detail="Class has no eligible active students")
     actor_id = int(claims["sub"])
@@ -161,6 +223,8 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
                 "version": 1,
                 "roster_count": len(eligible),
                 "roster_snapshot_state": row.roster_snapshot_state,
+                "timetable_version_id": row.timetable_version_id,
+                "instructional_class_id": row.instructional_class_id,
             },
         )
         result = session_response(row)
@@ -169,6 +233,76 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="A session already exists for this class, date and session type") from exc
+
+
+@router.get("/scheduled-classes")
+def list_scheduled_classes(
+    db: DbSession,
+    claims: Claims,
+    session_date: date,
+    academic_year: str = Query(min_length=1, max_length=20),
+) -> list[dict]:
+    week_start = session_date.fromordinal(session_date.toordinal() - session_date.weekday())
+    version = db.scalar(
+        select(TimetableVersion).where(
+            TimetableVersion.academic_year == academic_year.strip().upper(),
+            TimetableVersion.week_start == week_start,
+            TimetableVersion.is_published.is_(True),
+        )
+    )
+    if version is None or session_date.weekday() >= 5:
+        return []
+    weekday = ("MON", "TUE", "WED", "THU", "FRI")[session_date.weekday()]
+    rows = db.execute(
+        select(TimetableSlot.instructional_class_id, func.count(TimetableSlot.id))
+        .where(TimetableSlot.version_id == version.id, TimetableSlot.weekday == weekday)
+        .group_by(TimetableSlot.instructional_class_id)
+    ).all()
+    if not rows:
+        return []
+    class_ids = [class_id for class_id, _ in rows]
+    classes = {row.id: row for row in db.scalars(select(InstructionalClass).where(InstructionalClass.id.in_(class_ids))).all()}
+    mappings = {
+        row.instructional_class_id: row
+        for row in db.scalars(
+            select(AttendanceClassMapping).where(
+                AttendanceClassMapping.instructional_class_id.in_(class_ids),
+                AttendanceClassMapping.is_active.is_(True),
+            )
+        ).all()
+    }
+    counts = db.execute(
+        select(Student.class_name, func.count(Student.id)).where(Student.status == "ACTIVE").group_by(Student.class_name)
+    ).all()
+    student_counts: dict[str, int] = {}
+    for name, count in counts:
+        try:
+            _, key = normalize_class_name(name)
+        except ValueError:
+            continue
+        student_counts[key] = student_counts.get(key, 0) + count
+    result = []
+    for instructional_class_id, slot_count in rows:
+        mapping = mappings.get(instructional_class_id)
+        if mapping is None:
+            continue
+        instructional_class = classes.get(instructional_class_id)
+        if instructional_class is None:
+            continue
+        result.append(
+            {
+                "timetable_version_id": version.id,
+                "academic_year": version.academic_year,
+                "week_start": version.week_start.isoformat(),
+                "instructional_class_id": instructional_class.id,
+                "instructional_class_code": instructional_class.code,
+                "instructional_class_name": instructional_class.name,
+                "class_name": mapping.student_class_name,
+                "active_students": student_counts.get(mapping.class_key, 0),
+                "lesson_count": slot_count,
+            }
+        )
+    return sorted(result, key=lambda item: (item["instructional_class_code"], item["class_name"].casefold()))
 
 
 @router.get("/sessions", response_model=list[AttendanceSessionResponse])

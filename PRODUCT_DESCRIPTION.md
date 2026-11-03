@@ -119,6 +119,8 @@ Executives cannot alter source records or configuration.
 ### 4.3 Attendance management
 
 - Record attendance by student, class, date and session.
+- Create an attendance session from the currently published timetable for the selected academic year/date, retaining which published version and instructional class informed its creation.
+- Let IT Administrators maintain a separate, audited mapping between student profile classes and instructional timetable classes; never infer or reuse workbook-specific intake crosswalks for attendance.
 - Support corrections with a reason and audit trail.
 - Prevent duplicate attendance records for the same student/session.
 - Allow operators to review missing or incomplete attendance.

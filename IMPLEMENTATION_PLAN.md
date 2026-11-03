@@ -365,7 +365,7 @@ The timetable system is added as a first-class workstream, with Amend 4-up treat
 
 - Inventory `.pri` projects, teachers, subjects, instructional classes, lesson requirements and placed slots.
 - Capture the latest By Instructional Class and By Teacher PDFs as golden layout references.
-- Define mappings from timetable instructional classes to intake/attendance classes.
+- Keep timetable-to-attendance class mapping explicit and separate from workbook-source intake crosswalks; the IT-managed mapping and published-session integration are now implemented in this workstream.
 - Build a read-only `.pri` import and validation tool.
 - Report legacy composite teachers, invalid references, unplaced lessons and duplicate slots.
 
@@ -395,8 +395,8 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 - Add rule-completeness, rule-overlap, duplicate-placement and exactly-one-applicable-rule tests before generation and Amend 4-up placement.
 - Rule increment tests cover date boundaries/open ends, missing/ambiguous bulk resolution, unresolved legacy binding, direct database overlap rejection and concurrent class/cluster or membership changes.
 - Draft/placement tests cover persistent lifecycle, class/teacher actual-time clashes, rule/availability/lunch/block invariants, midweek rule resolution, stale configuration/revision handling, simultaneous saves, lock protection, swap rollback in both directions and immutable approval. Chromium coverage verifies the operator's two-block selection/swap flow and locked-block rejection. Drag-and-drop, one-block shift and title rename remain unimplemented.
-- Timetable Excel exports now provide audited By InstClass and By Teacher workbooks from immutable version snapshots, with Executive access restricted to approved timetables. Legacy PDF golden comparison and attendance publishing coordination remain open phase-D items; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
-- Timetable publication now records a single current approved version per academic-year/week, with IT-only publish/unpublish, downstream lookup and audit events. Attendance class mapping/session consumption remains a distinct phase-D item; see [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md).
+- Timetable Excel exports provide audited By InstClass and By Teacher workbooks from immutable version snapshots, with Executive access restricted to approved timetables. Legacy PDF golden comparison remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
+- Timetable publication records a single current approved version per academic-year/week, with IT-only publish/unpublish, downstream lookup and audit events. Attendance has its own IT-managed class mapping and can create provenance-linked sessions from published classes scheduled on a selected date; this does not reuse the intake workbook crosswalk. See [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md) and [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
 
 Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.
 

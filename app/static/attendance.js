@@ -5,6 +5,8 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
   let hasMore = false;
   let listSequence = 0;
   let detailSequence = 0;
+  let scheduledRows = new Map();
+  let selectedScheduled = null;
   const createForm = $("new-session-form");
   const recordForm = $("attendance-record-form");
   const countForm = $("attendance-count-form");
@@ -29,6 +31,11 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     $("attendance-editor").hidden = true;
     $("new-session-panel").hidden = true;
     createForm.elements.class_name.replaceChildren();
+    $("scheduled-class-select").replaceChildren(new Option("Select a published class", ""));
+    $("scheduled-classes-summary").textContent = "";
+    $("scheduled-academic-year").value = "";
+    scheduledRows = new Map();
+    selectedScheduled = null;
     closeForm.elements.reason.required = false;
   }
   function pager() { $("attendance-previous").disabled = offset === 0; $("attendance-next").disabled = !hasMore; }
@@ -108,6 +115,10 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     const sequence = ++detailSequence; current = null;
     $("attendance-editor").hidden = true; $("new-session-panel").hidden = false;
     createForm.reset(); createForm.elements.session_date.value = today(); createForm.elements.class_name.replaceChildren();
+    $("scheduled-academic-year").value = today().slice(0, 4);
+    $("scheduled-class-select").replaceChildren(new Option("Select a published class", ""));
+    $("scheduled-classes-summary").textContent = "";
+    scheduledRows = new Map(); selectedScheduled = null;
     const data = await api("/reports/dashboard");
     if (sequence !== detailSequence) return;
     for (const [name, count] of Object.entries(data.students.by_class)) {
@@ -116,10 +127,58 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     createForm.elements.expected_count.value = createForm.elements.class_name.selectedOptions[0]?.dataset.count ?? "";
     if (!createForm.elements.class_name.options.length) notice("Create or activate student profiles before creating attendance sessions.");
   }));
-  createForm.elements.class_name.addEventListener("change", () => { createForm.elements.expected_count.value = createForm.elements.class_name.selectedOptions[0]?.dataset.count ?? ""; });
+  createForm.elements.class_name.addEventListener("change", () => {
+    createForm.elements.expected_count.value = createForm.elements.class_name.selectedOptions[0]?.dataset.count ?? "";
+    if (selectedScheduled && selectedScheduled.class_name !== createForm.elements.class_name.value) {
+      selectedScheduled = null;
+      $("scheduled-class-select").value = "";
+      $("scheduled-classes-summary").textContent = "Using a manually selected student class.";
+    }
+  });
+  $("load-scheduled-classes").addEventListener("click", () => run($("load-scheduled-classes"), async () => {
+    const sessionDate = createForm.elements.session_date.value;
+    const academicYear = $("scheduled-academic-year").value.trim();
+    if (!sessionDate || !academicYear) throw new Error("Enter the session date and academic year first.");
+    const query = new URLSearchParams({academic_year: academicYear, session_date: sessionDate});
+    const rows = await api(`/attendance/scheduled-classes?${query}`);
+    scheduledRows = new Map(rows.map((row) => [`${row.instructional_class_id}`, row]));
+    const select = $("scheduled-class-select");
+    select.replaceChildren(new Option("Select a published class", ""));
+    for (const item of rows) {
+      const option = new Option(`${item.instructional_class_code} · ${item.class_name} (${item.active_students} active · ${item.lesson_count} lessons)`, String(item.instructional_class_id));
+      option.disabled = item.active_students < 1;
+      select.add(option);
+    }
+    $("scheduled-classes-summary").textContent = rows.length
+      ? `Published timetable for week of ${rows[0].week_start}. Only mapped classes with lessons on ${sessionDate} are shown.`
+      : "No mapped classes with lessons were found in a published timetable for that date and academic year. Check publication status and IT attendance class mappings.";
+  }));
+  $("scheduled-class-select").addEventListener("change", () => {
+    const selected = scheduledRows.get($("scheduled-class-select").value);
+    if (!selected) { selectedScheduled = null; return; }
+    let option = [...createForm.elements.class_name.options].find((item) => item.value === selected.class_name);
+    if (!option) {
+      option = new Option(`${selected.class_name} (${selected.active_students} active · timetable)`, selected.class_name);
+      option.dataset.count = String(selected.active_students);
+      createForm.elements.class_name.add(option);
+    }
+    createForm.elements.class_name.value = selected.class_name;
+    createForm.elements.expected_count.value = String(selected.active_students || "");
+    selectedScheduled = selected;
+    $("scheduled-classes-summary").textContent = `${selected.instructional_class_code} · ${selected.instructional_class_name} has ${selected.lesson_count} lesson${selected.lesson_count === 1 ? "" : "s"} on this date.`;
+  });
+  createForm.elements.session_date.addEventListener("change", () => {
+    scheduledRows = new Map(); selectedScheduled = null;
+    $("scheduled-class-select").replaceChildren(new Option("Select a published class", ""));
+    $("scheduled-classes-summary").textContent = "Date changed. Load published classes again.";
+  });
   $("cancel-new-session").addEventListener("click", () => { detailSequence += 1; createForm.reset(); $("new-session-panel").hidden = true; });
   createForm.addEventListener("submit", event => { event.preventDefault(); run(createForm, async () => {
     const sequence = detailSequence; const fields = Object.fromEntries(new FormData(createForm)); fields.expected_count = Number(fields.expected_count); fields.notes = fields.notes.trim() || null;
+    if (selectedScheduled && selectedScheduled.class_name === fields.class_name) {
+      fields.timetable_version_id = selectedScheduled.timetable_version_id;
+      fields.instructional_class_id = selectedScheduled.instructional_class_id;
+    }
     const saved = await api("/attendance/sessions", "POST", fields);
     if (sequence !== detailSequence) return;
     await load(saved.id); await list(); notice(`Created attendance session ${saved.id}.`);
