@@ -348,7 +348,7 @@ The project must provide a version-controlled Docker Compose deployment for deve
 - `proxy` — HTTPS termination and request routing.
 - `worker` — background imports, report generation and scheduled jobs where required.
 
-Containers must run with pinned image/dependency versions, non-root users where supported, health checks, restart policy, resource limits and explicit networks. Database volumes and backup destinations must be externalised and must not be removed by routine application redeployment. Production secrets must be supplied through protected environment files or a secrets manager, not committed `.env` files.
+Containers must run with pinned image/dependency versions, non-root users where supported, health checks, restart policy, resource limits and explicit networks. Database volumes and backup destinations must be externalised and must not be removed by routine application redeployment. Production secrets must be supplied through protected environment files or a secrets manager, not committed `.env` files. `APP_ENV=production` now rejects local SQLite/non-psycopg URLs, known development secrets, short JWT/bootstrap secrets and invalid or duplicate Fernet keys at settings initialization. This catches configuration mistakes but does not replace protected secret delivery, TLS or key-custody controls.
 
 ## 17. Data protection and application security
 

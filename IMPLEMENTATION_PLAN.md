@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (3 November 2026)
 
+- Production configuration validation increment (3 November): `APP_ENV=production` refuses SQLite/non-psycopg database URLs, development or undersized JWT/bootstrap secrets, invalid Fernet keys, duplicate active/previous keys and the checked-in development key. API and migration processes share the validation. Local development defaults remain available outside production. TLS, protected secret delivery and key custody remain separate release gates.
+
 - Amend 4-up swap increment: operators can explicitly select two unlocked lesson blocks and exchange their weekday/start-period positions. The existing revision-guarded API revalidates both destinations and the entire timetable atomically; failed swaps preserve the draft. Chromium coverage exercises selection, disabled/enabled confirmation, a successful swap and locked-block rejection. Drag-and-drop, one-block shifting and title rename remain future Amend 4-up work.
 - Staging build identity increment (3 November): readiness now reports the full commit SHA running in the application, and the staging deploy smoke check requires it to match the tested GitHub revision. This distinguishes database/application health from evidence that the expected commit was actually rolled out. See [STAGING_DEPLOYMENT.md](STAGING_DEPLOYMENT.md).
 
