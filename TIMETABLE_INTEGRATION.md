@@ -42,7 +42,17 @@ Amend 4-up review and save
 By InstClass + By Teacher PDF export
 ```
 
-The legacy project is a `.pri` ZIP containing six encrypted data members. It is suitable as a migration source but not as the new system of record: the encryption key is embedded in source, links use names rather than stable IDs, and item IDs are list positions.
+The legacy project is a `.pri` ZIP containing six AES-encrypted JSON members (`R01.bin`–`R06.bin`). The new read-only validator checks this fixed member set, enforces archive size limits, decrypts in memory, and reconciles resource references and placements without modifying the source. Inspection of the current sample and legacy code confirms 25 availability entries and five numeric placement periods. The new schedule has four teaching periods and reserves displayed Period 3 for lunch, so migration must explicitly map or reject legacy slots; no automatic slot conversion is safe. Composite teacher references and the legacy `ALL` whole-school event also require explicit reconciliation. The legacy encryption key is embedded in the old application source and must be supplied to the validator through `LEGACY_PRI_KEY_HEX`; links use names rather than stable IDs, and item IDs are list positions. AES-CBC has no authentication tag, so decryption is not an integrity check. No database import is performed yet; staging import requires explicit mapping/reconciliation and review.
+
+Run the validator from the repository root after setting `LEGACY_PRI_KEY_HEX` to the hex-encoded legacy key in the current PowerShell process:
+
+```powershell
+$env:LEGACY_PRI_KEY_HEX = '<hex-encoded key from TImeTables-legacy source>'
+python scripts/validate_legacy_pri.py 'D:\path\to\project.pri'
+Remove-Item Env:LEGACY_PRI_KEY_HEX
+```
+
+It prints aggregate counts and issue codes by default. Add `--details` for row-indexed issue locations. Exit code `1` means reconciliation found issues or import blockers; `2` means the archive could not be read safely.
 
 ## 2.1 Resource setup is a prerequisite
 

@@ -380,6 +380,8 @@ The timetable system is added as a first-class workstream, with Amend 4-up treat
 - Build a read-only `.pri` import and validation tool.
 - Report legacy composite teachers, invalid references, unplaced lessons and duplicate slots.
 
+Progress (3 November 2026): `app/legacy_pri.py` and `scripts/validate_legacy_pri.py` read the six expected AES-encrypted JSON members without extracting or rewriting the source archive. Validation reports resource counts, invalid references, duplicate class/individual-teacher slots, composite teacher and `ALL` event mapping requirements, availability format errors and placed-versus-required period differences. Source inspection confirmed 25 legacy availability entries and five numeric placement periods; these cannot be silently converted to the new four teaching periods with displayed Period 3 reserved for lunch. The report blocks import until that mapping and whole-school `ALL` event handling are reconciled. The reader enforces archive/member size bounds and exact member names; it does not invoke legacy `BinaryFormatter`. Validation is read-only and is not yet a staging-database import. Legacy AES-CBC has no authentication tag, so successful decryption alone is not proof of integrity; reconciliation and explicit operator review are required before any future import.
+
 Exit criteria: a representative legacy project imports into a staging database with a reconciliation report and no silent data loss.
 
 ### Timetable phase B — Resources and scheduling draft
