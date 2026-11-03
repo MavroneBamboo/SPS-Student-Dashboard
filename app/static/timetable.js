@@ -11,6 +11,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let viewBy = "class";
   let pageOffset = 0;
   let detailSequence = 0;
+  let swapSelectionMode = false;
+  let selectedPlacementIds = [];
   const currentRole = () => typeof role === "function" ? role() : role;
   const canEdit = () => ["Superuser", "Operator", "IT Administrator"].includes(currentRole());
   const canApprove = () => ["Superuser", "IT Administrator"].includes(currentRole());
@@ -22,6 +24,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     current = null;
     detailSequence += 1;
     pageOffset = 0;
+    swapSelectionMode = false;
+    selectedPlacementIds = [];
     for (const id of ["timetable-version-rows", "timetable-grid", "timetable-pending"]) $(id).replaceChildren();
     $("timetable-editor").hidden = true;
     $("timetable-create-form").hidden = true;
@@ -30,6 +34,10 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     placementForm.hidden = true;
     $("timetable-generation-summary").textContent = "";
     viewBy = "class";
+    $("timetable-amend-tools").hidden = true;
+    $("timetable-swap-mode").textContent = "Select lessons to swap";
+    $("timetable-swap-confirm").disabled = true;
+    $("timetable-swap-status").textContent = "Select two unlocked lesson blocks to exchange their day and period.";
     for (const page of document.querySelectorAll(".timetable-page")) page.hidden = page.id !== "timetable-board-page";
     for (const link of document.querySelectorAll(".timetable-side-link")) link.classList.toggle("is-active", link.dataset.timetablePage === "board");
     $("timetable-by-class").classList.add("is-selected");
@@ -52,6 +60,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-generate").disabled = draftMutationPending || !editable;
     approve.disabled = draftMutationPending || !canApprove() || current?.status !== "DRAFT";
     for (const id of ["timetable-remove", "timetable-lock"]) $(id).disabled = draftMutationPending || !editable;
+    $("timetable-swap-mode").disabled = draftMutationPending || !editable;
+    $("timetable-swap-confirm").disabled = draftMutationPending || !editable || selectedPlacementIds.length !== 2;
     for (const button of placementForm.querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
     for (const button of $("timetable-grid").querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
   }
@@ -416,6 +426,21 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     host.classList.remove("weekly-board-host");
     if (!current) return;
     const amendMode = $("timetable-board-mode").value === "amend";
+    const canSwap = amendMode && editableDraft();
+    $("timetable-amend-tools").hidden = !canSwap;
+    if (!canSwap && swapSelectionMode) {
+      swapSelectionMode = false;
+      selectedPlacementIds = [];
+    }
+    $("timetable-swap-mode").textContent = swapSelectionMode ? "Cancel swap selection" : "Select lessons to swap";
+    $("timetable-swap-mode").classList.toggle("is-selected", swapSelectionMode);
+    $("timetable-swap-mode").setAttribute("aria-pressed", String(swapSelectionMode));
+    $("timetable-swap-confirm").disabled = !canSwap || draftMutationPending || selectedPlacementIds.length !== 2;
+    $("timetable-swap-status").textContent = swapSelectionMode
+      ? selectedPlacementIds.length === 2
+        ? "Two blocks selected. Swap them, or click a selected block to change the selection."
+        : `Select two unlocked lesson blocks (${selectedPlacementIds.length}/2 selected). Click a selected block again to deselect it.`
+      : "Select two unlocked lesson blocks to exchange their day and period.";
     $("timetable-editor").classList.toggle("amend-mode", amendMode);
     document.querySelector(".timetable-board-layout").classList.toggle("amend-mode", amendMode);
     $("timetable-density").parentElement.hidden = !amendMode;
@@ -465,12 +490,24 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             slot.instructional_class_id === classItem.id && slot.weekday === day && slot.slot_code === period));
           const button = document.createElement("button");
           button.className = placement ? "lesson-cell" : "empty-cell";
+          if (placement) {
+            button.dataset.placementId = String(placement.id);
+            if (swapSelectionMode) {
+              const selected = selectedPlacementIds.includes(placement.id);
+              button.setAttribute("aria-pressed", String(selected));
+              if (selected) button.classList.add("selected-for-swap");
+            }
+          }
           button.disabled = !editableDraft() || draftMutationPending;
           button.textContent = placement ? labelFor(placement) : (editableDraft() ? "+ Add lesson" : "—");
           button.setAttribute("aria-label", placement
             ? `${classItem.code} ${day} ${periodLabels[period]} ${labelFor(placement)}`
             : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
-          if (placement) button.addEventListener("click", () => editPlacement(placement, day, period));
+          if (placement) button.addEventListener("click", () => {
+            if (swapSelectionMode) selectPlacementForSwap(placement);
+            else editPlacement(placement, day, period);
+          });
+          else if (swapSelectionMode) button.addEventListener("click", () => notice("Select populated lesson blocks; empty cells cannot be selected for a swap."));
           else if (editableDraft()) button.addEventListener("click", () => run(button, () => addPlacement(classItem, day, period)));
           td.append(button);
         }
@@ -482,6 +519,34 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       host.append(panel);
     }
     if (!visible.length) host.textContent = "This timetable has no selected classes.";
+  }
+
+  function selectPlacementForSwap(placement) {
+    if (placement.is_locked) {
+      notice("Locked lesson blocks cannot be swapped. Unlock the block first.");
+      return;
+    }
+    if (selectedPlacementIds.includes(placement.id)) {
+      selectedPlacementIds = selectedPlacementIds.filter((id) => id !== placement.id);
+    } else if (selectedPlacementIds.length < 2) {
+      selectedPlacementIds = [...selectedPlacementIds, placement.id];
+    }
+    renderGrid();
+  }
+
+  async function swapSelectedPlacements() {
+    if (!current || selectedPlacementIds.length !== 2) return;
+    const [firstPlacementId, secondPlacementId] = selectedPlacementIds;
+    current = await api(`/timetable/versions/${current.id}/swap`, "POST", {
+      expected_revision: current.revision,
+      first_placement_id: firstPlacementId,
+      second_placement_id: secondPlacementId,
+    });
+    selectedPlacementIds = [];
+    swapSelectionMode = false;
+    placementForm.hidden = true;
+    render();
+    notice("Lesson blocks swapped. The full draft was revalidated and saved.");
   }
 
   function renderWeeklyBoard(host) {
@@ -914,6 +979,13 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   });
   $("timetable-remove").addEventListener("click", () => runDraftMutation($("timetable-remove"), removePlacement));
   $("timetable-lock").addEventListener("click", () => runDraftMutation($("timetable-lock"), toggleLock));
+  $("timetable-swap-mode").addEventListener("click", () => {
+    swapSelectionMode = !swapSelectionMode;
+    selectedPlacementIds = [];
+    placementForm.hidden = true;
+    renderGrid();
+  });
+  $("timetable-swap-confirm").addEventListener("click", () => runDraftMutation($("timetable-swap-confirm"), swapSelectedPlacements));
   $("timetable-cancel-placement").addEventListener("click", () => { placementForm.hidden = true; });
   $("timetable-generate").addEventListener("click", () => runDraftMutation($("timetable-generate"), generate));
   $("timetable-approve").addEventListener("click", () => runDraftMutation($("timetable-approve"), approve));

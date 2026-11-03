@@ -96,9 +96,30 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     except AssertionError as error:
         raise AssertionError(f"Generation failed; UI message: {page.locator('#notice').inner_text()}") from error
     expect(page.locator("#timetable-pending")).to_contain_text("All weekly lesson requirements are placed")
+    page.get_by_role("button", name="Select lessons to swap", exact=True).click()
+    swap_button = page.get_by_role("button", name="Swap selected lessons", exact=True)
+    expect(page.locator("#timetable-swap-status")).to_contain_text("0/2 selected")
+    placement_ids = page.evaluate("""() => [...new Set([...document.querySelectorAll('.amend-grid .lesson-cell[data-placement-id]')]
+      .map((node) => node.dataset.placementId))]""")
+    assert len(placement_ids) == 2, f"Expected two generated lesson blocks, found {placement_ids}"
+    page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first.click()
+    expect(page.locator("#timetable-swap-status")).to_contain_text("1/2 selected")
+    expect(swap_button).to_be_disabled()
+    page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[1]}"]').first.click()
+    expect(page.locator("#timetable-swap-status")).to_contain_text("Two blocks selected")
+    expect(swap_button).to_be_enabled()
+    swap_button.click()
+    expect(page.get_by_role("status")).to_contain_text("Lesson blocks swapped")
+    expect(page.get_by_role("button", name="Select lessons to swap", exact=True)).to_be_visible()
     page.locator(".amend-grid .lesson-cell").first.click()
     page.get_by_role("button", name="Lock lesson", exact=True).click()
     expect(page.locator(".amend-grid")).to_contain_text("locked")
+    locked_placement_id = page.locator(".amend-grid .lesson-cell[data-placement-id]").first.get_attribute("data-placement-id")
+    page.get_by_role("button", name="Select lessons to swap", exact=True).click()
+    page.locator(f'.amend-grid .lesson-cell[data-placement-id="{locked_placement_id}"]').first.click()
+    expect(page.get_by_role("status")).to_contain_text("Locked lesson blocks cannot be swapped")
+    expect(page.locator("#timetable-swap-status")).to_contain_text("0/2 selected")
+    page.get_by_role("button", name="Cancel swap selection", exact=True).click()
     page.get_by_role("button", name="Approve complete draft", exact=True).click()
     expect(page.locator("#timetable-version-detail")).to_contain_text("APPROVED")
     assert page.locator("#timetable-pending").inner_text().find("All weekly lesson requirements are placed") >= 0

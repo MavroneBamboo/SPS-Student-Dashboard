@@ -276,14 +276,15 @@ Required interactions:
 - Previous/next page.
 - Click a populated cell to open the lesson form for amendment.
 - Click an empty teaching cell to add a lesson after validating subject, teacher, class, availability and clashes.
-- Drag a lesson to another slot; validate the destination and swap only when both moves are valid.
+- Select two unlocked lesson blocks and exchange their weekday/start positions through one revision-checked, full-grid-validated swap request.
+- Drag-and-drop to another slot; validate the destination and any affected blocks before saving (planned follow-up).
 - Right-click a lesson to shift or remove it.
 - Double-click a title to request a controlled rename.
 - Lock/unlock a slot.
 - Save amendments directly to the current draft and record an audit event.
 - Return to the normal Schedule view without losing amendments.
 
-The current browser implements cell click-to-add/edit, remove, lock/unlock, bounded generation, and approval. Drag/drop, atomic swap controls, right-click actions, and title rename remain design requirements for later increments.
+The current browser implements cell click-to-add/edit, remove, lock/unlock, bounded generation, approval, and an explicit two-block swap selection. Swap requests include the current revision; the API rejects locked blocks and validates both destinations with the full resulting grid before committing one audit event. Drag/drop, right-click actions, one-block shift, and title rename remain design requirements for later increments.
 
 The UI must use the real weekday and period represented by each row/cell. The displayed order is P1, P2, P3 Lunch/Muster, P4, P5; existing API codes remain P1, P2, LUNCH, P3, P4 in that display order. Lunch is rendered for report alignment and rejects placement and edits.
 
@@ -339,10 +340,10 @@ Period and cluster-membership changes revalidate active requirements. A shared P
 
 Rules now use explicit class/cluster foreign keys, effective date windows and atomic edit versions. Definition schema version 1 validates allowed weekdays, allowed teaching slots and maximum daily lessons. IT Administrators own writes; Operators can read and resolve. The shared bulk resolver returns one validated rule per active class or rejects the entire request for missing/ambiguous rules, invalid definitions or unresolved legacy targets. Class rules do not override cluster rules: any shared scope/date overlap is an error.
 
-PostgreSQL statement/row triggers coordinate rule and membership writes through the shared transaction lock, rejecting overlap even for direct SQL callers. The app uses READ COMMITTED and triggers reject unsupported isolation levels. Revision 0004 preserves unresolved legacy rows for explicit reconciliation. Draft editing, generation, By class/By teacher browser boards and Amend 4-up consume shared validation services. Server PDF output, swap/drag controls and publishing coordination remain outstanding.
+PostgreSQL statement/row triggers coordinate rule and membership writes through the shared transaction lock, rejecting overlap even for direct SQL callers. The app uses READ COMMITTED and triggers reject unsupported isolation levels. Revision 0004 preserves unresolved legacy rows for explicit reconciliation. Draft editing, generation, By class/By teacher browser boards and Amend 4-up consume shared validation services. Atomic swap controls and publishing coordination are implemented; drag-and-drop, server PDF output and other parity work remain outstanding.
 
 #### Timetable draft and placement delivery
 
 Revision `0005` introduces `timetable_versions`, selected-class links, lesson blocks and normalized occupied slots. New drafts snapshot current requirements/resources/periods and resolved rules for each weekday of a Monday-based week. Every mutation checks configuration currentness and the expected draft revision, validates the full proposed grid and commits the block/cell changes with an audit event. Shared validation enforces block/remainder quantities, lunch/gap exclusion, allowed days/periods, daily limits, availability and actual-time teacher/class conflicts. Swaps validate both directions before replacing either block's cells.
 
-PostgreSQL guards enforce snapshot/class-selection immutability, occupied-cell uniqueness, actual-time clashes, snapshotted cell resource/time values, locked blocks and approved records. Full-grid reads use the transaction lock for consistent header/cell revisions. IT Administrators and Superusers can approve only complete, current drafts; Executives can read approved versions. Historical rendering uses snapshots. Automatic generation uses the same validations and transaction services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). The browser offers By class/By teacher weekly views, clickable Amend 4-up, browser print-to-PDF reports, resource tabs and period/rule management. Published-version coordination, draft copy/rebase, composite teachers and fixed events remain to implement. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
+PostgreSQL guards enforce snapshot/class-selection immutability, occupied-cell uniqueness, actual-time clashes, snapshotted cell resource/time values, locked blocks and approved records. Full-grid reads use the transaction lock for consistent header/cell revisions. IT Administrators and Superusers can approve only complete, current drafts; Executives can read approved versions. Historical rendering uses snapshots. Automatic generation and weekly publication use the same validations and transaction services; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md). The browser offers By class/By teacher weekly views, clickable Amend 4-up, revision-guarded swaps, browser print-to-PDF reports, resource tabs and period/rule management. Attendance consumption of published versions, draft copy/rebase, composite teachers and fixed events remain to implement. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
