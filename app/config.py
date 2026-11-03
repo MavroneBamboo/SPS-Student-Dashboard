@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     bootstrap_username: str = "bootstrap-admin"
     bootstrap_password: str = "change-this-on-first-run"
     app_encryption_key: str = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+    app_encryption_previous_keys: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 

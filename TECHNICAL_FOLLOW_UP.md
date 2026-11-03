@@ -375,6 +375,8 @@ Database protection must include:
 
 Application-level encryption does not replace database encryption at rest. Both controls are required for the fields classified as sensitive.
 
+Application ciphertext now carries a key identifier. The API decrypts the active key and configured prior keys while new writes use only the active key. `python -m app.rotate_encryption` performs a read-only verification by default; `--apply` rotates student profile fields, captured attendance roster names, and both staged-import ciphertext payloads in one transaction. Run with application writes stopped, retain old keys for every backup that may contain their ciphertext, and verify a zero-rotation dry run afterward. See [ENCRYPTION_KEY_ROTATION.md](ENCRYPTION_KEY_ROTATION.md). Production key custody and a restore rehearsal remain release requirements.
+
 ## 18. Security assurance and operations
 
 Security must be observed across the full lifecycle:
