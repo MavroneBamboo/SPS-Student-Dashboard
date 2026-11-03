@@ -18,7 +18,7 @@ function clearData() {
   timetable.clear();
   students.clear();
   studentCatalogs.clear();
-  for (const id of ["user-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
+  for (const id of ["user-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
@@ -180,6 +180,7 @@ function showPanel(name) {
   $("profiles-panel").hidden = name !== "profiles";
   $("attendance-panel").hidden = name !== "attendance";
   $("timetable-panel").hidden = name !== "timetable";
+  $("sessions-panel").hidden = name !== "sessions";
   const navIds = {users: "users-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
   for (const [panel, id] of Object.entries(navIds)) {
     const button = $(id);
@@ -188,7 +189,29 @@ function showPanel(name) {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule"}[name];
+  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", sessions: "Active sessions"}[name];
+}
+async function showSessions() {
+  const sessions = await api("/auth/sessions");
+  const rows = $("session-rows");
+  rows.replaceChildren();
+  for (const session of sessions) {
+    const row = document.createElement("tr");
+    cell(row, new Date(session.created_at).toLocaleString());
+    cell(row, new Date(session.expires_at).toLocaleString());
+    cell(row, session.is_current ? "Current browser" : "Other session");
+    const action = document.createElement("td");
+    const revoke = document.createElement("button");
+    revoke.type = "button";
+    revoke.className = "secondary";
+    revoke.textContent = "Revoke this session";
+    revoke.dataset.sessionId = session.session_id;
+    revoke.dataset.current = String(session.is_current);
+    action.append(revoke);
+    row.append(action);
+    rows.append(row);
+  }
+  showPanel("sessions");
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -450,6 +473,20 @@ $("download-dashboard-report").addEventListener("click", () => run($("download-d
   await downloadXlsx(`/reports/dashboard.xlsx?${query}`, "Dashboard report workbook downloaded.");
 }));
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
+$("sessions-button").addEventListener("click", () => run($("sessions-button"), showSessions));
+$("sessions-close").addEventListener("click", () => run($("sessions-close"), () => identity.role === "IT Administrator" ? showUsers() : showDashboard()));
+$("session-rows").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-session-id]");
+  if (!button) return;
+  run(button, async () => {
+    await api(`/auth/sessions/${button.dataset.sessionId}`, "DELETE");
+    if (button.dataset.current === "true") signedOut("This session was revoked.");
+    else {
+      await showSessions();
+      notice("Session revoked.");
+    }
+  });
+});
 $("refresh-import-retention").addEventListener("click", () => run($("refresh-import-retention"), refreshImportRetention));
 $("preview-import-purge").addEventListener("click", () => run($("preview-import-purge"), () => requestImportPurge(false)));
 $("apply-import-purge").addEventListener("click", () => run($("apply-import-purge"), () => requestImportPurge(true)));

@@ -43,8 +43,13 @@
       <button id="password-cancel" class="secondary" type="button">Sign out</button>
     </section>
     <section id="workspace" hidden>
-      <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
+      <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="sessions-button" class="secondary">Active sessions</button><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
       <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
+      <section id="sessions-panel" class="panel" hidden aria-labelledby="sessions-title">
+        <div class="section-bar"><h2 id="sessions-title">Active sessions</h2><button id="sessions-close" class="secondary">Back to workspace</button></div>
+        <p>Revoke a session to sign out that browser. Password changes and account security updates revoke every session.</p>
+        <div class="table-wrap"><table><thead><tr><th>Signed in</th><th>Expires</th><th>Session</th><th>Action</th></tr></thead><tbody id="session-rows"></tbody></table></div>
+      </section>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><div class="actions"><button id="download-dashboard-report" class="secondary">Download dashboard report</button><button id="refresh-dashboard">Refresh data</button></div></div>
         <form id="dashboard-filter" class="filters">

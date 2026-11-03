@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from datetime import time as time_value
 from typing import Literal
 
@@ -16,6 +16,13 @@ class TokenResponse(BaseModel):
     expires_in: int
     role: str
     must_change_password: bool = False
+
+
+class AuthSessionResponse(BaseModel):
+    session_id: str
+    created_at: datetime
+    expires_at: datetime
+    is_current: bool
 
 
 class PasswordChangeRequest(BaseModel):

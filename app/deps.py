@@ -3,10 +3,11 @@ from typing import Annotated
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User
+from app.models import AuthSession, User
 from app.security import decode_access_token
 
 bearer = HTTPBearer(auto_error=False)
@@ -27,6 +28,9 @@ def authenticated_claims(credentials: Annotated[HTTPAuthorizationCredentials | N
     user = db.get(User, user_id)
     if user is None or not user.is_active or token_claims["ver"] != user.token_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is unavailable")
+    session = db.scalar(select(AuthSession).where(AuthSession.jti == token_claims["jti"], AuthSession.user_id == user.id))
+    if session is None or session.revoked_at is not None or session.token_version != user.token_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is unavailable")
     return {
         **token_claims,
         "sub": str(user.id),

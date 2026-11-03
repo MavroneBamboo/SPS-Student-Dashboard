@@ -140,6 +140,8 @@ def test_identity_upgrade_preserves_users_or_refuses_casefold_duplicates(tmp_pat
                 current = MetaData()
                 current.reflect(bind=connection)
                 assert connection.execute(select(current.tables["users"].c.token_version)).scalar_one() == 0
+                assert "auth_sessions" in current.tables
+                assert connection.execute(select(current.tables["auth_sessions"])).all() == []
     finally:
         database.dispose()
 

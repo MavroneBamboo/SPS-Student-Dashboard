@@ -132,6 +132,29 @@ def test_it_admin_named_account_reset_and_server_logout(page, make_account, live
     )
 
 
+def test_session_management_revokes_only_the_selected_login(page, make_account, live_url):
+    account_data = make_account("Operator")
+    login(page, account_data)
+    second_login = page.request.post(
+        live_url + "/api/v1/auth/login", data={"username": account_data["username"], "password": account_data["password"]}
+    )
+    assert second_login.status == 200
+    second_token = {"Authorization": f"Bearer {second_login.json()['access_token']}"}
+
+    page.get_by_role("button", name="Active sessions", exact=True).click()
+    session_rows = page.locator("#session-rows tr")
+    expect(session_rows).to_have_count(2)
+    other_row = session_rows.filter(has_text="Other session")
+    assert other_row.count() == 1
+    other_row.get_by_role("button", name="Revoke this session", exact=True).click()
+    expect(session_rows).to_have_count(1)
+    expect(session_rows).to_contain_text("Current browser")
+    assert page.request.get(live_url + "/api/v1/auth/me", headers=second_token).status == 401
+    expect(page.get_by_role("status")).to_contain_text("Session revoked")
+    page.get_by_role("button", name="Back to workspace", exact=True).click()
+    expect(page.get_by_role("heading", name="Intake and attendance overview", exact=True)).to_be_visible()
+
+
 @pytest.mark.parametrize("role", ["Operator", "Executive"])
 def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(page, make_account, role):
     account = make_account(role)

@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 import time
@@ -8,6 +9,8 @@ from uuid import uuid4
 import pytest
 import uvicorn
 from playwright.sync_api import sync_playwright
+
+os.environ.setdefault("JWT_SECRET", "browser-test-secret-that-is-long-enough-for-hs256")  # gitleaks:allow
 
 from app.db import SessionLocal
 from app.main import app
