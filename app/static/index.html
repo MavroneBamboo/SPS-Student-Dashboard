@@ -254,6 +254,11 @@
         <div class="section-bar"><h3>Saved timetables</h3><button id="new-timetable" hidden>Create weekly draft</button></div>
         <section id="timetable-editor" class="panel" hidden aria-labelledby="timetable-editor-title">
           <div class="section-bar"><div><h3 id="timetable-editor-title">Weekly timetable</h3><p id="timetable-version-detail"></p></div><div class="actions"><label>Classes per page<select id="timetable-density"><option>4</option><option>8</option><option>12</option><option>16</option></select></label><button id="timetable-reload" class="secondary">Reload draft</button><button id="timetable-previous" class="secondary">Previous classes</button><button id="timetable-next" class="secondary">Next classes</button></div></div>
+          <div id="timetable-amend-tools" class="actions amend-tools" hidden aria-label="Amend 4-up actions">
+            <button id="timetable-swap-mode" class="secondary" type="button">Select lessons to swap</button>
+            <span id="timetable-swap-status" aria-live="polite">Select two unlocked lesson blocks to exchange their day and period.</span>
+            <button id="timetable-swap-confirm" type="button" disabled>Swap selected lessons</button>
+          </div>
           <div class="timetable-board-layout">
             <div id="timetable-grid" class="timetable-grid"></div>
             <div id="timetable-summary" class="timetable-summary" hidden></div>
