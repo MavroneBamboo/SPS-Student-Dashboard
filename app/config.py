@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
     bootstrap_password: str = "change-this-on-first-run"
     app_encryption_key: str = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
     app_encryption_previous_keys: str = ""
+    student_import_retention_days: int = Field(default=0, ge=0, le=3650)
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
 

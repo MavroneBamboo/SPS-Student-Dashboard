@@ -337,6 +337,29 @@ async function showUsers() {
     }
     $("user-rows").append(row);
   }
+  await refreshImportRetention();
+}
+
+function renderImportRetention(data, applied = false) {
+  const status = $("import-retention-status");
+  if (!data.enabled) {
+    status.textContent = "Retention is disabled. Set STUDENT_IMPORT_RETENTION_DAYS to a value from 1 to 3650 and redeploy.";
+  } else {
+    status.textContent = `${data.retention_days}-day policy: ${data.eligible_batches} staged batches eligible (${data.eligible_preview_batches} uncommitted, ${data.eligible_committed_batches} committed).${applied ? ` Purged ${data.purged_batches} batch payloads.` : " Student profile data and import results are retained."}`;
+  }
+  $("preview-import-purge").disabled = !data.enabled;
+  $("apply-import-purge").disabled = !data.enabled || data.eligible_batches === 0;
+}
+
+async function refreshImportRetention() {
+  const data = await api("/student-imports/retention");
+  renderImportRetention(data);
+}
+
+async function requestImportPurge(apply) {
+  if (apply && !window.confirm("Purge the expired encrypted workbook and parsed staging data? This cannot be undone. Imported student profiles and aggregate results will be retained.")) return;
+  const result = await api("/student-imports/retention/purge", "POST", {apply});
+  renderImportRetention(result, apply);
 }
 
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
@@ -397,6 +420,9 @@ $("cancel-reset-user").addEventListener("click", () => { $("reset-user-form").re
 $("dashboard-filter").addEventListener("submit", (event) => { event.preventDefault(); run(event.currentTarget, showDashboard); });
 for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener("click", () => run($(id), showDashboard));
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
+$("refresh-import-retention").addEventListener("click", () => run($("refresh-import-retention"), refreshImportRetention));
+$("preview-import-purge").addEventListener("click", () => run($("preview-import-purge"), () => requestImportPurge(false)));
+$("apply-import-purge").addEventListener("click", () => run($("apply-import-purge"), () => requestImportPurge(true)));
 for (const id of ["signout", "password-cancel"]) $(id).addEventListener("click", explicitSignOut);
 $("change-password").addEventListener("click", () => {
   $("workspace").hidden = true;

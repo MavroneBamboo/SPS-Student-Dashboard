@@ -1,13 +1,15 @@
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from types import SimpleNamespace
 from uuid import uuid4
 
 from openpyxl import Workbook
 from playwright.sync_api import expect
 from sqlalchemy import select
 
-from app.crypto import decrypt_sensitive
+from app.crypto import decrypt_sensitive, encrypt_sensitive_bytes
 from app.db import SessionLocal
-from app.models import InstructionalClass, Student, StudentClassMapping
+from app.models import AuditEvent, InstructionalClass, Student, StudentClassMapping, StudentImportBatch
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 
 from .test_browser import login
@@ -184,3 +186,47 @@ def test_operator_can_review_but_not_edit_intake_class_mappings(page, make_accou
     expect(mapping_row.get_by_role("checkbox")).to_be_disabled()
     expect(mapping_row.get_by_role("button", name=f"Save mapping for {source_label}")).to_be_disabled()
     expect(page.locator("#student-class-mapping-form")).to_be_hidden()
+
+
+def test_it_admin_previews_and_confirms_import_staging_purge(page, make_account, monkeypatch):
+    import app.routes.student_imports as imports_route
+
+    monkeypatch.setattr(imports_route, "get_settings", lambda: SimpleNamespace(student_import_retention_days=30))
+    account = make_account("IT Administrator")
+    result = '{"created":4,"mode":"CREATE_ONLY","unchanged":0,"updated":0}'
+    with SessionLocal() as db:
+        batch = StudentImportBatch(
+            status="COMMITTED",
+            source_ciphertext=encrypt_sensitive_bytes(b"synthetic workbook bytes"),
+            rows_ciphertext=encrypt_sensitive_bytes(b"[]"),
+            row_count=4,
+            valid_count=4,
+            invalid_count=0,
+            warning_count=0,
+            existing_count=0,
+            new_count=4,
+            created_by=account["id"],
+            created_at=datetime.now(UTC) - timedelta(days=31),
+            committed_at=datetime.now(UTC) - timedelta(days=31),
+            result_json=result,
+        )
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+
+    login(page, account)
+    expect(page.get_by_role("heading", name="User administration", exact=True)).to_be_visible()
+    expect(page.locator("#import-retention-status")).to_contain_text("1 staged batches eligible")
+    page.get_by_role("button", name="Preview eligible purge", exact=True).click()
+    expect(page.locator("#import-retention-status")).to_contain_text("1 staged batches eligible")
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.get_by_role("button", name="Purge expired staging data", exact=True).click()
+    expect(page.locator("#import-retention-status")).to_contain_text("Purged 1 batch payloads")
+    with SessionLocal() as db:
+        saved = db.get(StudentImportBatch, batch_id)
+        assert saved.status == "COMMITTED"
+        assert saved.source_ciphertext is None and saved.rows_ciphertext is None
+        assert saved.payload_purged_at is not None
+        assert saved.result_json == result
+        event = db.query(AuditEvent).filter_by(action="student.import_payload.purged", entity_id=str(batch_id)).one()
+        assert event.actor_id == account["id"]

@@ -491,3 +491,69 @@ def test_attendance_timetable_link_migration_preserves_existing_sessions(tmp_pat
             assert row["instructional_class_id"] is None
     finally:
         database.dispose()
+
+
+def test_student_import_retention_migration_preserves_encrypted_batch_payloads(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-import-retention-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    migrate("20261103_0014")
+    database = create_engine(database_url)
+    try:
+        before = MetaData()
+        before.reflect(bind=database)
+        users = before.tables["users"]
+        batches = before.tables["student_import_batches"]
+        batch_values = {
+            "status": "PREVIEW",
+            "source_ciphertext": b"encrypted-original-workbook",
+            "rows_ciphertext": b"encrypted-parsed-rows",
+            "row_count": 3,
+            "valid_count": 2,
+            "invalid_count": 1,
+            "warning_count": 0,
+            "existing_count": 0,
+            "new_count": 2,
+            "created_by": 1,
+        }
+        with database.begin() as connection:
+            connection.execute(
+                users.insert().values(
+                    id=1,
+                    username="retention-upgrade",
+                    password_hash="fixture-hash",
+                    role="IT Administrator",
+                    must_change_password=False,
+                    is_active=True,
+                )
+            )
+            connection.execute(batches.insert().values(id=70, **batch_values))
+            original = connection.execute(select(batches).where(batches.c.id == 70)).mappings().one()
+
+        migrate("head")
+        after = MetaData()
+        after.reflect(bind=database)
+        current = after.tables["student_import_batches"]
+        with database.connect() as connection:
+            upgraded = connection.execute(select(current).where(current.c.id == 70)).mappings().one()
+            for key, value in original.items():
+                assert upgraded[key] == value
+            assert upgraded["payload_purged_at"] is None
+        columns = {column["name"]: column for column in inspect(database).get_columns("student_import_batches")}
+        assert columns["source_ciphertext"]["nullable"] is True
+        assert columns["rows_ciphertext"]["nullable"] is True
+        assert columns["payload_purged_at"]["nullable"] is True
+    finally:
+        database.dispose()

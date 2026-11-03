@@ -1,8 +1,9 @@
 import json
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -462,6 +463,78 @@ def test_numeric_identity_and_contact_cells_require_explicit_data_warning_acknow
     assert student["ic_number"] == "1234567890123"
     assert student["next_of_kin_contact"] == "12345678"
     assert student["student_contact"] == "1234567890"
+
+
+def test_import_retention_is_admin_only_dry_run_first_and_preserves_committed_records(lesson_context, monkeypatch):
+    import app.routes.student_imports as imports_route
+
+    client, headers, _ = lesson_context
+    preview = upload(client, headers, workbook([intake_row("RETENTION-PREVIEW")])).json()
+    committed_preview = upload(client, headers, workbook([intake_row("RETENTION-COMMITTED")])).json()
+    committed = client.post(f"{BASE}/{committed_preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert committed.status_code == 200, committed.text
+    monkeypatch.setattr(imports_route, "get_settings", lambda: SimpleNamespace(student_import_retention_days=30))
+    old_created_at = datetime.now(UTC) - timedelta(days=31)
+    with SessionLocal() as db:
+        db.get(StudentImportBatch, preview["id"]).created_at = old_created_at
+        db.get(StudentImportBatch, committed_preview["id"]).created_at = old_created_at
+        db.commit()
+
+    assert client.get(f"{BASE}/retention", headers=headers["operator"]).status_code == 403
+    assert client.get(f"{BASE}/retention", headers=headers["executive"]).status_code == 403
+    status = client.get(f"{BASE}/retention", headers=headers["admin"])
+    assert status.status_code == 200
+    assert status.json()["enabled"] is True
+    assert status.json()["eligible_batches"] == 2
+    assert status.json()["eligible_preview_batches"] == 1
+    assert status.json()["eligible_committed_batches"] == 1
+
+    dry_run = client.post(f"{BASE}/retention/purge", json={"apply": False}, headers=headers["admin"])
+    assert dry_run.status_code == 200
+    assert dry_run.json()["eligible_batches"] == 2
+    assert dry_run.json()["purged_batches"] == 0
+    with SessionLocal() as db:
+        assert db.get(StudentImportBatch, preview["id"]).rows_ciphertext is not None
+        assert db.get(StudentImportBatch, committed_preview["id"]).source_ciphertext is not None
+    blocked_before_purge = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert blocked_before_purge.status_code == 409
+
+    applied = client.post(f"{BASE}/retention/purge", json={"apply": True}, headers=headers["admin"])
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["applied"] is True
+    assert applied.json()["purged_batches"] == 2
+    assert applied.json()["eligible_batches"] == 0
+    expired_preview = client.get(f"{BASE}/{preview['id']}", headers=headers["operator"])
+    assert expired_preview.status_code == 200
+    assert expired_preview.json()["status"] == "EXPIRED"
+    assert expired_preview.json()["expired"] is True
+    assert expired_preview.json()["payload_available"] is False
+    assert expired_preview.json()["row_errors"] == []
+    blocked_commit = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert blocked_commit.status_code == 409
+
+    repeated_commit = client.post(f"{BASE}/{committed_preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert repeated_commit.status_code == 200
+    assert repeated_commit.json()["status"] == "COMMITTED"
+    assert repeated_commit.json()["payload_available"] is False
+    with SessionLocal() as db:
+        saved = db.scalar(select(Student).where(Student.pris_no == "RETENTION-COMMITTED"))
+        assert saved is not None and decrypt_sensitive(saved.name_encrypted) == "Synthetic Import Student"
+        purged_events = db.scalars(select(AuditEvent).where(AuditEvent.action == "student.import_payload.purged")).all()
+        assert len(purged_events) == 2
+        assert all("SYNTH-IC-IMPORT-1" not in event.details_json for event in purged_events)
+
+
+def test_import_retention_disabled_by_default_and_rejects_purge(lesson_context, monkeypatch):
+    import app.routes.student_imports as imports_route
+
+    client, headers, _ = lesson_context
+    monkeypatch.setattr(imports_route, "get_settings", lambda: SimpleNamespace(student_import_retention_days=0))
+    status = client.get(f"{BASE}/retention", headers=headers["superuser"])
+    assert status.status_code == 200
+    assert status.json()["enabled"] is False
+    response = client.post(f"{BASE}/retention/purge", json={"apply": True}, headers=headers["superuser"])
+    assert response.status_code == 409
 
 
 def test_update_existing_is_explicit_blank_preserving_and_status_historical(lesson_context):

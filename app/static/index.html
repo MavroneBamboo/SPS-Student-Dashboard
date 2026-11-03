@@ -210,6 +210,11 @@
         </form>
         <div class="section-bar"><h3>Accounts</h3><button id="refresh-users" class="secondary">Refresh accounts</button></div>
         <div class="panel table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Active</th><th>Password change</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>
+        <section class="panel" aria-labelledby="import-retention-title">
+          <div class="section-bar"><div><h3 id="import-retention-title">Student import data retention</h3><p>Expired encrypted workbook staging can be purged while student profiles and import audit results remain.</p></div><button id="refresh-import-retention" class="secondary" type="button">Refresh retention status</button></div>
+          <p id="import-retention-status" aria-live="polite" aria-atomic="true">Loading retention status.</p>
+          <div class="actions"><button id="preview-import-purge" class="secondary" type="button">Preview eligible purge</button><button id="apply-import-purge" type="button" disabled>Purge expired staging data</button></div>
+        </section>
         <form id="reset-user-form" class="panel filters" hidden>
           <h3 id="reset-user-title">Reset password</h3>
           <input name="user_id" type="hidden">
