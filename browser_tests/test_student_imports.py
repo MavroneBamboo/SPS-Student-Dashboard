@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from uuid import uuid4
 
@@ -5,9 +6,10 @@ from openpyxl import Workbook
 from playwright.sync_api import expect
 from sqlalchemy import select
 
-from app.crypto import decrypt_sensitive
+from app.config import get_settings
+from app.crypto import decrypt_sensitive, encrypt_sensitive_bytes
 from app.db import SessionLocal
-from app.models import InstructionalClass, Student, StudentClassMapping
+from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 
 from .test_browser import login
@@ -184,3 +186,54 @@ def test_operator_can_review_but_not_edit_intake_class_mappings(page, make_accou
     expect(mapping_row.get_by_role("checkbox")).to_be_disabled()
     expect(mapping_row.get_by_role("button", name=f"Save mapping for {source_label}")).to_be_disabled()
     expect(page.locator("#student-class-mapping-form")).to_be_hidden()
+
+
+def test_it_admin_retention_controls_require_dry_run_and_explicit_confirmation(page, make_account, monkeypatch):
+    from app.routes import student_imports
+
+    settings = get_settings().model_copy(update={"student_import_retention_days": 1})
+    monkeypatch.setattr(student_imports, "get_settings", lambda: settings)
+    account = make_account("IT Administrator")
+    with SessionLocal() as db:
+        batch = StudentImportBatch(
+            status="PREVIEW",
+            source_ciphertext=encrypt_sensitive_bytes(b"synthetic workbook bytes"),
+            rows_ciphertext=encrypt_sensitive_bytes(b"[]"),
+            row_count=1,
+            valid_count=1,
+            invalid_count=0,
+            warning_count=0,
+            existing_count=0,
+            new_count=1,
+            created_by=account["id"],
+            created_at=datetime.now(UTC) - timedelta(days=2),
+        )
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+
+    login(page, account)
+    page.get_by_role("button", name="Reference data", exact=True).click()
+    status = page.locator("#student-import-retention-status")
+    expect(status).to_contain_text("1 eligible payload")
+    purge_button = page.get_by_role("button", name="Purge eligible payloads", exact=True)
+    expect(purge_button).to_be_disabled()
+    confirmation = page.get_by_label("I understand this permanently removes the retained import workbook and staged-row payloads.")
+    confirmation.check()
+    expect(purge_button).to_be_disabled()
+
+    page.get_by_role("button", name="Preview eligible payloads", exact=True).click()
+    expect(page.locator("#student-import-retention-result")).to_contain_text("Dry run complete: 1 encrypted payload")
+    expect(confirmation).not_to_be_checked()
+    expect(purge_button).to_be_disabled()
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, batch_id)
+        assert batch.status == "PREVIEW" and batch.source_ciphertext and batch.rows_ciphertext
+
+    confirmation.check()
+    expect(purge_button).to_be_enabled()
+    purge_button.click()
+    expect(page.locator("#student-import-retention-result")).to_contain_text("1 encrypted payload(s) purged")
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, batch_id)
+        assert batch.status == "EXPIRED" and batch.source_ciphertext is None and batch.rows_ciphertext is None

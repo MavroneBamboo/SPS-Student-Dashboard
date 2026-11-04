@@ -1,22 +1,34 @@
+import hashlib
 import json
-from datetime import UTC, date, datetime
+import secrets
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
+from app.config import get_settings
 from app.crypto import decrypt_sensitive, decrypt_sensitive_bytes, encrypt_sensitive, encrypt_sensitive_bytes
 from app.deps import Claims, DbSession, require_roles
-from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch, StudentReferenceValue, StudentStatusHistory
+from app.models import (
+    AuditEvent,
+    InstructionalClass,
+    Student,
+    StudentClassMapping,
+    StudentImportBatch,
+    StudentReferenceValue,
+    StudentStatusHistory,
+)
 from app.reference_catalogs import resolve_active_reference
 from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
 
-router = APIRouter(prefix="/student-imports", tags=["student imports"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
+router = APIRouter(prefix="/student-imports", tags=["student imports"])
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -45,6 +57,31 @@ class ImportBatchResponse(BaseModel):
     row_errors: list[ImportRowError]
     row_warnings: list[ImportRowWarning]
     result: dict | None = None
+    expired: bool
+    payload_available: bool
+    payload_purged_at: datetime | None
+
+
+class ImportRetentionResponse(BaseModel):
+    retention_days: int
+    enabled: bool
+    eligible_batches: int
+    eligible_preview_batches: int
+    eligible_committed_batches: int
+    oldest_eligible_created_at: datetime | None
+
+
+class ImportRetentionPurgeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    apply: bool = False
+    purge_token: str | None = None
+
+
+class ImportRetentionPurgeResponse(ImportRetentionResponse):
+    applied: bool
+    purged_batches: int
+    purge_token: str | None = None
 
 
 class ImportCommitRequest(BaseModel):
@@ -53,8 +90,10 @@ class ImportCommitRequest(BaseModel):
 
 
 def _safe_batch_view(batch: StudentImportBatch) -> ImportBatchResponse:
+    if (batch.source_ciphertext is None) != (batch.rows_ciphertext is None):
+        raise HTTPException(status_code=500, detail="Stored import payload is incomplete")
     try:
-        staged = json.loads(decrypt_sensitive_bytes(batch.rows_ciphertext))
+        staged = json.loads(decrypt_sensitive_bytes(batch.rows_ciphertext)) if batch.rows_ciphertext is not None else []
         result = json.loads(batch.result_json) if batch.result_json else None
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="Stored import batch could not be read") from exc
@@ -78,7 +117,192 @@ def _safe_batch_view(batch: StudentImportBatch) -> ImportBatchResponse:
         row_errors=errors,
         row_warnings=warnings,
         result=result,
+        expired=batch.status == "EXPIRED" or _is_retention_expired(batch.created_at),
+        payload_available=batch.source_ciphertext is not None and batch.rows_ciphertext is not None,
+        payload_purged_at=batch.payload_purged_at,
     )
+
+
+def _retention_cutoff(now: datetime | None = None) -> datetime | None:
+    retention_days = get_settings().student_import_retention_days
+    return (now or datetime.now(UTC)) - timedelta(days=retention_days) if retention_days else None
+
+
+def _is_retention_expired(created_at: datetime, now: datetime | None = None) -> bool:
+    cutoff = _retention_cutoff(now)
+    if cutoff is None:
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return created_at <= cutoff
+
+
+def _eligible_payload_filter(cutoff: datetime):
+    return (
+        StudentImportBatch.created_at <= cutoff,
+        StudentImportBatch.payload_purged_at.is_(None),
+        or_(StudentImportBatch.source_ciphertext.is_not(None), StudentImportBatch.rows_ciphertext.is_not(None)),
+    )
+
+
+def _retention_summary(db: DbSession, cutoff: datetime | None) -> dict:
+    retention_days = get_settings().student_import_retention_days
+    if cutoff is None:
+        return {
+            "retention_days": retention_days,
+            "enabled": False,
+            "eligible_batches": 0,
+            "eligible_preview_batches": 0,
+            "eligible_committed_batches": 0,
+            "oldest_eligible_created_at": None,
+        }
+    eligible = _eligible_payload_filter(cutoff)
+    row = db.execute(
+        select(
+            func.count(StudentImportBatch.id),
+            func.sum(case((StudentImportBatch.status == "PREVIEW", 1), else_=0)),
+            func.sum(case((StudentImportBatch.status == "COMMITTED", 1), else_=0)),
+            func.min(StudentImportBatch.created_at),
+        ).where(*eligible)
+    ).one()
+    return {
+        "retention_days": retention_days,
+        "enabled": True,
+        "eligible_batches": row[0],
+        "eligible_preview_batches": row[1] or 0,
+        "eligible_committed_batches": row[2] or 0,
+        "oldest_eligible_created_at": row[3],
+    }
+
+
+def _create_retention_purge_token(actor_id: int, batch_ids: list[int], retention_days: int) -> str:
+    settings = get_settings()
+    now = datetime.now(UTC)
+    batch_digest = hashlib.sha256(json.dumps(batch_ids, separators=(",", ":")).encode()).hexdigest()
+    return jwt.encode(
+        {
+            "sub": str(actor_id),
+            "purpose": "student_import_retention_purge",
+            "jti": secrets.token_urlsafe(24),
+            "batch_count": len(batch_ids),
+            "batch_digest": batch_digest,
+            "retention_days": retention_days,
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+def _validated_retention_purge_token(token: str, actor_id: int, retention_days: int) -> dict:
+    settings = get_settings()
+    try:
+        claims = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=["HS256"],
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
+            options={"require": ["sub", "purpose", "jti", "batch_count", "batch_digest", "retention_days", "iat", "exp", "iss", "aud"]},
+        )
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=409, detail="Retention preview token is invalid or expired; run the dry-run again") from exc
+    batch_count = claims.get("batch_count")
+    batch_digest = claims.get("batch_digest")
+    if (
+        claims.get("sub") != str(actor_id)
+        or claims.get("purpose") != "student_import_retention_purge"
+        or claims.get("retention_days") != retention_days
+        or not isinstance(claims.get("jti"), str)
+        or type(batch_count) is not int
+        or batch_count < 1
+        or not isinstance(batch_digest, str)
+        or len(batch_digest) != 64
+        or any(character not in "0123456789abcdef" for character in batch_digest)
+    ):
+        raise HTTPException(status_code=409, detail="Retention preview does not match this request; run the dry-run again")
+    return claims
+
+
+@router.get(
+    "/retention",
+    response_model=ImportRetentionResponse,
+    dependencies=[Depends(require_roles("Superuser", "IT Administrator"))],
+)
+def student_import_retention_status(db: DbSession) -> ImportRetentionResponse:
+    return ImportRetentionResponse(**_retention_summary(db, _retention_cutoff()))
+
+
+@router.post(
+    "/retention/purge",
+    response_model=ImportRetentionPurgeResponse,
+    dependencies=[Depends(require_roles("Superuser", "IT Administrator"))],
+)
+def purge_expired_student_import_payloads(
+    payload: ImportRetentionPurgeRequest, db: DbSession, claims: Claims
+) -> ImportRetentionPurgeResponse:
+    cutoff = _retention_cutoff()
+    if cutoff is None:
+        raise HTTPException(status_code=409, detail="Student import retention is disabled; configure STUDENT_IMPORT_RETENTION_DAYS")
+    summary = _retention_summary(db, cutoff)
+    actor_id = int(claims["sub"])
+    if not payload.apply:
+        batch_ids = db.scalars(select(StudentImportBatch.id).where(*_eligible_payload_filter(cutoff)).order_by(StudentImportBatch.id)).all()
+        purge_token = (
+            _create_retention_purge_token(actor_id, batch_ids, get_settings().student_import_retention_days) if batch_ids else None
+        )
+        return ImportRetentionPurgeResponse(**summary, applied=False, purged_batches=0, purge_token=purge_token)
+    if not payload.purge_token:
+        raise HTTPException(status_code=409, detail="Run a dry-run before purging eligible payloads")
+    token_claims = _validated_retention_purge_token(payload.purge_token, actor_id, get_settings().student_import_retention_days)
+    purged = 0
+    batches = db.scalars(
+        select(StudentImportBatch).where(*_eligible_payload_filter(cutoff)).order_by(StudentImportBatch.id).with_for_update()
+    ).all()
+    current_ids = [batch.id for batch in batches]
+    current_digest = hashlib.sha256(json.dumps(current_ids, separators=(",", ":")).encode()).hexdigest()
+    if len(current_ids) != token_claims["batch_count"] or current_digest != token_claims["batch_digest"]:
+        already_applied = db.scalar(
+            select(AuditEvent.id).where(
+                AuditEvent.action == "student.import_retention_purge.applied",
+                AuditEvent.entity_id == token_claims["jti"],
+            )
+        )
+        if already_applied is not None:
+            return ImportRetentionPurgeResponse(**summary, applied=True, purged_batches=0, purge_token=None)
+        raise HTTPException(status_code=409, detail="Eligible payloads changed after preview; run the dry-run again")
+    now = datetime.now(UTC)
+    for batch in batches:
+        previous_status = batch.status
+        batch.source_ciphertext = None
+        batch.rows_ciphertext = None
+        batch.payload_purged_at = now
+        if previous_status == "PREVIEW":
+            batch.status = "EXPIRED"
+        record_event(
+            db,
+            actor_id,
+            "student.import_payload.purged",
+            "student_import_batch",
+            str(batch.id),
+            {"previous_status": previous_status, "row_count": batch.row_count},
+        )
+        purged += 1
+    record_event(
+        db,
+        actor_id,
+        "student.import_retention_purge.applied",
+        "student_import_retention_purge",
+        token_claims["jti"],
+        {"batch_count": purged},
+    )
+    db.flush()
+    summary = _retention_summary(db, cutoff)
+    db.commit()
+    return ImportRetentionPurgeResponse(**summary, applied=True, purged_batches=purged, purge_token=None)
 
 
 def _load_owned_batch(db, batch_id: int, actor_id: int, *, lock: bool = False) -> StudentImportBatch:
@@ -119,7 +343,12 @@ def _database_values(fields: dict) -> dict:
     return values
 
 
-@router.post("", response_model=ImportBatchResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ImportBatchResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("Operator", "Superuser"))],
+)
 async def upload_student_workbook(request: Request, db: DbSession, claims: Claims) -> ImportBatchResponse:
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != XLSX_MEDIA_TYPE:
         raise HTTPException(status_code=415, detail="Upload an .xlsx Student Intake workbook")
@@ -230,17 +459,28 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
         content.clear()
 
 
-@router.get("/{batch_id}", response_model=ImportBatchResponse)
+@router.get("/{batch_id}", response_model=ImportBatchResponse, dependencies=[Depends(require_roles("Operator", "Superuser"))])
 def get_student_import(batch_id: int, db: DbSession, claims: Claims) -> ImportBatchResponse:
     return _safe_batch_view(_load_owned_batch(db, batch_id, int(claims["sub"])))
 
 
-@router.post("/{batch_id}/commit", response_model=ImportBatchResponse)
+@router.post(
+    "/{batch_id}/commit",
+    response_model=ImportBatchResponse,
+    dependencies=[Depends(require_roles("Operator", "Superuser"))],
+)
 def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSession, claims: Claims) -> ImportBatchResponse:
     actor_id = int(claims["sub"])
     batch = _load_owned_batch(db, batch_id, actor_id, lock=True)
     if batch.status == "COMMITTED":
         return _safe_batch_view(batch)
+    if (
+        batch.status == "EXPIRED"
+        or batch.source_ciphertext is None
+        or batch.rows_ciphertext is None
+        or _is_retention_expired(batch.created_at)
+    ):
+        raise HTTPException(status_code=410, detail="This import preview has expired; upload the workbook again")
     if batch.invalid_count:
         raise HTTPException(status_code=409, detail="Resolve all invalid workbook rows before committing")
     if batch.warning_count and not payload.confirm_data_warnings:

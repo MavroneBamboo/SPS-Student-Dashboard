@@ -22,7 +22,9 @@ def _rotate_text(value: str | None) -> tuple[str | None, bool]:
     return encrypt_sensitive(plaintext), True
 
 
-def _rotate_bytes(value: bytes) -> tuple[bytes, bool]:
+def _rotate_bytes(value: bytes | None) -> tuple[bytes | None, bool]:
+    if value is None:
+        return None, False
     plaintext = decrypt_sensitive_bytes(value)
     if is_current_encryption(value):
         return value, False
@@ -66,7 +68,10 @@ def rotate_encrypted_data(db: Session, *, apply: bool) -> dict[str, int]:
     rows = db.scalars(query.execution_options(yield_per=100))
     for row in rows:
         for field in ("source_ciphertext", "rows_ciphertext"):
-            replacement, changed = _rotate_bytes(getattr(row, field))
+            value = getattr(row, field)
+            replacement, changed = _rotate_bytes(value)
+            if value is None:
+                continue
             verified += 1
             if changed:
                 to_rotate += 1

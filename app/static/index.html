@@ -243,6 +243,17 @@
           <button type="button" data-reference-tab="academic-years" role="tab" aria-selected="false">Academic years</button>
         </div>
         <p id="reference-catalog-help"></p>
+        <section class="panel" aria-labelledby="student-import-retention-title">
+          <h3 id="student-import-retention-title">Encrypted import staging retention</h3>
+          <p>Old encrypted workbook and staged-row payloads can be purged while preserving imported student profiles, import outcomes and audit history. The retention age is set by the server's <code>STUDENT_IMPORT_RETENTION_DAYS</code> configuration; zero disables purging.</p>
+          <p id="student-import-retention-status" aria-live="polite">Retention status has not been loaded.</p>
+          <div class="actions">
+            <button id="student-import-retention-dry-run" class="secondary" type="button">Preview eligible payloads</button>
+            <button id="student-import-retention-purge" type="button" disabled>Purge eligible payloads</button>
+          </div>
+          <label class="checkline"><input id="student-import-retention-confirm" type="checkbox"> I understand this permanently removes the retained import workbook and staged-row payloads.</label>
+          <p id="student-import-retention-result" aria-live="polite"></p>
+        </section>
         <form id="reference-catalog-create" class="panel profile-fields">
           <h3 id="reference-catalog-form-title">Add category</h3>
           <label>Name<input name="name" maxlength="120" required></label>
