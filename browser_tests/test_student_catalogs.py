@@ -2,9 +2,9 @@ from playwright.sync_api import expect
 
 
 def _sign_in(page, account):
-    page.locator("input[name=username]").fill(account["username"])
-    page.locator("input[name=password]").fill(account["password"])
-    page.get_by_role("button", name="Sign in").click()
+    page.locator("#login-form input[name=username]").fill(account["username"])
+    page.locator("#login-form input[name=password]").fill(account["password"])
+    page.locator("#login-form").get_by_role("button", name="Sign in").click()
     expect(page.locator("#workspace")).to_be_visible()
 
 
