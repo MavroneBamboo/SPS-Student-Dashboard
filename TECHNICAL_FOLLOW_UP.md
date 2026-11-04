@@ -313,7 +313,7 @@ The following must be confirmed before implementation:
 
 ## 14. Mandatory CI/CD and quality gates
 
-The initial pull-request CI foundation is implemented. It runs Ruff lint/format checks, Bandit static analysis, `pip-audit`, API tests against disposable PostgreSQL, clean and repeat Alembic upgrades plus model/schema parity, Python compilation, production-container build and Trivy scanning, Compose configuration validation, and Gitleaks full-history scanning. It uploads coverage while the baseline is being established; aggregate coverage thresholds are intentionally deferred until they can be based on measured results. Dependabot is configured to propose weekly Python and GitHub Actions updates.
+The pull-request CI foundation runs for every pull request, including stacked pull requests whose base is another feature branch. It runs Ruff lint/format checks, Bandit static analysis, `pip-audit`, API tests against disposable PostgreSQL, clean and repeat Alembic upgrades plus model/schema parity, Python compilation, production-container build and Trivy scanning, Compose configuration validation, and Gitleaks full-history scanning. It uploads coverage while the baseline is being established; aggregate coverage thresholds are intentionally deferred until they can be based on measured results. Dependabot is configured to propose weekly Python and GitHub Actions updates.
 
 The current workflow does not yet verify all of the release gates below. Add gates with the associated feature and keep the implementation status explicit:
 

@@ -297,7 +297,7 @@ Exit criteria: pilot users complete agreed scenarios, reporting is accepted and 
 
 CI is an evolving product control: whenever a feature adds a new module, security boundary, migration, workflow, or report, its automated tests and relevant CI gate must be added in the same change. The pipeline must remain proportional to implemented behavior; future gates are not represented as already complete.
 
-The current pull-request workflow runs:
+The current pull-request workflow runs for every pull request, including stacked pull requests based on another feature branch. It runs:
 
 1. Ruff lint and formatting checks on application, test, and migration code.
 2. Bandit static security analysis and `pip-audit` dependency vulnerability checks.
