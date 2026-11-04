@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import User
+from app.models import SetupState, User
 from app.security import hash_password
 
 INITIAL_BOOTSTRAP_PASSWORD = os.environ["BOOTSTRAP_PASSWORD"]
@@ -56,6 +56,12 @@ def test_live_health():
 
 def test_bootstrap_login_password_change_and_user_administration():
     with TestClient(app) as client:
+        with SessionLocal() as db:
+            setup = db.get(SetupState, 1)
+            setup.completed = False
+            setup.completed_at = None
+            setup.completed_by = None
+            db.commit()
         login = client.post("/api/v1/auth/login", json={"username": "bootstrap-admin", "password": INITIAL_BOOTSTRAP_PASSWORD})
         assert login.status_code == 200
         assert login.json()["must_change_password"] is True
@@ -71,6 +77,18 @@ def test_bootstrap_login_password_change_and_user_administration():
         assert changed.status_code == 200
         assert changed.json()["must_change_password"] is False
         headers = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+        assert client.get("/api/v1/setup/status", headers=headers).json() == {"required": True, "can_complete": True}
+        assert client.get("/api/v1/reports/dashboard", headers=headers).status_code == 403
+        completed = client.post(
+            "/api/v1/setup/complete",
+            json={"username": "it.first", "temporary_password": "it-first-temporary-password"},
+            headers=headers,
+        )
+        assert completed.status_code == 200
+        assert completed.json()["completed"] is True
+        assert completed.json()["administrator"]["role"] == "IT Administrator"
+        assert completed.json()["administrator"]["must_change_password"] is True
+        assert client.get("/api/v1/setup/status", headers=headers).json() == {"required": False, "can_complete": True}
         created_user = client.post(
             "/api/v1/users",
             json={"username": "operator.one", "temporary_password": "operator-temporary-password", "role": "Operator"},

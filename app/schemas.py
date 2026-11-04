@@ -52,6 +52,16 @@ class UserResponse(BaseModel):
     must_change_password: bool
 
 
+class InitialSetupComplete(BaseModel):
+    username: str = Field(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9._-]+$")
+    temporary_password: str = Field(min_length=12, max_length=200)
+
+
+class InitialSetupResponse(BaseModel):
+    completed: bool
+    administrator: UserResponse
+
+
 class RuleDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

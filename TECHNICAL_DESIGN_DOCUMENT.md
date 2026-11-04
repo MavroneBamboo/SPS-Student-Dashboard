@@ -102,7 +102,7 @@ The database stores normalised business records, immutable audit events and impo
 
 ### 5.1 Bootstrap superuser
 
-Installation creates a setup-state superuser with a one-time secret. On first use, the system requires a credential change and creation of a named IT Administrator. The setup state must block normal operation until completed. The bootstrap account is disabled or rotated after setup, and recovery requires audited server-level IT action.
+Installation creates a setup-state Superuser with a one-time secret. On first use, the system requires a credential change and creation of a named IT Administrator through the initial setup workspace. A persisted setup gate blocks all normal API operations until the bootstrap Superuser completes both steps; account creation, setup completion and audit events commit atomically. Existing installations are marked complete only when they already have an active Superuser who changed the bootstrap credential and an active IT Administrator. The bootstrap account remains a full-access Superuser after setup. Recovery uses the audited, interactive host-admin command documented in [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md); there is no public recovery endpoint.
 
 ### 5.2 Roles
 
@@ -193,6 +193,8 @@ Every dashboard response includes filters, result timestamp, data-through timest
 The repository must contain Compose definitions for development and production-like internal deployment. Baseline services are `proxy`, `app`, `worker` and `db`, with optional test dependencies. Use separate Compose overrides rather than changing application code per environment.
 
 Containers must use pinned versions, non-root users where supported, health checks, restart policies, resource limits and private networks. Only the proxy publishes a user-facing port. The database port is not published externally. Persistent database volumes, encrypted backup mounts and secrets are externalised. The current Compose stack runs PostgreSQL health checks, then a one-shot Alembic migration service, then starts the API; the API must not create or alter schema at runtime. Migrations use the separate `DATABASE_ADMIN_URL` account. After schema migration, the runner provisions `sps_runtime` with SCRAM-SHA-256 credentials and grants only table DML and sequence access; the role has no superuser, role/database administration, schema creation or role-membership privileges. Default grants cover tables and sequences created by later migrations. The API container receives only the runtime connection URL. The initial baseline migration is deliberately non-reversible to prevent accidental table/data deletion; recovery uses verified backups or forward migrations.
+
+When `APP_ENV=production`, settings validation requires a PostgreSQL `psycopg` URL, a JWT secret and bootstrap password of at least 32 characters, and valid Fernet active/previous keys without duplicates or the development sample key. The API and migration processes use the same validation. `.env.example` values are for local development and must not be deployed as production secrets. This validation does not provide secret storage, TLS or key custody; those remain deployment controls.
 
 ## 11. CI/CD and testing design
 

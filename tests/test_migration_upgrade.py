@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import LargeBinary, MetaData, create_engine, inspect, select
 
 
@@ -93,6 +94,70 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
             assert legacy_rule["instructional_class_id"] is None
             assert legacy_rule["cluster_id"] is None
             assert legacy_rule["version"] == 1
+    finally:
+        database.dispose()
+
+
+@pytest.mark.parametrize("has_completed_setup", [False, True])
+def test_setup_completion_migration_marks_new_or_already_configured_installation(tmp_path, has_completed_setup):
+    database_url = f"sqlite:///{(tmp_path / f'setup-{has_completed_setup}.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "20261103_0014"],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    database = create_engine(database_url)
+    try:
+        with database.begin() as connection:
+            users = sa.table(
+                "users",
+                sa.column("id", sa.Integer()),
+                sa.column("username", sa.String()),
+                sa.column("password_hash", sa.String()),
+                sa.column("role", sa.String()),
+                sa.column("must_change_password", sa.Boolean()),
+                sa.column("is_active", sa.Boolean()),
+            )
+            connection.execute(
+                users.insert().values(
+                    id=1,
+                    username="bootstrap-admin",
+                    password_hash="irrelevant-test-hash",
+                    role="Superuser",
+                    must_change_password=not has_completed_setup,
+                    is_active=True,
+                )
+            )
+            if has_completed_setup:
+                connection.execute(
+                    users.insert().values(
+                        id=2,
+                        username="named-it-admin",
+                        password_hash="irrelevant-test-hash",
+                        role="IT Administrator",
+                        must_change_password=True,
+                        is_active=True,
+                    )
+                )
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        with database.connect() as connection:
+            setup = connection.execute(sa.text("SELECT completed, completed_by FROM setup_state WHERE id = 1")).one()
+        assert bool(setup.completed) is has_completed_setup
+        assert setup.completed_by == (1 if has_completed_setup else None)
     finally:
         database.dispose()
 

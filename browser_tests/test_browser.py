@@ -6,9 +6,11 @@ import pytest
 from openpyxl import load_workbook
 from playwright.sync_api import expect
 
+from app.config import get_settings
 from app.crypto import encrypt_sensitive
 from app.db import SessionLocal
-from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, Student, User
+from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, SetupState, Student, User
+from app.security import hash_password
 
 
 def login(page, account):
@@ -20,6 +22,42 @@ def login(page, account):
 def screenshot(page, name):
     Path("browser-artifacts").mkdir(exist_ok=True)
     page.screenshot(path=f"browser-artifacts/{name}.png", full_page=True)
+
+
+def test_bootstrap_setup_rotates_password_and_creates_named_it_administrator(page, live_url):
+    settings = get_settings()
+    bootstrap_password = "browser-first-run-bootstrap"
+    with SessionLocal() as db:
+        bootstrap = db.query(User).filter(User.username == settings.bootstrap_username).one()
+        bootstrap.password_hash = hash_password(bootstrap_password)
+        bootstrap.must_change_password = True
+        bootstrap.is_active = True
+        bootstrap.token_version += 1
+        for administrator in db.query(User).filter(User.role == "IT Administrator").all():
+            administrator.is_active = False
+        setup = db.get(SetupState, 1)
+        setup.completed = False
+        setup.completed_at = None
+        setup.completed_by = None
+        db.commit()
+
+    page.goto(live_url + "/ui/")
+    login(page, {"username": settings.bootstrap_username, "password": bootstrap_password})
+    expect(page.get_by_role("heading", name="Change your password", exact=True)).to_be_visible()
+    page.get_by_label("Current password", exact=True).fill(bootstrap_password)
+    page.get_by_label("New password", exact=True).fill("browser-rotated-bootstrap-password")
+    page.get_by_label("Confirm new password", exact=True).fill("browser-rotated-bootstrap-password")
+    page.get_by_role("button", name="Save new password").click()
+
+    expect(page.get_by_role("heading", name="Create administrator access", exact=True)).to_be_visible()
+    setup_form = page.locator("#setup-form")
+    setup_form.get_by_label("IT Administrator username", exact=True).fill("browser-first-it-" + uuid4().hex[:8])
+    setup_form.get_by_label("Temporary password", exact=True).fill("browser-first-it-temporary-password")
+    setup_form.get_by_label("Confirm temporary password", exact=True).fill("browser-first-it-temporary-password")
+    setup_form.get_by_role("button", name="Create account and finish setup").click()
+
+    expect(page.get_by_role("heading", name="Intake and attendance overview", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Student profiles", exact=True)).to_be_visible()
 
 
 def test_first_login_rotation_account_creation_role_change_disable_and_reload(page, make_account, live_url):
@@ -74,12 +112,13 @@ def test_first_login_rotation_account_creation_role_change_disable_and_reload(pa
     assert page.context.cookies() == []
 
     username = f"new-{uuid4().hex[:10]}"
+    create_user_form = page.locator("#create-user-form")
     page.get_by_label("New username", exact=True).fill(username)
-    page.get_by_label("Temporary password", exact=True).fill("browser-temporary-password")
+    create_user_form.get_by_label("Temporary password", exact=True).fill("browser-temporary-password")
     page.get_by_label("Assigned role", exact=True).select_option("Operator")
     page.get_by_role("button", name="Create account").click()
     expect(page.get_by_role("status")).to_contain_text(f"Created {username}")
-    expect(page.get_by_label("Temporary password", exact=True)).to_have_value("")
+    expect(create_user_form.get_by_label("Temporary password", exact=True)).to_have_value("")
     row = page.locator("#user-rows tr").filter(has_text=username)
     expect(row).to_contain_text("Required")
     row.get_by_label(f"Role for {username}", exact=True).select_option("Executive")
@@ -107,7 +146,7 @@ def test_it_admin_named_account_reset_and_server_logout(page, make_account, live
     assert "Superuser" not in page.get_by_label("Assigned role", exact=True).locator("option:not([hidden])").all_text_contents()
     username = f"it-created-{uuid4().hex[:10]}"
     page.get_by_label("New username", exact=True).fill(username)
-    page.get_by_label("Temporary password", exact=True).fill("initial-temporary-password")
+    page.locator("#create-user-form").get_by_label("Temporary password", exact=True).fill("initial-temporary-password")
     page.get_by_role("button", name="Create account").click()
     row = page.locator("#user-rows tr").filter(has_text=username)
     expect(row).to_contain_text("Required")

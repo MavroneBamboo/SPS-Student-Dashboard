@@ -14,7 +14,10 @@ Compose waits for PostgreSQL, applies the versioned schema migration, and provis
 
 Open `http://localhost:8080/` for the actual sign-in, account administration and committed-data dashboard. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) for the delivered workflow and limitations. The synthetic prototype remains at `http://localhost:8080/prototype/index.html`, and API documentation is at `http://localhost:8080/docs`.
 
-The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTSTRAP_PASSWORD`. It is seeded as a Superuser in setup state and must be changed/rotated before operational use. PostgreSQL is on a private Compose network and has no published host port.
+The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTSTRAP_PASSWORD`. The Superuser must change that credential and create a named IT Administrator through the setup wizard before normal application APIs unlock. Setup completion is audited and persisted; the bootstrap account retains full Superuser access. PostgreSQL is on a private Compose network and has no published host port. See [FIRST_RUN_SETUP.md](FIRST_RUN_SETUP.md).
+
+Lost Superuser access can be recovered only by authorised Docker-host personnel using the audited, interactive command in [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md). Recovery is refused when another active Superuser is available; there is no public recovery endpoint.
+Set `APP_ENV=production` for a production deployment. In this mode the application rejects SQLite or non-psycopg database URLs, default or short JWT/bootstrap secrets, invalid Fernet encryption keys, duplicate active/previous encryption keys, and the checked-in development encryption key. `.env.example` contains placeholders for local setup only; production secrets must be generated and supplied through the approved deployment secret store.
 
 ## Current implemented slice
 

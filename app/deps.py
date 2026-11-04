@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User
+from app.models import SetupState, User
 from app.security import decode_access_token
 
 bearer = HTTPBearer(auto_error=False)
@@ -39,9 +39,12 @@ def authenticated_claims(credentials: Annotated[HTTPAuthorizationCredentials | N
 CurrentClaims = Annotated[dict, Depends(authenticated_claims)]
 
 
-def current_claims(claims: CurrentClaims) -> dict:
+def current_claims(claims: CurrentClaims, db: DbSession) -> dict:
     if claims["must_change_password"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Change your password before using the application")
+    setup = db.get(SetupState, 1)
+    if setup is None or not setup.completed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Initial setup must be completed")
     return claims
 
 
