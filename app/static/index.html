@@ -42,6 +42,19 @@
       </form>
       <button id="password-cancel" class="secondary" type="button">Sign out</button>
     </section>
+    <section id="setup-screen" class="auth-card" aria-labelledby="setup-title" hidden>
+      <p class="eyebrow">FIRST-RUN SETUP</p>
+      <h1 id="setup-title">Create administrator access</h1>
+      <p>Before normal operations open, create the named IT Administrator account. Its temporary password must be shared through your approved secure channel and changed at first sign-in.</p>
+      <form id="setup-form">
+        <label>IT Administrator username<input name="username" autocomplete="off" minlength="3" maxlength="120" pattern="[A-Za-z0-9._-]+" required></label>
+        <label>Temporary password<input name="temporary_password" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
+        <label>Confirm temporary password<input name="confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="200" required></label>
+        <button type="submit">Create account and finish setup</button>
+      </form>
+      <p>Setup is recorded in the audit log. Normal application functions unlock after this step.</p>
+      <button id="setup-signout" class="secondary" type="button">Sign out</button>
+    </section>
     <section id="workspace" hidden>
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
       <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button></nav>

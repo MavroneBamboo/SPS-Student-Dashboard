@@ -59,7 +59,7 @@ After first-run setup, the Superuser retains full access. The dashboard is its i
 
 The initial credential must not be documented as a permanent password. It must be supplied through a secure deployment mechanism or environment configuration, expire after first use, and require a password change. The application must prevent normal production use while the initial credential remains unchanged. A recovery procedure must exist for a lost superuser account and must be restricted to authorised IT personnel.
 
-The implemented recovery process is restricted to authorised Docker-host personnel. It requires a ticketed reason, only recovers an existing Superuser when no other active Superuser is available, forces password change and revokes prior tokens. See [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md).
+The first-run setup gate is enforced by the backend, not only by the browser. The bootstrap Superuser changes the temporary password, creates a named IT Administrator with a temporary password, and completes setup in one audited transaction. Until completion, protected business APIs remain unavailable. Existing installations are preserved as operational only when the bootstrap Superuser has changed the initial password and an active IT Administrator already exists. After setup, the bootstrap Superuser retains full access. If all active Superuser access is lost, an audited recovery operation is restricted to authorised Docker-host personnel, requires a ticketed reason, and forces password change while revoking prior tokens. See [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md).
 
 ### 3.2 IT Administrator
 

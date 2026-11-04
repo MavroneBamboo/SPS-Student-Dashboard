@@ -35,6 +35,7 @@ function signedOut(message = "") {
   clearData();
   $("workspace").hidden = true;
   $("password-screen").hidden = true;
+  $("setup-screen").hidden = true;
   $("signin").hidden = false;
   notice(message);
   $("login-form").elements.username.focus();
@@ -152,11 +153,31 @@ async function acceptSession(session) {
   $("password-form").reset();
   if (identity.must_change_password) {
     $("workspace").hidden = true;
+    $("setup-screen").hidden = true;
     $("password-screen").hidden = false;
     $("password-help").textContent = "You must change your temporary password before accessing the workspace. Use at least 12 characters.";
     $("password-form").elements.current_password.focus();
     return;
   }
+  const setup = await api("/setup/status");
+  if (setup.required) {
+    $("workspace").hidden = true;
+    $("password-screen").hidden = true;
+    if (!setup.can_complete) {
+      signedOut("Initial setup is incomplete. Sign in with the bootstrap Superuser account to finish setup.");
+      return;
+    }
+    $("signin").hidden = true;
+    $("setup-screen").hidden = false;
+    $("setup-form").elements.username.focus();
+    return;
+  }
+  $("setup-screen").hidden = true;
+  $("signin").hidden = true;
+  await showSignedInWorkspace();
+}
+
+async function showSignedInWorkspace() {
   $("password-screen").hidden = true;
   $("workspace").hidden = false;
   $("identity").textContent = `${identity.username} · ${identity.role}`;
@@ -373,6 +394,20 @@ $("password-form").addEventListener("submit", (event) => {
     } finally { $("password-form").reset(); }
   });
 });
+$("setup-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  run(event.currentTarget, async () => {
+    const payload = Object.fromEntries(new FormData($("setup-form")));
+    if (payload.temporary_password !== payload.confirmation) throw new Error("The temporary passwords do not match.");
+    delete payload.confirmation;
+    try {
+      const result = await api("/setup/complete", "POST", payload);
+      $("setup-form").reset();
+      await showSignedInWorkspace();
+      notice("Initial setup is complete. The named IT Administrator account " + result.administrator.username + " must change its temporary password at first sign-in.");
+    } finally { $("setup-form").elements.temporary_password.value = ""; $("setup-form").elements.confirmation.value = ""; }
+  });
+});
 $("create-user-form").addEventListener("submit", (event) => {
   event.preventDefault();
   run(event.currentTarget, async () => {
@@ -404,7 +439,7 @@ $("cancel-reset-user").addEventListener("click", () => { $("reset-user-form").re
 $("dashboard-filter").addEventListener("submit", (event) => { event.preventDefault(); run(event.currentTarget, showDashboard); });
 for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener("click", () => run($(id), showDashboard));
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
-for (const id of ["signout", "password-cancel"]) $(id).addEventListener("click", explicitSignOut);
+for (const id of ["signout", "password-cancel", "setup-signout"]) $(id).addEventListener("click", explicitSignOut);
 $("change-password").addEventListener("click", () => {
   $("workspace").hidden = true;
   $("password-screen").hidden = false;

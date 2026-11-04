@@ -15,6 +15,7 @@ from app.routes import (
     lessons,
     reports,
     rules,
+    setup,
     student_catalogs,
     student_imports,
     student_reference,
@@ -48,6 +49,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="SPS Student Dashboard API", version="0.1.0", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(setup.router, prefix="/api/v1")
 app.include_router(rules.router, prefix="/api/v1")
 app.include_router(timetable_resources.router, prefix="/api/v1")
 app.include_router(lessons.router, prefix="/api/v1")

@@ -1,7 +1,7 @@
 """Add IT-managed student reference catalogs and preserve existing values.
 
-Revision ID: 20261104_0015
-Revises: 20261103_0014
+Revision ID: 20261104_0016
+Revises: 20261104_0015
 """
 
 import unicodedata
@@ -9,8 +9,8 @@ import unicodedata
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20261104_0015"
-down_revision = "20261103_0014"
+revision = "20261104_0016"
+down_revision = "20261104_0015"
 branch_labels = None
 depends_on = None
 

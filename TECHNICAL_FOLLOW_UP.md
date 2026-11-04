@@ -12,7 +12,7 @@ Attendance follow-up (28 October 2026): Operator browser and APIs support versio
 
 Profile/import follow-up (28 October 2026): migration `0009` extends profile coverage, `0010` adds encrypted intake staging, and `0011` adds an IT-managed, versioned 2023 source-class crosswalk to active instructional classes. The Operator can upload the supported worksheet, inspect sanitized errors, and commit create-only or explicit update-existing changes atomically; changed mappings invalidate an old preview. Clients still send `expected_version` for PATCH. Category/institution/academic-year catalogs are now managed separately, but profile/import enforcement, manual profile normalization, 2021 workbook support, retention controls, report reconciliation, historical corrections, support/operational permission separation and production-scale search remain required. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md), [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md), and [STUDENT_REFERENCE_CATALOGS.md](STUDENT_REFERENCE_CATALOGS.md).
 
-Student reference catalog increment (4 November 2026): versioned, audited IT/Superuser catalog administration for categories, institutions, and academic years is available under **Reference data**. Migration `20261104_0015` backfills existing category and academic-year labels without changing student or timetable records. Remaining integration: add institution to the student profile model, make category/academic-year/institution profile values controlled and server validated, and bind import preview/commit to active catalog values with stale-catalog detection. Do not treat catalog presence as proof of profile validation. See [STUDENT_REFERENCE_CATALOGS.md](STUDENT_REFERENCE_CATALOGS.md).
+Student reference catalog increment (4 November 2026): versioned, audited IT/Superuser catalog administration for categories, institutions, and academic years is available under **Reference data**. Migration `20261104_0016` follows first-run setup migration `20261104_0015` and backfills existing category and academic-year labels without changing student or timetable records. Remaining integration: add institution to the student profile model, make category/academic-year/institution profile values controlled and server validated, and bind import preview/commit to active catalog values with stale-catalog detection. Do not treat catalog presence as proof of profile validation. See [STUDENT_REFERENCE_CATALOGS.md](STUDENT_REFERENCE_CATALOGS.md).
 
 Browser follow-up (26 October 2026): `/ui/` provides real sign-in, mandatory password change, Superuser account administration, committed-data dashboards, Operator profile/attendance workspaces and a class-oriented timetable workspace. The timetable UI supports IT reference setup, draft creation, clickable placement/edit/remove/lock, generation, atomic swap and IT approval; Chromium CI covers these workflows. Drag-and-drop, one-block shift, title rename, imports/exports, complete setup/recovery, HTTPS and session hardening remain required. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) and [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 
@@ -76,9 +76,9 @@ Required controls:
 1. Store only a strong password hash, never a plain-text password.
 2. Deliver the initial secret through a deployment secret or one-time setup token.
 3. Force a credential change on first sign-in.
-4. Require creation of a named IT Administrator before normal operation is enabled.
-5. Record bootstrap completion in an immutable audit event.
-6. Disable or rotate the bootstrap identity after setup.
+4. Require creation of a named IT Administrator before normal operation is enabled. Implemented with the persisted setup gate and first-run browser wizard.
+5. Record bootstrap completion and IT Administrator creation in immutable audit events in the same transaction as setup completion.
+6. Preserve the bootstrap identity as a full-access Superuser after its temporary credential is changed; use named accounts for routine work.
 7. Provide a documented, audited recovery procedure requiring server-level IT access. Implemented as an interactive Compose command; production acceptance still requires confirming Docker-host access controls and rehearsing the recovery with a backup.
 
 The default superuser is therefore a controlled installation mechanism, not an account intended for daily use.
