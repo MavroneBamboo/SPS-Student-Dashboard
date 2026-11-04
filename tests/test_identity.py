@@ -4,16 +4,55 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import User
+from app.models import AuditEvent, User
 from app.routes.users import preserve_last_admin
 from app.security import hash_password
 
 PASSWORD = "identity-fixture-password"
+
+
+def test_login_audits_success_and_failures_without_storing_credentials_or_unknown_usernames():
+    active_username = f"audit-active-{uuid4().hex[:12]}"
+    inactive_username = f"audit-inactive-{uuid4().hex[:12]}"
+    unknown_username = f"audit-unknown-{uuid4().hex[:12]}"
+    with SessionLocal() as db:
+        active = User(username=active_username, password_hash=hash_password(PASSWORD), role="Operator", is_active=True)
+        inactive = User(username=inactive_username, password_hash=hash_password(PASSWORD), role="Operator", is_active=False)
+        db.add_all([active, inactive])
+        db.commit()
+        active_id, inactive_id = active.id, inactive.id
+
+    with TestClient(app) as client:
+        wrong_password = client.post("/api/v1/auth/login", json={"username": active_username, "password": "wrong-audit-password"})
+        inactive_login = client.post("/api/v1/auth/login", json={"username": inactive_username, "password": PASSWORD})
+        unknown_login = client.post("/api/v1/auth/login", json={"username": unknown_username, "password": PASSWORD})
+        successful_login = client.post("/api/v1/auth/login", json={"username": active_username, "password": PASSWORD})
+
+    assert [response.status_code for response in (wrong_password, inactive_login, unknown_login)] == [401, 401, 401]
+    assert {response.json()["detail"] for response in (wrong_password, inactive_login, unknown_login)} == {"Invalid username or password"}
+    assert successful_login.status_code == 200
+    with SessionLocal() as db:
+        events = list(
+            db.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action.in_(["auth.login.failed", "auth.login.succeeded"]),
+                    AuditEvent.entity_id.in_([str(active_id), str(inactive_id), "unknown"]),
+                )
+            )
+        )
+    assert {(event.action, event.actor_id, event.entity_type, event.entity_id, event.details_json) for event in events} == {
+        ("auth.login.failed", active_id, "user", str(active_id), '{"outcome":"failed"}'),
+        ("auth.login.failed", inactive_id, "user", str(inactive_id), '{"outcome":"failed"}'),
+        ("auth.login.failed", 0, "authentication_attempt", "unknown", '{"outcome":"failed"}'),
+        ("auth.login.succeeded", active_id, "user", str(active_id), '{"outcome":"success"}'),
+    }
+    assert PASSWORD not in str(events) and "wrong-audit-password" not in str(events)
+    assert unknown_username not in str(events)
 
 
 def account(client: TestClient, role: str, password: str = PASSWORD) -> tuple[int, dict]:

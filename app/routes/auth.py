@@ -11,6 +11,10 @@ from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+# A well-formed PBKDF2 value ensures unknown usernames take the same password
+# verification path as known accounts without generating a new hash per request.
+_DUMMY_PASSWORD_HASH = f"pbkdf2_sha256$310000${'00' * 16}${'00' * 32}"
+
 
 @router.get("/me")
 def current_identity(claims: CurrentClaims) -> dict:
@@ -19,9 +23,22 @@ def current_identity(claims: CurrentClaims) -> dict:
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
-    user = db.scalar(select(User).where(func.lower(User.username) == payload.username.strip().lower(), User.is_active.is_(True)))
-    if user is None or not verify_password(payload.password, user.password_hash):
+    username = payload.username.strip().lower()
+    user = db.scalar(select(User).where(func.lower(User.username) == username))
+    password_valid = verify_password(payload.password, user.password_hash if user is not None else _DUMMY_PASSWORD_HASH)
+    if user is None or not user.is_active or not password_valid:
+        record_event(
+            db,
+            user.id if user is not None else 0,
+            "auth.login.failed",
+            "user" if user is not None else "authentication_attempt",
+            str(user.id) if user is not None else "unknown",
+            {"outcome": "failed"},
+        )
+        db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    record_event(db, user.id, "auth.login.succeeded", "user", str(user.id), {"outcome": "success"})
+    db.commit()
     settings = get_settings()
     return TokenResponse(
         access_token=create_access_token(user.id, user.username, user.role, user.must_change_password, user.token_version),

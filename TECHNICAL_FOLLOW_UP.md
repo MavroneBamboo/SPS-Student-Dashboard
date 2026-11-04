@@ -328,7 +328,7 @@ The required workflow must fail on test failures, migration failures, critical/h
 
 Tests are maintained with the feature they protect. A pull request that adds or changes behavior must include updated automated tests, including negative and permission tests where relevant. The test suite must cover at least:
 
-- Authentication, token expiry, logout and failed-login handling.
+- Authentication, token expiry, logout and failed-login handling, including durable sign-in audit events that omit credentials and unknown usernames.
 - Superuser bootstrap, forced credential rotation and recovery controls.
 - Every role and every protected API permission.
 - Student profile validation, duplicate `Pris No.` detection and import reconciliation.
