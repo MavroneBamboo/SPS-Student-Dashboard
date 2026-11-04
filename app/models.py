@@ -57,6 +57,16 @@ class User(Base):
 Index("uq_users_username_lower", func.lower(User.username), unique=True)
 
 
+class SetupState(Base):
+    __tablename__ = "setup_state"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_setup_state_singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
 class SchedulingRule(Base):
     __tablename__ = "scheduling_rules"
     __table_args__ = (

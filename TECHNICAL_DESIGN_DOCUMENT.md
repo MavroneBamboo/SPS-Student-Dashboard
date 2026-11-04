@@ -102,7 +102,7 @@ The database stores normalised business records, immutable audit events and impo
 
 ### 5.1 Bootstrap superuser
 
-Installation creates a setup-state superuser with a one-time secret. On first use, the system requires a credential change and creation of a named IT Administrator. The setup state must block normal operation until completed. The bootstrap account is disabled or rotated after setup. Recovery uses the audited, interactive host-admin command documented in [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md); there is no public recovery endpoint.
+Installation creates a setup-state Superuser with a one-time secret. On first use, the system requires a credential change and creation of a named IT Administrator through the initial setup workspace. A persisted setup gate blocks all normal API operations until the bootstrap Superuser completes both steps; account creation, setup completion and audit events commit atomically. Existing installations are marked complete only when they already have an active Superuser who changed the bootstrap credential and an active IT Administrator. The bootstrap account remains a full-access Superuser after setup. Recovery uses the audited, interactive host-admin command documented in [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md); there is no public recovery endpoint.
 
 ### 5.2 Roles
 

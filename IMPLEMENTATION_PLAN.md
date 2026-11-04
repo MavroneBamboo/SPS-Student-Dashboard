@@ -12,7 +12,9 @@ Build the system in vertical increments. Each increment must produce a deployabl
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
 
-### Current delivery checkpoint (3 November 2026)
+### Current delivery checkpoint (4 November 2026)
+
+- First-run setup increment: a persisted API gate now blocks normal operations until the bootstrap Superuser rotates the initial password, creates a named IT Administrator and completes the setup wizard. Administrator creation, setup state and both audit records commit atomically. The migration preserves existing installations already meeting the setup criteria; see FIRST_RUN_SETUP.md.
 
 - Superuser recovery increment (3 November): an interactive Compose command resets only an existing Superuser when no other active Superuser exists. It requires a ticketed operator identity and reason, prompts for the temporary password without exposing it in process arguments, revokes tokens, forces password rotation and commits an audit event atomically. See [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md); production host-access controls and a witnessed recovery drill remain gates.
 - Production configuration validation increment (3 November): `APP_ENV=production` refuses SQLite/non-psycopg database URLs, development or undersized JWT/bootstrap secrets, invalid Fernet keys, duplicate active/previous keys and the checked-in development key. API and migration processes share the validation. Local development defaults remain available outside production. TLS, protected secret delivery and key custody remain separate release gates.
