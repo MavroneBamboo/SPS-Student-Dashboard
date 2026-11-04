@@ -12,7 +12,9 @@ Build the system in vertical increments. Each increment must produce a deployabl
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
 
-### Current delivery checkpoint (3 November 2026)
+### Current delivery checkpoint (4 November 2026)
+
+- First-run setup increment: a persisted API gate now blocks normal operations until the bootstrap Superuser rotates the initial password, creates a named IT Administrator and completes the setup wizard. Administrator creation, setup state and both audit records commit atomically. The migration preserves existing installations already meeting the setup criteria; see FIRST_RUN_SETUP.md.
 
 - Amend 4-up swap increment: operators can explicitly select two unlocked lesson blocks and exchange their weekday/start-period positions. The existing revision-guarded API revalidates both destinations and the entire timetable atomically; failed swaps preserve the draft. Chromium coverage exercises selection, disabled/enabled confirmation, a successful swap and locked-block rejection. Drag-and-drop, one-block shifting and title rename remain future Amend 4-up work.
 - Staging build identity increment (3 November): readiness now reports the full commit SHA running in the application, and the staging deploy smoke check requires it to match the tested GitHub revision. This distinguishes database/application health from evidence that the expected commit was actually rolled out. See [STAGING_DEPLOYMENT.md](STAGING_DEPLOYMENT.md).

@@ -57,6 +57,8 @@ After first-run setup, the Superuser retains full access. The dashboard is its i
 
 The initial credential must not be documented as a permanent password. It must be supplied through a secure deployment mechanism or environment configuration, expire after first use, and require a password change. The application must prevent normal production use while the initial credential remains unchanged. A recovery procedure must exist for a lost superuser account and must be restricted to authorised IT personnel.
 
+The first-run setup gate is enforced by the backend, not only by the browser. The bootstrap Superuser changes the temporary password, creates a named IT Administrator with a temporary password, and completes setup in one audited transaction. Until completion, protected business APIs remain unavailable. Existing installations are preserved as operational only when the bootstrap Superuser has changed the initial password and an active IT Administrator already exists.
+
 ### 3.2 IT Administrator
 
 The IT Administrator manages technical and reference configuration:

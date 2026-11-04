@@ -74,9 +74,9 @@ Required controls:
 1. Store only a strong password hash, never a plain-text password.
 2. Deliver the initial secret through a deployment secret or one-time setup token.
 3. Force a credential change on first sign-in.
-4. Require creation of a named IT Administrator before normal operation is enabled.
-5. Record bootstrap completion in an immutable audit event.
-6. Disable or rotate the bootstrap identity after setup.
+4. Require creation of a named IT Administrator before normal operation is enabled. Implemented with the persisted setup gate and first-run browser wizard.
+5. Record bootstrap completion and IT Administrator creation in immutable audit events in the same transaction as setup completion.
+6. Preserve the bootstrap identity as a full-access Superuser after its temporary credential is changed; use named accounts for routine work.
 7. Provide a documented, audited recovery procedure requiring server-level IT access.
 
 The default superuser is therefore a controlled installation mechanism, not an account intended for daily use.

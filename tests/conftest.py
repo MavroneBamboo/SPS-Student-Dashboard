@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test-sps-dashboard.db")
 os.environ.setdefault("JWT_SECRET", "test-secret-that-is-long-enough")  # gitleaks:allow
@@ -8,11 +9,38 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import func, inspect, select
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import User
+from app.models import SetupState, User
 from app.security import hash_password
+
+
+@pytest.fixture(autouse=True)
+def enable_normal_application_for_api_tests():
+    settings = get_settings()
+    with SessionLocal() as db:
+        if "setup_state" in inspect(db.bind).get_table_names():
+            bootstrap = db.scalar(select(User).where(func.lower(User.username) == settings.bootstrap_username.lower()))
+            if bootstrap is None:
+                bootstrap = User(
+                    username=settings.bootstrap_username,
+                    password_hash=hash_password(settings.bootstrap_password),
+                    role="Superuser",
+                    must_change_password=True,
+                    is_active=True,
+                )
+                db.add(bootstrap)
+                db.flush()
+            setup = db.get(SetupState, 1)
+            if setup is not None:
+                setup.completed = True
+                setup.completed_at = datetime.now(UTC)
+                setup.completed_by = bootstrap.id
+            db.commit()
+    yield
 
 
 @pytest.fixture

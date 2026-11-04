@@ -108,6 +108,7 @@ main { width: min(100%, 1600px); min-height: calc(100vh - 78px); margin: auto; p
 .auth-form-panel > p:not(.eyebrow) { margin-bottom: 27px; font-size: .91rem; }
 .auth-footnote { margin: 22px 0 0 !important; font-size: .78rem !important; }
 #password-screen { display: block; width: min(100%, 550px); min-height: 0; padding: 40px; }
+#setup-screen { display: block; width: min(100%, 600px); min-height: 0; padding: 40px; }
 #password-cancel { margin-top: 14px; }
 
 .eyebrow { margin-bottom: 7px; color: #3271d5; font-size: .69rem; font-weight: 750; letter-spacing: .13em; }
