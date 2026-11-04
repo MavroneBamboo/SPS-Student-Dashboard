@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+from datetime import UTC, datetime
 from urllib.error import URLError
 from urllib.request import urlopen
 from uuid import uuid4
@@ -9,9 +10,10 @@ import pytest
 import uvicorn
 from playwright.sync_api import sync_playwright
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import User
+from app.models import SetupState, User
 from app.security import hash_password
 
 
@@ -65,6 +67,13 @@ def make_account():
         username = f"browser-{uuid4().hex[:12]}"
         password = "browser-test-start-password"
         with SessionLocal() as db:
+            settings = get_settings()
+            bootstrap = db.query(User).filter(User.username == settings.bootstrap_username).first()
+            setup = db.get(SetupState, 1)
+            if bootstrap is not None and setup is not None:
+                setup.completed = True
+                setup.completed_at = datetime.now(UTC)
+                setup.completed_by = bootstrap.id
             user = User(
                 username=username, password_hash=hash_password(password), role=role, must_change_password=must_change, is_active=True
             )

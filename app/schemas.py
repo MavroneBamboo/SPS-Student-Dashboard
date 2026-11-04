@@ -515,6 +515,55 @@ class StudentStatusHistoryResponse(BaseModel):
     changed_by: int
 
 
+class StudentReferenceValueCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    effective_from: date | None = None
+    effective_to: date | None = None
+
+    @model_validator(mode="after")
+    def ordered_dates(self):
+        if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("effective_to must not precede effective_from")
+        return self
+
+
+class StudentReferenceValueUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    effective_from: date | None = None
+    effective_to: date | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change_and_ordered_dates(self):
+        if not self.model_fields_set - {"expected_version"}:
+            raise ValueError("At least one catalog field must be provided")
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name cannot be null")
+        if "is_active" in self.model_fields_set and self.is_active is None:
+            raise ValueError("is_active cannot be null")
+        if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("effective_to must not precede effective_from")
+        return self
+
+
+class StudentReferenceValueResponse(BaseModel):
+    id: int
+    catalog_type: str
+    name: str
+    description: str | None
+    effective_from: date | None
+    effective_to: date | None
+    is_active: bool
+    version: int
+
+
 class AttendanceSessionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     session_date: date

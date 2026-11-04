@@ -2,7 +2,7 @@
 
 Operators sign in at the production root and select **Student profiles**. Search by identifier/name, class and status; results show 25 records per page with explicit previous/next controls. Open a record to load its current saved values and status history, or select **New student** to create one. No synthetic profile data is loaded into this workflow.
 
-The form covers the profile fields from the supported student intake workbook plus a year-bound age snapshot. The identifier is normalized to uppercase on creation, unique across students and read-only on edit. Category/status remain validated text rather than a hard-coded workbook vocabulary; ACTIVE/INACTIVE are suggestions. Manual profile edits retain the entered `class_name` until general student catalogs are delivered. Workbook imports resolve source `INSTN CLASS` labels through the IT-managed 2023 class crosswalk and store the target instructional-class name; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
+The form covers the profile fields from the supported student intake workbook plus a year-bound age snapshot. The identifier is normalized to uppercase on creation, unique across students and read-only on edit. Category and academic year remain free text at the profile boundary; the new IT-managed catalogs are currently administrative lists and are not yet enforced by profile writes. Institution is not yet a field on Student. ACTIVE/INACTIVE remain status suggestions. Manual profile edits retain the entered `class_name`; workbook imports resolve source `INSTN CLASS` labels through the IT-managed 2023 class crosswalk and store the target instructional-class name; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
 
 ## Workbook field mapping
 

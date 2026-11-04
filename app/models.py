@@ -417,6 +417,32 @@ class Student(Base):
 Index("uq_students_pris_no_normalized", func.upper(_SpaceTrim(Student.pris_no)), unique=True)
 
 
+class StudentReferenceValue(Base):
+    __tablename__ = "student_reference_values"
+    __table_args__ = (
+        UniqueConstraint("catalog_type", "normalized_key", name="uq_student_reference_type_key"),
+        CheckConstraint("catalog_type IN ('CATEGORY', 'INSTITUTION', 'ACADEMIC_YEAR')", name="ck_student_reference_type"),
+        CheckConstraint("version >= 1", name="ck_student_reference_version"),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_from IS NULL OR effective_to >= effective_from", name="ck_student_reference_dates"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    catalog_type: Mapped[str] = mapped_column(String(24), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    normalized_key: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class StudentStatusHistory(Base):
     __tablename__ = "student_status_history"
 

@@ -1,6 +1,7 @@
 import {createStudentWorkspace} from "./students.js";
 import {createAttendanceWorkspace} from "./attendance.js";
 import {createTimetableWorkspace} from "./timetable.js";
+import {createReferenceDataWorkspace} from "./reference-data.js";
 
 const $ = (id) => document.getElementById(id);
 const roles = ["Superuser", "IT Administrator", "Operator", "Executive"];
@@ -10,6 +11,7 @@ let expiryTimer = null;
 let epoch = 0;
 let requests = new AbortController();
 let dashboardRequest = 0;
+let referenceData = null;
 let auditRequest = 0;
 let auditOffset = 0;
 
@@ -20,6 +22,7 @@ function clearData() {
   attendance.clear();
   timetable.clear();
   students.clear();
+  referenceData?.clear();
   for (const id of ["user-rows", "audit-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
@@ -188,6 +191,7 @@ async function showSignedInWorkspace() {
   $("profiles-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
   $("attendance-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
   $("timetable-nav").hidden = false;
+  $("reference-data-nav").hidden = !["IT Administrator", "Superuser"].includes(identity.role);
   if (identity.role === "IT Administrator") await showUsers();
   else await showDashboard();
 }
@@ -205,7 +209,9 @@ function showPanel(name) {
   $("profiles-panel").hidden = name !== "profiles";
   $("attendance-panel").hidden = name !== "attendance";
   $("timetable-panel").hidden = name !== "timetable";
+  $("reference-data-panel").hidden = name !== "reference-data";
   const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
+  navIds["reference-data"] = "reference-data-nav";
   for (const [panel, id] of Object.entries(navIds)) {
     const button = $(id);
     const active = panel === name;
@@ -213,7 +219,7 @@ function showPanel(name) {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule"}[name];
+  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", "reference-data": "Reference data"}[name];
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -412,9 +418,11 @@ async function showAudit() {
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
 const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role, downloadXlsx});
+referenceData = createReferenceDataWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role});
 $("profiles-nav").addEventListener("click", () => run($("profiles-nav"), students.show));
 $("attendance-nav").addEventListener("click", () => run($("attendance-nav"), attendance.show));
 $("timetable-nav").addEventListener("click", () => run($("timetable-nav"), timetable.show));
+$("reference-data-nav").addEventListener("click", () => run($("reference-data-nav"), referenceData.show));
 
 $("login-form").addEventListener("submit", (event) => {
   event.preventDefault();

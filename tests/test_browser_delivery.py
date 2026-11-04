@@ -9,7 +9,12 @@ def test_browser_assets_are_delivered_locally_with_restrictive_headers():
     with TestClient(app) as client:
         root = client.get("/", follow_redirects=False)
         assert root.status_code == 303 and root.headers["location"] == "/ui/"
-        for path, content_type in (("/ui/", "text/html"), ("/ui/app.js", "javascript"), ("/ui/app.css", "text/css")):
+        for path, content_type in (
+            ("/ui/", "text/html"),
+            ("/ui/app.js", "javascript"),
+            ("/ui/reference-data.js", "javascript"),
+            ("/ui/app.css", "text/css"),
+        ):
             response = client.get(path)
             assert response.status_code == 200
             assert content_type in response.headers["content-type"]
