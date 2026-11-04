@@ -27,28 +27,40 @@ def dashboard(
     claims: Claims,
     class_name: str | None = Query(default=None, max_length=120),
     institution: str | None = Query(default=None, max_length=120),
+    category: str | None = Query(default=None, max_length=40),
+    status: str = Query(default="ACTIVE", pattern="^(ACTIVE|INACTIVE|ALL)$"),
+    academic_year: str | None = Query(default=None, max_length=20),
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict:
-    student_query = select(Student)
+    profile_filters = []
     if class_name:
-        student_query = student_query.where(Student.class_name == class_name)
+        profile_filters.append(Student.class_name == class_name.strip())
     if institution:
-        student_query = student_query.where(Student.institution == institution.strip())
-    students = db.scalars(student_query).all()
-    active_students = [student for student in students if student.status == "ACTIVE"]
-    by_class: dict[str, int] = {}
-    by_category: dict[str, int] = {}
-    by_institution: dict[str, int] = {}
-    for student in active_students:
-        by_class[student.class_name] = by_class.get(student.class_name, 0) + 1
-        by_category[student.category] = by_category.get(student.category, 0) + 1
-        institution_name = student.institution or "Unassigned"
-        by_institution[institution_name] = by_institution.get(institution_name, 0) + 1
+        profile_filters.append(Student.institution == institution.strip())
+    if category:
+        profile_filters.append(Student.category == category.strip())
+    if academic_year:
+        profile_filters.append(Student.academic_year == academic_year.strip())
+    active_filters = [*profile_filters, Student.status == "ACTIVE"]
+    if status != "ALL":
+        profile_filters.append(Student.status == status)
+
+    def grouped_counts(column) -> dict[str, int]:
+        return {
+            (key if key is not None else "Unassigned"): int(count)
+            for key, count in db.execute(select(column, func.count()).select_from(Student).where(*profile_filters).group_by(column))
+        }
+
+    matching_profiles = int(db.scalar(select(func.count()).select_from(Student).where(*profile_filters)) or 0)
+    active_profiles = int(db.scalar(select(func.count()).select_from(Student).where(*active_filters)) or 0)
+    by_class = grouped_counts(Student.class_name)
+    by_category = grouped_counts(Student.category)
+    by_institution = grouped_counts(Student.institution)
 
     session_query = select(AttendanceSession)
     if class_name:
-        session_query = session_query.where(AttendanceSession.class_name == class_name)
+        session_query = session_query.where(AttendanceSession.class_name == class_name.strip())
     if date_from:
         session_query = session_query.where(AttendanceSession.session_date >= date_from)
     if date_to:
@@ -87,14 +99,18 @@ def dashboard(
         )
     return {
         "filters": {
-            "class_name": class_name,
-            "institution": institution,
+            "class_name": class_name.strip() if class_name else None,
+            "institution": institution.strip() if institution else None,
+            "category": category.strip() if category else None,
+            "status": status,
+            "academic_year": academic_year.strip() if academic_year else None,
             "date_from": date_from.isoformat() if date_from else None,
             "date_to": date_to.isoformat() if date_to else None,
         },
         "refreshed_at": datetime.now(UTC).isoformat(),
         "students": {
-            "active": len(active_students),
+            "active": active_profiles,
+            "matching": matching_profiles,
             "by_class": dict(sorted(by_class.items())),
             "by_category": dict(sorted(by_category.items())),
             "by_institution": dict(sorted(by_institution.items())),

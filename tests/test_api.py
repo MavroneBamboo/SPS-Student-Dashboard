@@ -289,6 +289,59 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         assert all("pris_no" not in event["details"] for event in audit.json())
 
 
+def test_dashboard_profile_filters_are_independent_from_attendance_scope():
+    with TestClient(app) as client:
+        headers = operator_headers(client)
+        class_name = f"FILTER-{uuid4().hex[:8]}"
+        for year, status in (("2023", "ACTIVE"), ("2026", "ACTIVE"), ("2023", "INACTIVE")):
+            response = client.post(
+                "/api/v1/students",
+                json={
+                    "pris_no": f"PS-{uuid4().hex[:12]}",
+                    "name": "Synthetic Dashboard Filter Student",
+                    "class_name": class_name,
+                    "category": "OP",
+                    "status": status,
+                    "academic_year": year,
+                },
+                headers=headers,
+            )
+            assert response.status_code == 201, response.text
+        session = client.post(
+            "/api/v1/attendance/sessions",
+            json={"session_date": "2026-10-22", "session_type": "MORNING", "class_name": class_name, "expected_count": 1},
+            headers=headers,
+        )
+        assert session.status_code == 201
+
+        active = client.get(
+            "/api/v1/reports/dashboard",
+            params={"class_name": class_name, "category": "OP", "academic_year": "2023", "status": "ACTIVE"},
+            headers=headers,
+        )
+        assert active.status_code == 200
+        assert active.json()["students"]["matching"] == 1
+        assert active.json()["students"]["by_class"] == {class_name: 1}
+        assert active.json()["filters"]["academic_year"] == "2023"
+        assert active.json()["attendance"]["sessions"] == 1
+
+        inactive = client.get(
+            "/api/v1/reports/dashboard",
+            params={"class_name": class_name, "category": "OP", "academic_year": "2023", "status": "INACTIVE"},
+            headers=headers,
+        )
+        assert inactive.json()["students"]["matching"] == 1
+        assert inactive.json()["students"]["active"] == 1
+
+        all_statuses = client.get(
+            "/api/v1/reports/dashboard",
+            params={"class_name": class_name, "academic_year": "2023", "status": "ALL"},
+            headers=headers,
+        )
+        assert all_statuses.json()["students"]["matching"] == 2
+        assert client.get("/api/v1/reports/dashboard?status=ARCHIVED", headers=headers).status_code == 422
+
+
 def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
     with TestClient(app) as client:
         headers = operator_headers(client)

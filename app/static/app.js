@@ -243,8 +243,10 @@ async function showDashboard() {
   const data = await api(`/reports/dashboard?${query}`);
   if (requestId !== dashboardRequest) return;
   $("metrics").replaceChildren();
+  const profileStatus = fields.status || "ACTIVE";
+  const profileLabel = profileStatus === "ALL" ? "Matching profiles" : `${profileStatus[0]}${profileStatus.slice(1).toLowerCase()} students`;
   for (const [label, value] of [
-    ["Active students", data.students.active],
+    [profileLabel, data.students.matching],
     ["Attendance", data.attendance.rate === null ? "No sessions" : `${data.attendance.rate}%`],
     ["Missing attendance records", data.attendance.missing],
     ["Sessions", data.attendance.sessions],
