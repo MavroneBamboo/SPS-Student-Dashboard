@@ -16,6 +16,8 @@ Open `http://localhost:8080/` for the actual sign-in, account administration and
 
 The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTSTRAP_PASSWORD`. It is seeded as a Superuser in setup state and must be changed/rotated before operational use. PostgreSQL is on a private Compose network and has no published host port.
 
+Lost Superuser access can be recovered only by authorised Docker-host personnel using the audited, interactive command in [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md). Recovery is refused when another active Superuser is available; there is no public recovery endpoint.
+
 ## Current implemented slice
 
 - Operator attendance browser: session creation/search, captured-roster lookup, mark/correction, missing review, audited count adjustment and explicit incomplete closure. Sessions/records use version checks and session locking; duplicate sessions are rejected. The monthly attendance export uses captured identities and labels partial legacy rosters. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md) for the API contract and historical-roster limits.

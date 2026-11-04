@@ -57,6 +57,8 @@ After first-run setup, the Superuser retains full access. The dashboard is its i
 
 The initial credential must not be documented as a permanent password. It must be supplied through a secure deployment mechanism or environment configuration, expire after first use, and require a password change. The application must prevent normal production use while the initial credential remains unchanged. A recovery procedure must exist for a lost superuser account and must be restricted to authorised IT personnel.
 
+The implemented recovery process is restricted to authorised Docker-host personnel. It requires a ticketed reason, only recovers an existing Superuser when no other active Superuser is available, forces password change and revokes prior tokens. See [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md).
+
 ### 3.2 IT Administrator
 
 The IT Administrator manages technical and reference configuration:
