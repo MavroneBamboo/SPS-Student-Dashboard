@@ -10,13 +10,17 @@ let expiryTimer = null;
 let epoch = 0;
 let requests = new AbortController();
 let dashboardRequest = 0;
+let auditRequest = 0;
+let auditOffset = 0;
 
 function notice(message = "") { $("notice").textContent = message; }
 function clearData() {
+  auditRequest += 1;
+  auditOffset = 0;
   attendance.clear();
   timetable.clear();
   students.clear();
-  for (const id of ["user-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
+  for (const id of ["user-rows", "audit-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
@@ -158,6 +162,7 @@ async function acceptSession(session) {
   $("workspace").hidden = false;
   $("identity").textContent = `${identity.username} · ${identity.role}`;
   $("users-nav").hidden = !["Superuser", "IT Administrator"].includes(identity.role);
+  $("audit-nav").hidden = !["Superuser", "IT Administrator"].includes(identity.role);
   $("dashboard-nav").hidden = identity.role === "IT Administrator";
   $("profiles-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
   $("attendance-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
@@ -175,10 +180,11 @@ function cell(row, value) {
 function showPanel(name) {
   $("dashboard-panel").hidden = name !== "dashboard";
   $("users-panel").hidden = name !== "users";
+  $("audit-panel").hidden = name !== "audit";
   $("profiles-panel").hidden = name !== "profiles";
   $("attendance-panel").hidden = name !== "attendance";
   $("timetable-panel").hidden = name !== "timetable";
-  const navIds = {users: "users-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
+  const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
   for (const [panel, id] of Object.entries(navIds)) {
     const button = $(id);
     const active = panel === name;
@@ -186,7 +192,7 @@ function showPanel(name) {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  $("workspace-title").textContent = {users: "Account setup", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule"}[name];
+  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule"}[name];
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -339,6 +345,49 @@ async function showUsers() {
   }
 }
 
+async function showAudit() {
+  if (!["Superuser", "IT Administrator"].includes(identity.role)) throw new Error("System audit is not available for this role.");
+  const requestId = ++auditRequest;
+  showPanel("audit");
+  const pageSize = 50;
+  const query = new URLSearchParams({limit: String(pageSize + 1), offset: String(auditOffset)});
+  for (const [key, value] of Object.entries(Object.fromEntries(new FormData($("audit-filter"))))) {
+    if (value.trim()) query.set(key, value.trim());
+  }
+  const events = await api(`/reports/audit?${query}`);
+  if (requestId !== auditRequest) return;
+  const visibleEvents = events.slice(0, pageSize);
+  const rows = $("audit-rows");
+  rows.replaceChildren();
+  for (const event of visibleEvents) {
+    const row = document.createElement("tr");
+    const when = event.created_at ? new Date(event.created_at).toLocaleString() : "Unknown";
+    cell(row, when);
+    cell(row, event.actor_username ? `${event.actor_username} (#${event.actor_id})` : `Account #${event.actor_id}`);
+    cell(row, event.action);
+    cell(row, `${event.entity_type} · ${event.entity_id}`);
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "View details";
+    const content = document.createElement("pre");
+    content.className = "audit-details";
+    content.textContent = JSON.stringify(event.details, null, 2);
+    details.append(summary, content);
+    cell(row, "").append(details);
+    rows.append(row);
+  }
+  if (visibleEvents.length === 0) {
+    const row = document.createElement("tr");
+    cell(row, "No audit events match these filters.").colSpan = 5;
+    rows.append(row);
+  }
+  const first = visibleEvents.length ? auditOffset + 1 : 0;
+  const last = auditOffset + visibleEvents.length;
+  $("audit-page-status").textContent = events.length ? `Showing events ${first}–${last}.` : "No events on this page.";
+  $("audit-previous").disabled = auditOffset === 0;
+  $("audit-next").disabled = events.length <= pageSize;
+}
+
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
 const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role, downloadXlsx});
@@ -397,6 +446,26 @@ $("cancel-reset-user").addEventListener("click", () => { $("reset-user-form").re
 $("dashboard-filter").addEventListener("submit", (event) => { event.preventDefault(); run(event.currentTarget, showDashboard); });
 for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener("click", () => run($(id), showDashboard));
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
+$("audit-nav").addEventListener("click", () => run($("audit-nav"), showAudit));
+$("refresh-audit").addEventListener("click", () => run($("refresh-audit"), showAudit));
+$("audit-filter").addEventListener("submit", (event) => {
+  event.preventDefault();
+  auditOffset = 0;
+  run(event.currentTarget, showAudit);
+});
+$("clear-audit-filters").addEventListener("click", () => {
+  $("audit-filter").reset();
+  auditOffset = 0;
+  run($("clear-audit-filters"), showAudit);
+});
+$("audit-previous").addEventListener("click", () => {
+  auditOffset = Math.max(0, auditOffset - 50);
+  run($("audit-previous"), showAudit);
+});
+$("audit-next").addEventListener("click", () => {
+  auditOffset += 50;
+  run($("audit-next"), showAudit);
+});
 for (const id of ["signout", "password-cancel"]) $(id).addEventListener("click", explicitSignOut);
 $("change-password").addEventListener("click", () => {
   $("workspace").hidden = true;
