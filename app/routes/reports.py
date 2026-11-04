@@ -10,7 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
@@ -57,6 +57,15 @@ def dashboard(
     by_class = grouped_counts(Student.class_name)
     by_category = grouped_counts(Student.category)
     by_institution = grouped_counts(Student.institution)
+    age_counts = db.execute(
+        select(
+            func.sum(case((Student.age_in_academic_year <= 21, 1), else_=0)),
+            func.sum(case((Student.age_in_academic_year > 21, 1), else_=0)),
+            func.sum(case((Student.age_in_academic_year.is_(None), 1), else_=0)),
+        )
+        .select_from(Student)
+        .where(*profile_filters)
+    ).one()
 
     session_query = select(AttendanceSession)
     if class_name:
@@ -114,6 +123,11 @@ def dashboard(
             "by_class": dict(sorted(by_class.items())),
             "by_category": dict(sorted(by_category.items())),
             "by_institution": dict(sorted(by_institution.items())),
+            "by_age_band": {
+                "21 and under": int(age_counts[0] or 0),
+                "Over 21": int(age_counts[1] or 0),
+                "Age not recorded": int(age_counts[2] or 0),
+            },
         },
         "attendance": {
             "sessions": len(sessions),

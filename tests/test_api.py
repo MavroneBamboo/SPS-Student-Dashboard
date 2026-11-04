@@ -293,7 +293,7 @@ def test_dashboard_profile_filters_are_independent_from_attendance_scope():
     with TestClient(app) as client:
         headers = operator_headers(client)
         class_name = f"FILTER-{uuid4().hex[:8]}"
-        for year, status in (("2023", "ACTIVE"), ("2026", "ACTIVE"), ("2023", "INACTIVE")):
+        for year, status, age in (("2023", "ACTIVE", 21), ("2026", "ACTIVE", 22), ("2023", "INACTIVE", None)):
             response = client.post(
                 "/api/v1/students",
                 json={
@@ -303,6 +303,7 @@ def test_dashboard_profile_filters_are_independent_from_attendance_scope():
                     "category": "OP",
                     "status": status,
                     "academic_year": year,
+                    "age_in_academic_year": age,
                 },
                 headers=headers,
             )
@@ -322,6 +323,7 @@ def test_dashboard_profile_filters_are_independent_from_attendance_scope():
         assert active.status_code == 200
         assert active.json()["students"]["matching"] == 1
         assert active.json()["students"]["by_class"] == {class_name: 1}
+        assert active.json()["students"]["by_age_band"] == {"21 and under": 1, "Over 21": 0, "Age not recorded": 0}
         assert active.json()["filters"]["academic_year"] == "2023"
         assert active.json()["attendance"]["sessions"] == 1
 
@@ -332,6 +334,7 @@ def test_dashboard_profile_filters_are_independent_from_attendance_scope():
         )
         assert inactive.json()["students"]["matching"] == 1
         assert inactive.json()["students"]["active"] == 1
+        assert inactive.json()["students"]["by_age_band"] == {"21 and under": 0, "Over 21": 0, "Age not recorded": 1}
 
         all_statuses = client.get(
             "/api/v1/reports/dashboard",
@@ -339,6 +342,13 @@ def test_dashboard_profile_filters_are_independent_from_attendance_scope():
             headers=headers,
         )
         assert all_statuses.json()["students"]["matching"] == 2
+        assert all_statuses.json()["students"]["by_age_band"] == {"21 and under": 1, "Over 21": 0, "Age not recorded": 1}
+        older = client.get(
+            "/api/v1/reports/dashboard",
+            params={"class_name": class_name, "academic_year": "2026", "status": "ACTIVE"},
+            headers=headers,
+        )
+        assert older.json()["students"]["by_age_band"]["Over 21"] == 1
         assert client.get("/api/v1/reports/dashboard?status=ARCHIVED", headers=headers).status_code == 422
 
 
