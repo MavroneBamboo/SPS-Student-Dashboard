@@ -123,15 +123,16 @@ export function createReferenceDataWorkspace({$, api, run, notice, cell, showPan
   $("refresh-reference-data").addEventListener("click", (event) => run(event.currentTarget, refresh));
   $("reference-catalog-create").addEventListener("submit", (event) => {
     event.preventDefault();
-    run(event.currentTarget, async () => {
-      const fields = Object.fromEntries(new FormData(event.currentTarget));
+    const form = event.currentTarget;
+    run(form, async () => {
+      const fields = Object.fromEntries(new FormData(form));
       const payload = {name: fields.name.trim(), description: fields.description.trim() || null};
       if (currentCatalog === "academic-years") {
         payload.effective_from = fields.effective_from || null;
         payload.effective_to = fields.effective_to || null;
       }
       const created = await api(`/student-reference/catalogs/${currentCatalog}`, "POST", payload);
-      event.currentTarget.reset();
+      form.reset();
       await refresh();
       notice(`Added ${created.name} to the ${currentCatalog.replaceAll("-", " ")} catalog.`);
     });
