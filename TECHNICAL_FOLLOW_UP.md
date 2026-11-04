@@ -77,7 +77,7 @@ Required controls:
 4. Require creation of a named IT Administrator before normal operation is enabled.
 5. Record bootstrap completion in an immutable audit event.
 6. Disable or rotate the bootstrap identity after setup.
-7. Provide a documented, audited recovery procedure requiring server-level IT access.
+7. Provide a documented, audited recovery procedure requiring server-level IT access. Implemented as an interactive Compose command; production acceptance still requires confirming Docker-host access controls and rehearsing the recovery with a backup.
 
 The default superuser is therefore a controlled installation mechanism, not an account intended for daily use.
 
