@@ -375,6 +375,7 @@ class Student(Base):
     name_encrypted: Mapped[str] = mapped_column(Text)
     class_name: Mapped[str] = mapped_column(String(120), index=True)
     category: Mapped[str] = mapped_column(String(40))
+    institution: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(40), index=True)
     status_effective: Mapped[date | None] = mapped_column(Date, nullable=True)
     date_of_birth_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)

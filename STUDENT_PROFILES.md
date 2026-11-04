@@ -2,7 +2,7 @@
 
 Operators sign in at the production root and select **Student profiles**. Search by identifier/name, class and status; results show 25 records per page with explicit previous/next controls. Open a record to load its current saved values and status history, or select **New student** to create one. No synthetic profile data is loaded into this workflow.
 
-The form covers the profile fields from the supported student intake workbook plus a year-bound age snapshot. The identifier is normalized to uppercase on creation, unique across students and read-only on edit. Category and academic year remain free text at the profile boundary; the new IT-managed catalogs are currently administrative lists and are not yet enforced by profile writes. Institution is not yet a field on Student. ACTIVE/INACTIVE remain status suggestions. Manual profile edits retain the entered `class_name`; workbook imports resolve source `INSTN CLASS` labels through the IT-managed 2023 class crosswalk and store the target instructional-class name; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md).
+The form covers the profile fields from the supported student intake workbook plus a year-bound age snapshot. The identifier is normalized to uppercase on creation, unique across students and read-only on edit. Category and academic year are selected from active IT-managed catalogs; institution is an optional controlled field because the supported workbook does not provide it. The API validates and canonicalizes all supplied values. Existing archived/legacy values remain readable and unchanged until an operator selects an active replacement. ACTIVE/INACTIVE remain status suggestions. Manual profile edits retain the entered `class_name`; workbook imports resolve source `INSTN CLASS` labels through the IT-managed 2023 class crosswalk and store the target instructional-class name; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md) and [STUDENT_REFERENCE_CATALOGS.md](STUDENT_REFERENCE_CATALOGS.md).
 
 ## Workbook field mapping
 
@@ -11,7 +11,7 @@ The supplied `Student Intake 2023` header row contains 38 columns. The worksheet
 | Workbook column | API/profile field | Storage |
 | --- | --- | --- |
 | Pris No. | `pris_no` | Normalized unique identifier |
-| CAT | `category` | Validated text |
+| CAT | `category` | Canonical label from the active category catalog |
 | EDR/ROS | `edr_ros` | Text |
 | IC | `ic_number` | Application-encrypted |
 | NAME | `name` | Application-encrypted |
@@ -21,7 +21,9 @@ The supplied `Student Intake 2023` header row contains 38 columns. The worksheet
 | ADM TYPE | `admission_type` | Text |
 | EXAM LEVEL | `exam_level` | Text |
 | DOB | `date_of_birth` | Application-encrypted |
-| AGE IN AY'23 | `age_in_academic_year`, `academic_year` | Integer paired with year (`2023` for this workbook) |
+| AGE IN AY'23 | `age_in_academic_year`, `academic_year` | Integer paired with active academic-year label (`2023` for this workbook) |
+
+Institution is stored separately as an optional controlled profile value and is not provided by this workbook.
 | GENDER | `gender` | Application-encrypted |
 | LANG 1 / LANG 2 | `language_1`, `language_2` | Text |
 | MATH 1 / MATH 2 | `math_1`, `math_2` | Text |

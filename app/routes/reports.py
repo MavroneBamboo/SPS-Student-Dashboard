@@ -26,19 +26,25 @@ def dashboard(
     db: DbSession,
     claims: Claims,
     class_name: str | None = Query(default=None, max_length=120),
+    institution: str | None = Query(default=None, max_length=120),
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict:
     student_query = select(Student)
     if class_name:
         student_query = student_query.where(Student.class_name == class_name)
+    if institution:
+        student_query = student_query.where(Student.institution == institution.strip())
     students = db.scalars(student_query).all()
     active_students = [student for student in students if student.status == "ACTIVE"]
     by_class: dict[str, int] = {}
     by_category: dict[str, int] = {}
+    by_institution: dict[str, int] = {}
     for student in active_students:
         by_class[student.class_name] = by_class.get(student.class_name, 0) + 1
         by_category[student.category] = by_category.get(student.category, 0) + 1
+        institution_name = student.institution or "Unassigned"
+        by_institution[institution_name] = by_institution.get(institution_name, 0) + 1
 
     session_query = select(AttendanceSession)
     if class_name:
@@ -82,6 +88,7 @@ def dashboard(
     return {
         "filters": {
             "class_name": class_name,
+            "institution": institution,
             "date_from": date_from.isoformat() if date_from else None,
             "date_to": date_to.isoformat() if date_to else None,
         },
@@ -90,6 +97,7 @@ def dashboard(
             "active": len(active_students),
             "by_class": dict(sorted(by_class.items())),
             "by_category": dict(sorted(by_category.items())),
+            "by_institution": dict(sorted(by_institution.items())),
         },
         "attendance": {
             "sessions": len(sessions),

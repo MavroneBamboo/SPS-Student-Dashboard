@@ -19,7 +19,8 @@ def _fill_profile(page, pris_no, name="Browser Profile Student"):
     page.get_by_label("Pris No.", exact=True).fill(pris_no)
     page.get_by_label("Student name", exact=True).fill(name)
     page.get_by_label("Student class", exact=True).fill("Browser Profile Class")
-    page.get_by_label("Student category", exact=True).fill("OP")
+    page.locator('#profile-form select[name="category"]').select_option(label="OP")
+    page.locator('#profile-form select[name="institution"]').select_option(label="Synthetic Institution")
     page.get_by_label("Status effective date", exact=True).fill("2026-10-01")
     page.get_by_label("Date of birth", exact=True).fill("2000-01-02")
 
@@ -35,7 +36,7 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     page.get_by_role("button", name="New student", exact=True).click()
     _fill_profile(page, pris_no.lower(), "Browser <img src=x onerror=alert(1)>")
     page.get_by_label("IC number", exact=True).fill("SYNTH-IC-BROWSER-1")
-    profile_form.get_by_label("Academic year", exact=True).fill("2023")
+    profile_form.locator('select[name="academic_year"]').select_option(label="2023")
     profile_form.get_by_label("Age in academic year", exact=True).fill("23")
     page.get_by_label("Next-of-kin NRIC", exact=True).fill("SYNTH-NRIC-BROWSER-1")
     page.get_by_label("Next-of-kin contact number", exact=True).fill("0000-1111")
@@ -44,7 +45,8 @@ def test_operator_profile_creation_duplicate_edit_history_dashboard_and_clear(pa
     expect(page.get_by_role("status")).to_contain_text(f"Saved student {pris_no}")
     expect(page.locator("#profile-version")).to_contain_text("Saved version 1")
     expect(page.get_by_label("IC number", exact=True)).to_have_value("SYNTH-IC-BROWSER-1")
-    expect(profile_form.get_by_label("Academic year", exact=True)).to_have_value("2023")
+    expect(profile_form.locator('select[name="academic_year"]')).to_have_value("2023")
+    expect(profile_form.locator('select[name="institution"]')).to_have_value("Synthetic Institution")
     expect(page.get_by_label("Next-of-kin NRIC", exact=True)).to_have_value("SYNTH-NRIC-BROWSER-1")
     expect(page.locator("#profile-rows")).to_contain_text("Browser <img")
     assert page.locator("#profile-rows img").count() == 0

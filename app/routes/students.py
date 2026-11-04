@@ -8,6 +8,7 @@ from app.audit import record_event
 from app.crypto import decrypt_sensitive, encrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
 from app.models import Student, StudentStatusHistory
+from app.reference_catalogs import resolve_active_reference
 from app.schemas import StudentCreate, StudentResponse, StudentStatusHistoryResponse, StudentUpdate
 
 router = APIRouter(prefix="/students", tags=["students"], dependencies=[Depends(require_roles("Operator", "Superuser"))])
@@ -34,6 +35,7 @@ PLAIN_PROFILE_FIELDS = (
     "admission_type",
     "exam_level",
     "academic_year",
+    "institution",
     "age_in_academic_year",
     "language_1",
     "language_2",
@@ -72,6 +74,7 @@ def list_students(
     claims: Claims,
     q: str | None = Query(default=None, max_length=120),
     class_name: str | None = Query(default=None, max_length=120),
+    institution: str | None = Query(default=None, max_length=120),
     student_status: str | None = Query(default=None, alias="status", max_length=40),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
@@ -79,6 +82,8 @@ def list_students(
     query = select(Student).order_by(Student.pris_no)
     if class_name:
         query = query.where(Student.class_name == class_name.strip())
+    if institution:
+        query = query.where(Student.institution == institution.strip())
     if student_status:
         query = query.where(Student.status == student_status.strip().upper())
     rows = db.scalars(query).all()
@@ -105,13 +110,24 @@ def create_student(payload: StudentCreate, db: DbSession, claims: Claims) -> Stu
     pris_no = payload.pris_no.strip().upper()
     if db.scalar(select(Student).where(Student.pris_no == pris_no)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Pris No. already exists")
+    category = resolve_active_reference(db, "CATEGORY", payload.category)
+    if category is None:
+        raise HTTPException(status_code=422, detail="category must match an active student category")
+    academic_year = resolve_active_reference(db, "ACADEMIC_YEAR", payload.academic_year) if payload.academic_year else None
+    if payload.academic_year and academic_year is None:
+        raise HTTPException(status_code=422, detail="academic_year must match an active academic year")
+    institution = resolve_active_reference(db, "INSTITUTION", payload.institution) if payload.institution else None
+    if payload.institution and institution is None:
+        raise HTTPException(status_code=422, detail="institution must match an active institution")
     values = {field: getattr(payload, field) for field in PLAIN_PROFILE_FIELDS}
+    values["academic_year"] = academic_year.name if academic_year else None
+    values["institution"] = institution.name if institution else None
     values.update({column: encrypt_sensitive(getattr(payload, field)) for field, column in ENCRYPTED_PROFILE_FIELDS.items()})
     row = Student(
         pris_no=pris_no,
         name_encrypted=encrypt_sensitive(payload.name.strip()),
         class_name=payload.class_name.strip(),
-        category=payload.category.strip(),
+        category=category.name,
         status=payload.status.strip().upper(),
         status_effective=payload.status_effective,
         date_of_birth_encrypted=encrypt_sensitive(payload.date_of_birth.isoformat() if payload.date_of_birth else None),
@@ -153,9 +169,21 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
     if age_in_academic_year is not None and not academic_year:
         raise HTTPException(status_code=422, detail="academic_year is required when age_in_academic_year is provided")
     values = {"version": Student.version + 1}
-    for field in ("class_name", "category"):
+    for field in ("class_name",):
         if changes.get(field) is not None:
             values[field] = changes[field].strip()
+    for field, catalog_type in (("category", "CATEGORY"), ("academic_year", "ACADEMIC_YEAR"), ("institution", "INSTITUTION")):
+        if field not in changes or changes[field] is None or changes[field] == getattr(row, field):
+            continue
+        reference = resolve_active_reference(db, catalog_type, changes[field])
+        if reference is None:
+            raise HTTPException(
+                status_code=422, detail=f"{field} must match an active {catalog_type.lower().replace('_', ' ')} catalog value"
+            )
+        values[field] = reference.name
+    for field in ("academic_year", "institution"):
+        if field in changes and changes[field] is None:
+            values[field] = None
     if "name" in changes and changes["name"] is not None:
         values["name_encrypted"] = encrypt_sensitive(changes["name"].strip())
     if "date_of_birth" in changes:
@@ -164,7 +192,7 @@ def update_student(student_id: int, payload: StudentUpdate, db: DbSession, claim
         if field in changes:
             values[column] = encrypt_sensitive(changes[field])
     for field in PLAIN_PROFILE_FIELDS:
-        if field in changes:
+        if field in changes and field not in {"academic_year", "institution"}:
             values[field] = changes[field]
     new_status = changes.get("status", previous_status).upper()
     status_changed = new_status != previous_status

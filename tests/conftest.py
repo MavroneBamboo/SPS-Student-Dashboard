@@ -14,7 +14,7 @@ from sqlalchemy import func, inspect, select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import SetupState, User
+from app.models import SetupState, StudentReferenceValue, User
 from app.security import hash_password
 
 
@@ -39,6 +39,15 @@ def enable_normal_application_for_api_tests():
                 setup.completed = True
                 setup.completed_at = datetime.now(UTC)
                 setup.completed_by = bootstrap.id
+            for catalog_type, name, normalized_key in (
+                ("CATEGORY", "OP", "op"),
+                ("ACADEMIC_YEAR", "2023", "2023"),
+                ("ACADEMIC_YEAR", "2026", "2026"),
+                ("INSTITUTION", "Synthetic Institution", "synthetic institution"),
+            ):
+                exists = db.query(StudentReferenceValue.id).filter_by(catalog_type=catalog_type, normalized_key=normalized_key).first()
+                if exists is None:
+                    db.add(StudentReferenceValue(catalog_type=catalog_type, name=name, normalized_key=normalized_key))
             db.commit()
     yield
 

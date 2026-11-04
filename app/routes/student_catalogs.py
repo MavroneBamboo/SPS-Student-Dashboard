@@ -1,12 +1,11 @@
-from unicodedata import normalize
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
-from app.models import StudentReferenceValue
+from app.models import Student, StudentReferenceValue
+from app.reference_catalogs import normalized_reference_name
 from app.schemas import StudentReferenceValueCreate, StudentReferenceValueResponse, StudentReferenceValueUpdate
 
 router = APIRouter(prefix="/student-reference/catalogs", tags=["student reference catalogs"])
@@ -27,8 +26,7 @@ def _catalog_type(catalog_name: str) -> str:
 
 
 def _normalized(value: str) -> tuple[str, str]:
-    name = " ".join(value.split())
-    key = " ".join(normalize("NFKC", name).split()).casefold()
+    name, key = normalized_reference_name(value)
     if not name or len(key) > 120:
         raise HTTPException(status_code=422, detail="Catalog name is invalid after normalization")
     return name, key
@@ -36,6 +34,13 @@ def _normalized(value: str) -> tuple[str, str]:
 
 def _response(row: StudentReferenceValue) -> StudentReferenceValueResponse:
     return StudentReferenceValueResponse.model_validate(row, from_attributes=True)
+
+
+def _validate_student_field_length(catalog_type: str, name: str) -> None:
+    maximum = {"CATEGORY": 40, "ACADEMIC_YEAR": 20}.get(catalog_type, 120)
+    if len(name) > maximum:
+        field = catalog_type.lower().replace("_", " ")
+        raise HTTPException(status_code=422, detail=f"{field} values cannot exceed {maximum} characters")
 
 
 @router.get("/{catalog_name}", response_model=list[StudentReferenceValueResponse], dependencies=[READ_ACCESS])
@@ -68,6 +73,7 @@ def create_catalog_value(
     if catalog_type != "ACADEMIC_YEAR" and (payload.effective_from is not None or payload.effective_to is not None):
         raise HTTPException(status_code=422, detail="Effective dates are only supported for academic years")
     name, key = _normalized(payload.name)
+    _validate_student_field_length(catalog_type, name)
     if (
         db.scalar(
             select(StudentReferenceValue.id).where(
@@ -125,6 +131,16 @@ def update_catalog_value(
         raise HTTPException(status_code=422, detail="Effective dates are only supported for academic years")
     if "name" in changes:
         changes["name"], changes["normalized_key"] = _normalized(changes["name"])
+        _validate_student_field_length(catalog_type, changes["name"])
+        if changes["normalized_key"] != row.normalized_key:
+            student_field = {"CATEGORY": "category", "ACADEMIC_YEAR": "academic_year", "INSTITUTION": "institution"}[catalog_type]
+            student_column = getattr(Student, student_field)
+            existing_values = db.scalars(select(student_column).where(student_column.is_not(None)).distinct()).all()
+            if any(normalized_reference_name(value)[1] == row.normalized_key for value in existing_values):
+                raise HTTPException(
+                    status_code=409,
+                    detail="A catalog value used by student profiles cannot be renamed; add the replacement and update profiles first",
+                )
     changes = {key: value for key, value in changes.items() if value != getattr(row, key)}
     if not changes:
         raise HTTPException(status_code=422, detail="Catalog update contains no change")

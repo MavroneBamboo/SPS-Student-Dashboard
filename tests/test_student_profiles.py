@@ -100,6 +100,60 @@ def test_profile_validation_permissions_and_stable_identifier(lesson_context):
     assert client.get(BASE + "?limit=101", headers=headers["operator"]).status_code == 422
 
 
+def test_profile_references_must_be_active_and_institution_is_controlled(lesson_context):
+    client, headers, _ = lesson_context
+    profile = _create(
+        lesson_context,
+        category="  op  ",
+        academic_year=" 2023 ",
+        institution=" Synthetic Institution ",
+    )
+    assert profile["category"] == "OP"
+    assert profile["academic_year"] == "2023"
+    assert profile["institution"] == "Synthetic Institution"
+    assert client.get(BASE + "?institution=Synthetic%20Institution", headers=headers["operator"]).json()[0]["id"] == profile["id"]
+    path = f"{BASE}/{profile['id']}"
+    categories = client.get("/api/v1/student-reference/catalogs/categories?include_inactive=true", headers=headers["admin"]).json()
+    op_category = next(item for item in categories if item["name"] == "OP")
+    rename_used_category = client.patch(
+        f"/api/v1/student-reference/catalogs/categories/{op_category['id']}",
+        json={"expected_version": op_category["version"], "name": "Renamed OP"},
+        headers=headers["admin"],
+    )
+    assert rename_used_category.status_code == 409
+    for field, value in (
+        ("category", "Not configured"),
+        ("academic_year", "2099"),
+        ("institution", "Not configured"),
+    ):
+        assert client.patch(path, json={"expected_version": 1, field: value}, headers=headers["operator"]).status_code == 422
+    cleared = client.patch(path, json={"expected_version": 1, "institution": None}, headers=headers["operator"])
+    assert cleared.status_code == 200 and cleared.json()["institution"] is None
+
+    name = f"ARCH-{uuid4().hex[:8]}"
+    catalog_path = "/api/v1/student-reference/catalogs/categories"
+    created = client.post(catalog_path, json={"name": name}, headers=headers["admin"])
+    assert created.status_code == 201
+    archived = client.patch(
+        f"{catalog_path}/{created.json()['id']}",
+        json={"expected_version": 1, "is_active": False},
+        headers=headers["admin"],
+    )
+    assert archived.status_code == 200
+    rejected = client.post(
+        BASE,
+        json={"pris_no": "INACTIVE-CATEGORY", "name": "Test", "class_name": "Class", "category": name},
+        headers=headers["operator"],
+    )
+    assert rejected.status_code == 422
+    reactivated = client.patch(
+        f"{catalog_path}/{created.json()['id']}",
+        json={"expected_version": 2, "is_active": True},
+        headers=headers["admin"],
+    )
+    assert reactivated.status_code == 200
+
+
 def test_extended_intake_profile_round_trip_encrypts_sensitive_fields_and_allows_clearing(lesson_context):
     client, headers, _ = lesson_context
     encrypted_fields = {

@@ -5,10 +5,11 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   let detailRequest = 0;
   let hasMore = false;
   let importBatch = null;
+  let catalogs = {categories: [], institutions: [], "academic-years": []};
   const pageSize = 25;
   const form = $("profile-form");
   const profileFields = [
-    "name", "class_name", "category", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
+    "name", "class_name", "institution", "category", "status", "status_effective", "date_of_birth", "edr_ros", "ic_number",
     "admission_type", "exam_level", "academic_year", "age_in_academic_year", "gender", "language_1", "language_2",
     "math_1", "math_2", "cpa", "science", "humanities", "commerce_1", "commerce_2", "commerce_3", "aa",
     "nationality", "citizenship", "birthplace", "religion", "race", "marital_status", "next_of_kin_name",
@@ -42,6 +43,41 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     $("student-import-warnings").replaceChildren();
     $("student-import-warning-panel").hidden = true;
     $("student-import-warnings-confirm").checked = false;
+    catalogs = {categories: [], institutions: [], "academic-years": []};
+    $("profile-reference-warning").hidden = true;
+  }
+  function setCatalogSelect(field, catalogName, currentValue, emptyLabel) {
+    const select = form.elements[field];
+    select.replaceChildren(new Option(emptyLabel, ""));
+    const values = catalogs[catalogName] || [];
+    const current = currentValue || "";
+    for (const item of values) {
+      const label = item.is_active ? item.name : "Archived: " + item.name;
+      select.add(new Option(label, item.name, false, item.name === current));
+      if (!item.is_active) select.options[select.options.length - 1].disabled = true;
+    }
+    if (current && !values.some((item) => item.name === current)) {
+      const legacy = new Option("Current value (not in catalog): " + current, current, true, true);
+      legacy.disabled = true;
+      select.add(legacy);
+    }
+    select.value = current;
+  }
+  async function loadCatalogs() {
+    const [categories, institutions, academicYears] = await Promise.all([
+      api("/student-reference/catalogs/categories?include_inactive=true"),
+      api("/student-reference/catalogs/institutions?include_inactive=true"),
+      api("/student-reference/catalogs/academic-years?include_inactive=true"),
+    ]);
+    catalogs = {categories, institutions, "academic-years": academicYears};
+    setCatalogSelect("category", "categories", selected?.category, "Select a category");
+    setCatalogSelect("institution", "institutions", selected?.institution, "Not recorded");
+    setCatalogSelect("academic_year", "academic-years", selected?.academic_year, "Not recorded");
+    const activeCategories = categories.filter((item) => item.is_active);
+    $("profile-reference-warning").hidden = activeCategories.length > 0;
+    $("profile-reference-warning").textContent = activeCategories.length
+      ? ""
+      : "No active student categories are configured. Ask an IT Administrator to add a category before creating profiles.";
   }
   async function list() {
     const request = ++listRequest;
@@ -54,7 +90,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     $("profile-rows").replaceChildren();
     for (const profile of profiles.slice(0, pageSize)) {
       const row = document.createElement("tr");
-      for (const value of [profile.pris_no, profile.name, profile.class_name, profile.category, profile.status]) cell(row, value);
+      for (const value of [profile.pris_no, profile.name, profile.class_name, profile.institution || "Unassigned", profile.category, profile.status]) cell(row, value);
       const open = document.createElement("button");
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open ${profile.pris_no}`);
@@ -64,7 +100,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     }
     if (!profiles.length) {
       const row = document.createElement("tr");
-      cell(row, "No student profiles match the search.").colSpan = 6;
+      cell(row, "No student profiles match the search.").colSpan = 7;
       $("profile-rows").append(row);
     }
     $("profile-page").textContent = profiles.length ? `Showing ${offset + 1}–${offset + Math.min(profiles.length, pageSize)} profiles` : "No results";
@@ -105,6 +141,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   }
   async function show() {
     showPanel("profiles");
+    await loadCatalogs();
     await list();
   }
   function importIssueText(item) {
@@ -113,6 +150,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
       excel_error_value: "Excel contains an error value",
       formula_not_allowed: "formula is not supported in this field",
       formula_value_missing: "formula has no saved result",
+      unknown_reference_value: "value is not active in the managed reference catalog; ask IT to verify it",
       identifier_must_be_text: "Pris No. must be stored as text",
       invalid_date: "use a valid date",
       invalid_integer: "must be a whole number",
