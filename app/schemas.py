@@ -410,6 +410,7 @@ class StudentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     class_name: str = Field(min_length=1, max_length=120)
     category: str = Field(min_length=1, max_length=40)
+    institution: str | None = Field(default=None, max_length=120)
     status: str = Field(default="ACTIVE", min_length=1, max_length=40)
     status_effective: date | None = None
     date_of_birth: date | None = None
@@ -463,6 +464,7 @@ class StudentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=240)
     class_name: str | None = Field(default=None, min_length=1, max_length=120)
     category: str | None = Field(default=None, min_length=1, max_length=40)
+    institution: str | None = Field(default=None, max_length=120)
     status: str | None = Field(default=None, min_length=1, max_length=40)
     status_effective: date | None = None
     date_of_birth: date | None = None

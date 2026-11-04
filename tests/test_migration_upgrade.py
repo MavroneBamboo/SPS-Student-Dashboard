@@ -82,6 +82,7 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
         migrate("head")
         migrate("head")
         assert "lesson_requirements" in inspect(database).get_table_names()
+        assert "institution" in {column["name"] for column in inspect(database).get_columns("students")}
         with database.connect() as connection:
             for table in (users, students, teachers, rules):
                 assert list(connection.execute(select(table))) == snapshots[table.name]
@@ -94,6 +95,7 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
                 for row in connection.execute(select(reference_values.c.catalog_type, reference_values.c.name)).mappings()
             }
             assert connection.execute(select(upgraded.tables["students"].c.version)).scalar_one() == 1
+            assert connection.execute(select(upgraded.tables["students"].c.institution)).scalar_one() is None
             assert connection.execute(select(upgraded.tables["users"].c.token_version)).scalar_one() == 0
             assert legacy_rule["binding_state"] == "UNRESOLVED"
             assert legacy_rule["instructional_class_id"] is None
@@ -423,7 +425,8 @@ def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
                     created_by=1,
                 )
             )
-            before = list(connection.execute(select(students)))
+            preserved_student_fields = ("id", "pris_no", "name_encrypted", "class_name", "category", "status", "created_by")
+            before = list(connection.execute(select(*(students.c[field] for field in preserved_student_fields))))
         upgraded = migrate("head")
         assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
         assert migrate("head").returncode == 0
@@ -433,7 +436,8 @@ def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
         columns = {column["name"] for column in inspect(database).get_columns("student_class_mappings")}
         assert {"source_workbook", "source_label", "source_key", "instructional_class_id", "version", "is_active"} <= columns
         with database.connect() as connection:
-            assert list(connection.execute(select(after.tables["students"]))) == before
+            students_after = after.tables["students"]
+            assert list(connection.execute(select(*(students_after.c[field] for field in preserved_student_fields)))) == before
             assert connection.execute(select(after.tables["student_class_mappings"])).first() is None
     finally:
         database.dispose()

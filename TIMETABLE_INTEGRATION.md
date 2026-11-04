@@ -113,7 +113,7 @@ The timetable becomes a module in the same authenticated application:
 | Operator | Create drafts, generate, amend, save and export |
 | Executive | View approved timetable and download reports |
 
-The 2023 intake workbook's source class labels now map through the IT-managed crosswalk to active instructional classes. Student records remain separate from instructional class schedules: a timetable class is a teaching group, while attendance and intake contain individual students and class/status history. The student profile still stores the class name, so general category/institution catalogs, normalized manual profile references and historical attendance reconciliation remain follow-up work.
+The 2023 intake workbook's source class labels now map through the IT-managed crosswalk to active instructional classes. Student records remain separate from instructional class schedules: a timetable class is a teaching group, while attendance and intake contain individual students and class/status history. Student profiles still store the class name, so explicit student-to-instructional-class reconciliation and historical attendance reconciliation remain follow-up work. Category, institution and academic-year catalog integration is described in [STUDENT_REFERENCE_CATALOGS.md](STUDENT_REFERENCE_CATALOGS.md).
 
 ## 5. Prototype acceptance walkthrough
 

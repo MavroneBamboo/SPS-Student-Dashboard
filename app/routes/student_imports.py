@@ -10,7 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from app.audit import record_event
 from app.crypto import decrypt_sensitive, decrypt_sensitive_bytes, encrypt_sensitive, encrypt_sensitive_bytes
 from app.deps import Claims, DbSession, require_roles
-from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch, StudentStatusHistory
+from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch, StudentReferenceValue, StudentStatusHistory
+from app.reference_catalogs import resolve_active_reference
 from app.routes.students import ENCRYPTED_PROFILE_FIELDS, PLAIN_PROFILE_FIELDS
 from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
 from app.student_import import MAX_UPLOAD_BYTES, ImportFileError, mark_duplicate_identifiers, parse_student_workbook
@@ -142,6 +143,24 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
 
     try:
         mark_duplicate_identifiers(rows)
+        for row in rows:
+            row_references = {}
+            for field, catalog_type in (("category", "CATEGORY"), ("academic_year", "ACADEMIC_YEAR")):
+                value = row["fields"].get(field)
+                if value is None:
+                    continue
+                reference = resolve_active_reference(db, catalog_type, value)
+                if reference is None:
+                    row["errors"].append({"field": field, "code": "unknown_reference_value"})
+                else:
+                    row["fields"][field] = reference.name
+                    row_references[field] = {
+                        "id": reference.id,
+                        "version": reference.version,
+                        "name": reference.name,
+                        "catalog_type": catalog_type,
+                    }
+            row["reference_values"] = row_references
         mapping_rows = db.execute(
             select(StudentClassMapping, InstructionalClass)
             .join(InstructionalClass, InstructionalClass.id == StudentClassMapping.instructional_class_id)
@@ -232,6 +251,30 @@ def commit_student_import(batch_id: int, payload: ImportCommitRequest, db: DbSes
         raise HTTPException(status_code=500, detail="Stored import batch could not be read") from exc
 
     identifiers = [row["fields"]["pris_no"].strip().upper() for row in staged]
+    reference_ids = [snapshot["id"] for row in staged for snapshot in row.get("reference_values", {}).values()]
+    current_references = (
+        {
+            reference.id: reference
+            for reference in db.scalars(
+                select(StudentReferenceValue).where(StudentReferenceValue.id.in_(reference_ids)).with_for_update()
+            ).all()
+        }
+        if reference_ids
+        else {}
+    )
+    for staged_row in staged:
+        for field, snapshot in staged_row.get("reference_values", {}).items():
+            reference = current_references.get(snapshot["id"])
+            if (
+                reference is None
+                or not reference.is_active
+                or reference.version != snapshot["version"]
+                or reference.name != snapshot["name"]
+                or reference.catalog_type != snapshot["catalog_type"]
+                or staged_row["fields"].get(field) != snapshot["name"]
+            ):
+                db.rollback()
+                raise HTTPException(status_code=409, detail="A student reference value changed after preview; upload the workbook again")
     mapping_ids = [row["class_mapping_id"] for row in staged if row.get("class_mapping_id") is not None]
     current_mappings = (
         {

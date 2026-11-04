@@ -23,7 +23,7 @@ function clearData() {
   timetable.clear();
   students.clear();
   referenceData?.clear();
-  for (const id of ["user-rows", "audit-rows", "metrics", "class-counts", "category-counts", "attendance-trend"]) $(id).replaceChildren();
+  for (const id of ["user-rows", "audit-rows", "metrics", "class-counts", "category-counts", "institution-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
@@ -260,6 +260,7 @@ async function showDashboard() {
   }
   breakdown("class-counts", data.students.by_class);
   breakdown("category-counts", data.students.by_category);
+  breakdown("institution-counts", data.students.by_institution);
   $("attendance-trend").replaceChildren();
   for (const entry of data.attendance.trend) {
     const row = document.createElement("tr");

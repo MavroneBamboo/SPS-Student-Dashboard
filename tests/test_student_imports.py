@@ -516,6 +516,37 @@ def test_update_existing_is_explicit_blank_preserving_and_status_historical(less
     assert history[-1]["effective_date"] == "2026-03-04"
 
 
+def test_import_validates_reference_catalog_values_and_rejects_stale_preview(lesson_context):
+    client, headers, _ = lesson_context
+    unknown = upload(client, headers, workbook([intake_row("IMPORT-UNKNOWN-CATEGORY", category="Unconfigured category")])).json()
+    assert unknown["invalid_count"] == 1
+    assert any(error["field"] == "category" and error["code"] == "unknown_reference_value" for error in unknown["row_errors"])
+    denied = client.post(f"{BASE}/{unknown['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert denied.status_code == 409
+
+    category = f"IMP-{uuid4().hex[:8]}"
+    catalog_path = "/api/v1/student-reference/catalogs/categories"
+    created = client.post(catalog_path, json={"name": category}, headers=headers["admin"])
+    assert created.status_code == 201
+    preview = upload(client, headers, workbook([intake_row("IMPORT-STALE-CATEGORY", category=category)])).json()
+    assert preview["valid_count"] == 1 and preview["invalid_count"] == 0
+    archived = client.patch(
+        f"{catalog_path}/{created.json()['id']}",
+        json={"expected_version": 1, "is_active": False},
+        headers=headers["admin"],
+    )
+    assert archived.status_code == 200
+    result = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert result.status_code == 409
+    assert client.get("/api/v1/students?q=IMPORT-STALE-CATEGORY", headers=headers["operator"]).json() == []
+    restored = client.patch(
+        f"{catalog_path}/{created.json()['id']}",
+        json={"expected_version": 2, "is_active": True},
+        headers=headers["admin"],
+    )
+    assert restored.status_code == 200
+
+
 def test_import_matches_legacy_identifier_case_and_whitespace_without_creating_duplicate(lesson_context):
     client, headers, _ = lesson_context
     with SessionLocal() as db:

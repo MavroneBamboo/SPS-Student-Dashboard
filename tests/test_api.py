@@ -245,8 +245,15 @@ def test_dashboard_export_and_audit_are_committed_data_views():
     with TestClient(app) as client:
         admin_headers = login_headers(client)
         headers = operator_headers(client)
-        student = {"pris_no": "PS-REPORT-001", "name": "Report Student", "class_name": "REPORT CLASS", "category": "OP", "status": "ACTIVE"}
-        client.post("/api/v1/students", json=student, headers=headers)
+        student = {
+            "pris_no": "PS-REPORT-001",
+            "name": "Report Student",
+            "class_name": "REPORT CLASS",
+            "category": "OP",
+            "institution": "Synthetic Institution",
+            "status": "ACTIVE",
+        }
+        assert client.post("/api/v1/students", json=student, headers=headers).status_code == 201
         session = client.post(
             "/api/v1/attendance/sessions",
             json={"session_date": "2026-10-22", "session_type": "AFTERNOON", "class_name": "REPORT CLASS", "expected_count": 2},
@@ -265,8 +272,12 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         result = dashboard.json()
         assert result["students"]["active"] == 1
         assert result["students"]["by_category"] == {"OP": 1}
+        assert result["students"]["by_institution"] == {"Synthetic Institution": 1}
         assert result["attendance"]["missing"] == 1
         assert result["attendance"]["rate"] == 50.0
+        institution_view = client.get("/api/v1/reports/dashboard?institution=Synthetic%20Institution", headers=headers).json()
+        assert institution_view["students"]["active"] == 1
+        assert institution_view["filters"]["institution"] == "Synthetic Institution"
 
         export = client.get("/api/v1/reports/attendance.csv?class_name=REPORT%20CLASS", headers=headers)
         assert export.status_code == 200
