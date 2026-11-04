@@ -44,7 +44,7 @@
     </section>
     <section id="workspace" hidden>
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
-      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button></nav>
+      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button></nav>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
         <form id="dashboard-filter" class="filters">
@@ -217,6 +217,24 @@
           <button type="submit">Set temporary password</button>
           <button id="cancel-reset-user" class="secondary" type="button">Cancel</button>
         </form>
+      </section>
+      <section id="reference-data-panel" hidden aria-labelledby="reference-data-title">
+        <div class="section-bar"><div><h2 id="reference-data-title">Student reference data</h2><p>Maintain controlled categories, institutions and academic years used by operations.</p></div><button id="refresh-reference-data" class="secondary" type="button">Refresh catalogs</button></div>
+        <div class="resource-tabs" role="tablist" aria-label="Reference catalogs">
+          <button type="button" class="is-selected" data-reference-tab="categories" role="tab" aria-selected="true">Categories</button>
+          <button type="button" data-reference-tab="institutions" role="tab" aria-selected="false">Institutions</button>
+          <button type="button" data-reference-tab="academic-years" role="tab" aria-selected="false">Academic years</button>
+        </div>
+        <p id="reference-catalog-help"></p>
+        <form id="reference-catalog-create" class="panel profile-fields">
+          <h3 id="reference-catalog-form-title">Add category</h3>
+          <label>Name<input name="name" maxlength="120" required></label>
+          <label>Description<textarea name="description" maxlength="1000"></textarea></label>
+          <label data-reference-dates hidden>Effective from<input name="effective_from" type="date"></label>
+          <label data-reference-dates hidden>Effective to<input name="effective_to" type="date"></label>
+          <button type="submit">Add reference value</button>
+        </form>
+        <div class="panel table-wrap"><table><thead><tr><th>Name</th><th>Description</th><th>Effective from</th><th>Effective to</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="reference-catalog-rows"></tbody></table></div>
       </section>
       <section id="timetable-panel" hidden aria-labelledby="timetable-title">
         <div class="section-bar"><div><h2 id="timetable-title">Timetable / Schedule</h2><p>Plan, amend and export the weekly timetable.</p></div><button id="refresh-timetables" class="secondary">Refresh schedules</button></div>

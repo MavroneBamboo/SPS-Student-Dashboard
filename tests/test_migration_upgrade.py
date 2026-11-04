@@ -87,12 +87,19 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
             upgraded = MetaData()
             upgraded.reflect(bind=connection)
             legacy_rule = connection.execute(select(upgraded.tables["scheduling_rules"])).mappings().one()
+            reference_values = upgraded.tables["student_reference_values"]
+            seeded_values = {
+                (row["catalog_type"], row["name"])
+                for row in connection.execute(select(reference_values.c.catalog_type, reference_values.c.name)).mappings()
+            }
             assert connection.execute(select(upgraded.tables["students"].c.version)).scalar_one() == 1
             assert connection.execute(select(upgraded.tables["users"].c.token_version)).scalar_one() == 0
             assert legacy_rule["binding_state"] == "UNRESOLVED"
             assert legacy_rule["instructional_class_id"] is None
             assert legacy_rule["cluster_id"] is None
             assert legacy_rule["version"] == 1
+            assert ("CATEGORY", "OP") in seeded_values
+            assert ("ACADEMIC_YEAR", "2026") in seeded_values
     finally:
         database.dispose()
 

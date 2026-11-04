@@ -15,6 +15,7 @@ from app.routes import (
     lessons,
     reports,
     rules,
+    student_catalogs,
     student_imports,
     student_reference,
     students,
@@ -55,6 +56,7 @@ app.include_router(timetable_exports.router, prefix="/api/v1")
 app.include_router(timetable_publications.router, prefix="/api/v1")
 app.include_router(students.router, prefix="/api/v1")
 app.include_router(student_reference.router, prefix="/api/v1")
+app.include_router(student_catalogs.router, prefix="/api/v1")
 app.include_router(student_reference.attendance_mapping_router, prefix="/api/v1")
 app.include_router(student_imports.router, prefix="/api/v1")
 app.include_router(attendance.router, prefix="/api/v1")
