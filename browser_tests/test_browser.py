@@ -234,7 +234,7 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
     page.get_by_role("button", name="Refresh data").click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students0")
     page.locator("#dashboard-filter").get_by_label("Category", exact=True).fill("OP")
-    page.locator("#dashboard-filter").get_by_label("Profile status", exact=True).select_option("INACTIVE")
+    page.locator('#dashboard-filter select[name="status"]').select_option("INACTIVE")
     page.get_by_role("button", name="Apply filters").click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Inactive students1")
     screenshot(page, role.lower().replace(" ", "-") + "-dashboard")
