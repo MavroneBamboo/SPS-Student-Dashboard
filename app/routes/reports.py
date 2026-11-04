@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
-from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent, Student
+from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent, Student, User
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -282,17 +282,33 @@ def attendance_monthly_xlsx(
 
 
 @router.get("/audit", dependencies=[Depends(require_roles("Superuser", "IT Administrator"))])
-def audit_events(db: DbSession, claims: Claims, limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
-    rows = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(limit)).all()
+def audit_events(
+    db: DbSession,
+    claims: Claims,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    action: str | None = Query(default=None, min_length=1, max_length=80),
+    entity_type: str | None = Query(default=None, min_length=1, max_length=80),
+    actor_id: int | None = Query(default=None, ge=1),
+) -> list[dict]:
+    query = select(AuditEvent, User.username).outerjoin(User, User.id == AuditEvent.actor_id)
+    if action:
+        query = query.where(AuditEvent.action == action.strip())
+    if entity_type:
+        query = query.where(AuditEvent.entity_type == entity_type.strip())
+    if actor_id is not None:
+        query = query.where(AuditEvent.actor_id == actor_id)
+    rows = db.execute(query.order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).offset(offset).limit(limit)).all()
     return [
         {
             "id": row.id,
             "actor_id": row.actor_id,
+            "actor_username": username,
             "action": row.action,
             "entity_type": row.entity_type,
             "entity_id": row.entity_id,
             "details": json.loads(row.details_json),
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
-        for row in rows
+        for row, username in rows
     ]

@@ -57,7 +57,7 @@
     </section>
     <section id="workspace" hidden>
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
-      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button></nav>
+      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="audit-nav" class="secondary" hidden>Audit log</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button></nav>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
         <form id="dashboard-filter" class="filters">
@@ -248,6 +248,21 @@
           <button type="submit">Add reference value</button>
         </form>
         <div class="panel table-wrap"><table><thead><tr><th>Name</th><th>Description</th><th>Effective from</th><th>Effective to</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="reference-catalog-rows"></tbody></table></div>
+      </section>
+      <section id="audit-panel" hidden aria-labelledby="audit-title">
+        <div class="section-bar"><div><h2 id="audit-title">System audit</h2><p>Read-only record of application and security events, newest first.</p></div><button id="refresh-audit" class="secondary">Refresh audit log</button></div>
+        <form id="audit-filter" class="filters panel">
+          <label>Action<input name="action" maxlength="80" placeholder="e.g. user.created"></label>
+          <label>Entity type<input name="entity_type" maxlength="80" placeholder="e.g. user"></label>
+          <label>Actor ID<input name="actor_id" type="number" min="1" step="1"></label>
+          <button type="submit">Apply filters</button>
+          <button id="clear-audit-filters" class="secondary" type="button">Clear filters</button>
+        </form>
+        <p id="audit-page-status" aria-live="polite"></p>
+        <div class="panel table-wrap">
+          <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead><tbody id="audit-rows"></tbody></table>
+        </div>
+        <div class="actions"><button id="audit-previous" class="secondary" type="button">Previous events</button><button id="audit-next" class="secondary" type="button">Next events</button></div>
       </section>
       <section id="timetable-panel" hidden aria-labelledby="timetable-title">
         <div class="section-bar"><div><h2 id="timetable-title">Timetable / Schedule</h2><p>Plan, amend and export the weekly timetable.</p></div><button id="refresh-timetables" class="secondary">Refresh schedules</button></div>
