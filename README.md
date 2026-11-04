@@ -17,6 +17,7 @@ Open `http://localhost:8080/` for the actual sign-in, account administration and
 The initial bootstrap identity is controlled by `BOOTSTRAP_USERNAME` and `BOOTSTRAP_PASSWORD`. It is seeded as a Superuser in setup state and must be changed/rotated before operational use. PostgreSQL is on a private Compose network and has no published host port.
 
 Lost Superuser access can be recovered only by authorised Docker-host personnel using the audited, interactive command in [SUPERUSER_RECOVERY.md](SUPERUSER_RECOVERY.md). Recovery is refused when another active Superuser is available; there is no public recovery endpoint.
+Set `APP_ENV=production` for a production deployment. In this mode the application rejects SQLite or non-psycopg database URLs, default or short JWT/bootstrap secrets, invalid Fernet encryption keys, duplicate active/previous encryption keys, and the checked-in development encryption key. `.env.example` contains placeholders for local setup only; production secrets must be generated and supplied through the approved deployment secret store.
 
 ## Current implemented slice
 
