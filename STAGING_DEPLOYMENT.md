@@ -69,7 +69,9 @@ Open `http://localhost:8080/` and complete bootstrap password rotation. The prox
 
 The `deploy-staging` job in `.github/workflows/ci.yml` has these gates. It checks out the exact tested commit, stages it under the runner account's `~/.local/share/sps-student-dashboard-staging/releases/<commit-sha>`, and deploys that immutable source snapshot using the runner-local environment file. The workflow passes the full commit SHA as `APP_BUILD_SHA`; `/health/ready` returns it in the `revision` field. Deployment succeeds only when the response reports the exact tested SHA, so an old healthy container cannot cause a false success. The Postgres named volume uses a stable Compose project name and persists across code updates.
 
-The workflow does not publish an image to a registry; the laptop builds the staging image from the tested source revision. The application and proxy bind mounts point into the retained release directory rather than the disposable Actions workspace.
+The workflow does not publish an image to a registry; the laptop builds the staging images from the tested source revision. The proxy image contains its Nginx configuration and prototype files, so proxy startup does not depend on a WSL host bind mount being available when Docker Desktop restarts. The database remains on its stable named volume, and the application and database services retain their existing persistent configuration.
+
+After a Windows or WSL shutdown, start Docker Desktop and the Ubuntu distribution. Docker's `unless-stopped` restart policy brings the staging services back when the daemon reconnects. Open `http://localhost:8080/` after `/health/ready` succeeds. If the proxy was explicitly stopped with `docker stop` or `docker compose stop`, start the project from the newest release directory using the Operations command below.
 
 ## Operations
 
@@ -79,5 +81,7 @@ docker compose --project-name sps-student-dashboard-staging \
   --env-file "$HOME/.config/sps-student-dashboard/staging.env" \
   ps
 ```
+
+If a service was manually stopped, run `up --detach` with the same project, release directory and env file. Set `APP_BUILD_SHA` to the release directory's commit SHA first so Compose selects the matching proxy image tag.
 
 The staging project name and its `postgres-data` volume are shared across revisions. Do not run `docker compose down --volumes` unless you intend to erase the staging database. Keep the local environment file and database volume backed up together if staging records need to survive a laptop failure. Staging currently has no automated backup/restore or rollback workflow; test migrations and recovery procedures before relying on this environment for anything beyond synthetic acceptance testing.

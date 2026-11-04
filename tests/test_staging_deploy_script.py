@@ -53,6 +53,10 @@ def test_deploy_script_stages_exact_revision_and_runs_health_check(tmp_path: Pat
     release = Path(env["SPS_STAGING_DIR"]) / "releases" / env["GITHUB_SHA"]
     assert (release / "docker-compose.yml").is_file()
     assert (release / "deploy" / "nginx.conf").is_file()
+    assert (release / "deploy" / "nginx.Dockerfile").is_file()
+    assert (release / "deploy" / "nginx.Dockerfile.dockerignore").is_file()
+    assert (release / "prototype" / "index.html").is_file()
+    assert (release / "prototype" / "reports" / "active-breakdown-by-category.csv").is_file()
     assert not (release / ".git").exists()
     assert not (release / ".env").exists()
     calls = docker_log.read_text(encoding="utf-8")
