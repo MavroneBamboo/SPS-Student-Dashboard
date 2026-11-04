@@ -14,7 +14,7 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     "math_1", "math_2", "cpa", "science", "humanities", "commerce_1", "commerce_2", "commerce_3", "aa",
     "nationality", "citizenship", "birthplace", "religion", "race", "marital_status", "next_of_kin_name",
     "next_of_kin_nric", "next_of_kin_relationship", "next_of_kin_contact", "next_of_kin_address_ports",
-    "next_of_kin_address_from_student", "student_contact",
+    "next_of_kin_address_from_student", "student_contact", "verification_note", "elective",
   ];
   const optionalTextFields = profileFields.filter((key) => !["name", "class_name", "category", "status", "status_effective", "date_of_birth", "age_in_academic_year"].includes(key));
   const today = () => {
@@ -167,7 +167,8 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
   function renderImport(batch) {
     importBatch = batch;
     $("student-import-preview").hidden = false;
-    $("student-import-summary").textContent = `Batch ${batch.id}: ${batch.row_count} rows; ${batch.valid_count} valid; ${batch.invalid_count} invalid; ${batch.warning_count} data warnings; ${batch.existing_count} match existing profiles; ${batch.new_count} new identifiers. Status: ${batch.status}.`;
+    const intakeYear = batch.source_workbook === "STUDENT_INTAKE_2021" ? "2021" : "2023";
+    $("student-import-summary").textContent = `${intakeYear} intake batch ${batch.id}: ${batch.row_count} rows; ${batch.valid_count} valid; ${batch.invalid_count} invalid; ${batch.warning_count} data warnings; ${batch.existing_count} match existing profiles; ${batch.new_count} new identifiers. Status: ${batch.status}.`;
     const errors = $("student-import-errors");
     errors.replaceChildren();
     for (const item of batch.row_errors) {
@@ -196,13 +197,14 @@ export function createStudentWorkspace({$, api, run, notice, cell, showPanel}) {
     event.preventDefault();
     run(event.currentTarget, async () => {
       const file = event.currentTarget.elements.workbook.files[0];
+      const sourceWorkbook = event.currentTarget.elements.source_workbook.value;
       if (!file) throw new Error("Choose an .xlsx workbook first.");
       if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("Only .xlsx workbooks are supported.");
       if (file.size > 10 * 1024 * 1024) throw new Error("The workbook exceeds the 10 MiB upload limit.");
       importBatch = null;
       $("student-import-preview").hidden = true;
       $("student-import-warnings-confirm").checked = false;
-      renderImport(await api("/student-imports", "POST", file));
+      renderImport(await api(`/student-imports?source_workbook=${encodeURIComponent(sourceWorkbook)}`, "POST", file));
     });
   });
   async function commitImport(button, mode) {

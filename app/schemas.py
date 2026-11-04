@@ -267,7 +267,7 @@ class InstructionalClassResponse(InstructionalClassCreate):
 
 class StudentClassMappingCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-    source_workbook: Literal["STUDENT_INTAKE_2023"] = "STUDENT_INTAKE_2023"
+    source_workbook: Literal["STUDENT_INTAKE_2021", "STUDENT_INTAKE_2023"] = "STUDENT_INTAKE_2023"
     source_label: str = Field(min_length=1, max_length=120)
     instructional_class_id: int = Field(ge=1)
 
@@ -445,6 +445,8 @@ class StudentCreate(BaseModel):
     next_of_kin_address_ports: str | None = Field(default=None, max_length=1500)
     next_of_kin_address_from_student: str | None = Field(default=None, max_length=1500)
     student_contact: str | None = Field(default=None, max_length=80)
+    verification_note: str | None = Field(default=None, max_length=500)
+    elective: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode="after")
     def pair_age_with_academic_year(self):
@@ -499,6 +501,8 @@ class StudentUpdate(BaseModel):
     next_of_kin_address_ports: str | None = Field(default=None, max_length=1500)
     next_of_kin_address_from_student: str | None = Field(default=None, max_length=1500)
     student_contact: str | None = Field(default=None, max_length=80)
+    verification_note: str | None = Field(default=None, max_length=500)
+    elective: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode="after")
     def require_change(self):
