@@ -14,6 +14,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let swapSelectionMode = false;
   let selectedPlacementIds = [];
   let draggedPlacementId = null;
+  let dragStartPosition = null;
+  let dragThresholdReached = false;
+  let suppressNextCellClick = false;
   const currentRole = () => typeof role === "function" ? role() : role;
   const canEdit = () => ["Superuser", "Operator", "IT Administrator"].includes(currentRole());
   const canApprove = () => ["Superuser", "IT Administrator"].includes(currentRole());
@@ -70,6 +73,28 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     for (const button of placementForm.querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
     for (const button of $("timetable-grid").querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
   }
+
+  function clearDragState() {
+    draggedPlacementId = null;
+    dragStartPosition = null;
+    dragThresholdReached = false;
+    document.querySelectorAll(".dragging-lesson").forEach((element) => element.classList.remove("dragging-lesson"));
+    document.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+  }
+
+  document.addEventListener("pointermove", (event) => {
+    if (!dragStartPosition || draggedPlacementId === null) return;
+    if (Math.hypot(event.clientX - dragStartPosition.x, event.clientY - dragStartPosition.y) < 6) return;
+    dragThresholdReached = true;
+    document.querySelector(`.lesson-cell[data-placement-id="${draggedPlacementId}"]`)?.classList.add("dragging-lesson");
+    document.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".empty-cell");
+    const source = current?.placements.find((block) => block.id === draggedPlacementId);
+    if (target && source && String(source.slots[0]?.instructional_class_id) === target.dataset.classId) target.classList.add("drop-target");
+  }, true);
+  document.addEventListener("pointerup", () => {
+    if (draggedPlacementId !== null) clearDragState();
+  });
 
   async function runDraftMutation(control, action) {
     if (draftMutationPending) return;
@@ -552,7 +577,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           button.dataset.startPeriod = period;
           if (placement) {
             button.dataset.placementId = String(placement.id);
-            button.draggable = amendMode && editableDraft() && !placement.is_locked && !swapSelectionMode;
+            button.dataset.movable = String(amendMode && editableDraft() && !placement.is_locked && !swapSelectionMode);
             if (swapSelectionMode) {
               const selected = selectedPlacementIds.includes(placement.id);
               button.setAttribute("aria-pressed", String(selected));
@@ -565,41 +590,46 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             ? `${classItem.code} ${day} ${periodLabels[period]} ${labelFor(placement)}`
             : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
           if (placement) button.addEventListener("click", () => {
+            if (suppressNextCellClick) {
+              suppressNextCellClick = false;
+              return;
+            }
             if (swapSelectionMode) selectPlacementForSwap(placement);
             else editPlacement(placement, day, period);
           });
-          else if (swapSelectionMode) button.addEventListener("click", () => notice("Select populated lesson blocks; empty cells cannot be selected for a swap."));
-          else if (editableDraft()) button.addEventListener("click", () => run(button, () => addPlacement(classItem, day, period)));
-          button.addEventListener("dragstart", (event) => {
-            if (!amendMode || !editableDraft() || swapSelectionMode || placement?.is_locked) {
-              event.preventDefault();
+          else if (swapSelectionMode) button.addEventListener("click", () => {
+            if (suppressNextCellClick) {
+              suppressNextCellClick = false;
               return;
             }
+            notice("Select populated lesson blocks; empty cells cannot be selected for a swap.");
+          });
+          else if (editableDraft()) button.addEventListener("click", () => {
+            if (suppressNextCellClick) {
+              suppressNextCellClick = false;
+              return;
+            }
+            run(button, () => addPlacement(classItem, day, period));
+          });
+          button.addEventListener("pointerdown", (event) => {
+            if (!placement || button.dataset.movable !== "true" || swapSelectionMode || event.button !== 0) return;
             draggedPlacementId = placement.id;
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", String(placement.id));
-            button.classList.add("dragging-lesson");
+            dragStartPosition = {x: event.clientX, y: event.clientY};
+            dragThresholdReached = false;
           });
-          button.addEventListener("dragend", () => {
-            draggedPlacementId = null;
-            document.querySelectorAll(".drop-target").forEach((target) => target.classList.remove("drop-target"));
-            button.classList.remove("dragging-lesson");
-          });
-          button.addEventListener("dragover", (event) => {
-            if (placement || !amendMode || !editableDraft() || swapSelectionMode || draggedPlacementId === null) return;
-            const source = current.placements.find((block) => block.id === draggedPlacementId);
-            if (String(source?.slots[0]?.instructional_class_id) !== button.dataset.classId) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "move";
-            button.classList.add("drop-target");
-          });
-          button.addEventListener("drop", (event) => {
-            if (placement || !amendMode || !editableDraft() || swapSelectionMode) return;
-            const id = Number(event.dataTransfer.getData("text/plain")) || draggedPlacementId;
+          button.addEventListener("pointerup", (event) => {
+            if (draggedPlacementId === null || !dragThresholdReached) return;
+            const id = draggedPlacementId;
             const source = current.placements.find((block) => block.id === id);
-            if (!source || String(source.slots[0]?.instructional_class_id) !== button.dataset.classId) return;
+            clearDragState();
             event.preventDefault();
-            button.classList.remove("drop-target");
+            event.stopPropagation();
+            suppressNextCellClick = true;
+            window.setTimeout(() => { suppressNextCellClick = false; }, 0);
+            if (placement || !source || String(source.slots[0]?.instructional_class_id) !== button.dataset.classId) {
+              notice("Drop lesson blocks onto an empty slot in the same class.");
+              return;
+            }
             runDraftMutation(button, () => movePlacement(id, button.dataset.weekday, button.dataset.startPeriod));
           });
           td.append(button);

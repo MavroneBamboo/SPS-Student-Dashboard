@@ -283,7 +283,7 @@ td button { min-height: 34px; padding: 7px 10px; font-size: .78rem; }
 .amend-grid .empty-cell:hover:not(:disabled) { border-color: #90afe0; background: #edf4ff; }
 .amend-grid .lesson-cell:disabled { border-color: #cadcf6; background: #eaf2ff; box-shadow: none; color: #224a85; cursor: default; opacity: 1; }
 .amend-grid .lesson-cell.selected-for-swap { border: 2px solid #205ac7; background: #dceaff; box-shadow: 0 0 0 2px rgb(32 90 199 / 14%); color: #173f87; }
-.amend-grid .lesson-cell[draggable="true"] { cursor: grab; }
+.amend-grid .lesson-cell[data-movable="true"] { cursor: grab; }
 .amend-grid .lesson-cell.dragging-lesson { opacity: .45; cursor: grabbing; }
 .amend-grid .empty-cell.drop-target { border: 2px solid #205ac7; background: #e6f0ff; }
 .amend-grid .lunch-cell { background: #fff6e3; color: #80581b; font-weight: 700; }

@@ -115,9 +115,23 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     assert len(placement_ids) == 2 and target_info, (
         f"Expected two placements and a free double-block start; got {placement_ids}, {target_info}"
     )
-    page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first.drag_to(
-        page.locator(f'.amend-grid .empty-cell[data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]')
-    )
+    source = page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first
+    target = page.locator(f'.amend-grid .empty-cell[data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]')
+    expect(source).to_have_attribute("data-movable", "true")
+    expect(source).to_be_enabled()
+    expect(target).to_be_enabled()
+    page.evaluate("""() => {
+      window.__dragEvents = [];
+      for (const type of ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "dragstart", "drop"]) {
+        document.addEventListener(type, (event) => window.__dragEvents.push({type, target: event.target.className}), true);
+      }
+    }""")
+    source.drag_to(target, steps=10)
+    try:
+        expect(page.get_by_role("status")).to_contain_text("Lesson moved")
+    except AssertionError as error:
+        raise AssertionError(f"Drag/drop did not move the block; events={page.evaluate('window.__dragEvents')}") from error
+    assert {"pointerdown", "pointermove", "pointerup"}.issubset({event["type"] for event in page.evaluate("window.__dragEvents")})
     expect(page.get_by_role("status")).to_contain_text("Lesson moved")
     moved_cell = page.locator(
         f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"][data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]'
