@@ -275,7 +275,8 @@ async function showDashboard() {
     cell(row, "No attendance sessions match the filters.").colSpan = 7;
     $("attendance-trend").append(row);
   }
-  $("dashboard-freshness").textContent = `Committed data refreshed ${new Date(data.refreshed_at).toLocaleString()}`;
+  const dataThrough = data.data_through_at ? new Date(data.data_through_at).toLocaleString() : "no matching source records";
+  $("dashboard-freshness").textContent = `Query completed ${new Date(data.refreshed_at).toLocaleString()} · data through ${dataThrough} · requested by ${data.requested_by}`;
 }
 $("dashboard-export").addEventListener("click", () => run($("dashboard-export"), async () => {
   const started = epoch;

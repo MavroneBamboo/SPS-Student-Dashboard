@@ -227,6 +227,7 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students1")
     expect(page.locator("#age-counts")).to_contain_text("Age not recorded1")
     expect(page.locator("#metrics .metric").nth(1)).to_have_text("Attendance100%")
+    expect(page.locator("#dashboard-freshness")).to_contain_text("requested by")
     expect(page.locator("#attendance-trend")).to_contain_text(class_name)
     assert page.locator("#class-counts img").count() == 0
     with SessionLocal() as db:
