@@ -15,6 +15,10 @@ from psycopg import sql
 from sqlalchemy.engine import make_url
 
 
+def _text(value: str | bytes) -> str:
+    return value.decode("utf-8") if isinstance(value, bytes) else value
+
+
 def _database_url(value: str, database: str | None = None) -> str:
     parsed = make_url(value)
     if not parsed.drivername.startswith("postgresql"):
@@ -122,6 +126,10 @@ def _encrypt_application_tables(admin_url: str, database_name: str, provider_nam
             """
         ).fetchall()
         for schema_name, table_name, relation_type, access_method in tables:
+            schema_name = _text(schema_name)
+            table_name = _text(table_name)
+            relation_type = _text(relation_type)
+            access_method = _text(access_method)
             qualified_name = sql.Identifier(schema_name, table_name).as_string(connection)
             encrypted = connection.execute("SELECT pg_tde_is_encrypted(%s)", (qualified_name,)).fetchone()[0]
             if encrypted is not True and not (relation_type == "p" and access_method == "tde_heap"):
@@ -179,6 +187,8 @@ def _verify_application_tables(connection: psycopg.Connection) -> None:
     ).fetchall()
     unencrypted = []
     for schema_name, relation_name in relations:
+        schema_name = _text(schema_name)
+        relation_name = _text(relation_name)
         qualified_name = sql.Identifier(schema_name, relation_name).as_string(connection)
         encrypted = connection.execute("SELECT pg_tde_is_encrypted(%s)", (qualified_name,)).fetchone()[0]
         if encrypted is not True:
