@@ -29,8 +29,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_teacher_group_members_group_teacher_id", "teacher_group_members", ["group_teacher_id"])
     op.create_index("ix_teacher_group_members_member_teacher_id", "teacher_group_members", ["member_teacher_id"])
-    op.execute(
-        """
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute(
+            """
         CREATE OR REPLACE FUNCTION sps_guard_timetable_slot() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
         DECLARE parent_status text; snapshot jsonb; requirement jsonb; period jsonb;
                 parent_locked boolean; requirement_id integer; block_id integer;
@@ -79,8 +80,8 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END $$
-        """
-    )
+            """
+        )
 
 
 def downgrade() -> None:
