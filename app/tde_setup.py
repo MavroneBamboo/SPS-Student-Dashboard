@@ -39,9 +39,7 @@ def _provider_settings() -> tuple[str, str]:
 
 
 def _ensure_provider(connection: psycopg.Connection, name: str, kind: str) -> None:
-    providers = connection.execute(
-        "SELECT name, type FROM pg_tde_list_all_global_key_providers()"
-    ).fetchall()
+    providers = connection.execute("SELECT name, type FROM pg_tde_list_all_global_key_providers()").fetchall()
     existing = next((provider_type for provider_name, provider_type in providers if provider_name == name), None)
     if existing:
         if existing != kind:
