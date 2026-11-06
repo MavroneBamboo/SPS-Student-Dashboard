@@ -387,6 +387,85 @@ def test_student_import_upgrade_refuses_normalized_identifier_duplicates_without
         database.dispose()
 
 
+def test_import_retention_migration_preserves_existing_payloads_and_allows_expired_previews(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'student-import-retention-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision], cwd=root, env=environment, capture_output=True, text=True, check=False
+        )
+
+    upgraded = migrate("20261104_0017")
+    assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        users = metadata.tables["users"]
+        batches = metadata.tables["student_import_batches"]
+        original = {
+            "status": "PREVIEW",
+            "source_ciphertext": b"encrypted-source-payload",
+            "rows_ciphertext": b"encrypted-row-payload",
+            "row_count": 1,
+            "valid_count": 1,
+            "invalid_count": 0,
+            "warning_count": 0,
+            "existing_count": 0,
+            "new_count": 1,
+            "created_by": 1,
+        }
+        with database.begin() as connection:
+            connection.execute(
+                users.insert().values(
+                    id=1,
+                    username="retention-upgrade",
+                    password_hash="preserved-hash",
+                    role="Operator",
+                    must_change_password=False,
+                    is_active=True,
+                )
+            )
+            connection.execute(batches.insert().values(id=1, **original))
+
+        upgraded = migrate("head")
+        assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+        assert migrate("head").returncode == 0
+        after = MetaData()
+        after.reflect(bind=database)
+        columns = {column["name"]: column for column in inspect(database).get_columns("student_import_batches")}
+        assert columns["source_ciphertext"]["nullable"] and columns["rows_ciphertext"]["nullable"]
+        assert "payload_purged_at" in columns
+        with database.begin() as connection:
+            saved = (
+                connection.execute(select(after.tables["student_import_batches"]).where(after.tables["student_import_batches"].c.id == 1))
+                .mappings()
+                .one()
+            )
+            assert all(saved[key] == value for key, value in original.items())
+            connection.execute(
+                after.tables["student_import_batches"]
+                .insert()
+                .values(
+                    id=2,
+                    status="EXPIRED",
+                    source_ciphertext=None,
+                    rows_ciphertext=None,
+                    row_count=1,
+                    valid_count=1,
+                    invalid_count=0,
+                    warning_count=0,
+                    existing_count=0,
+                    new_count=1,
+                    created_by=1,
+                )
+            )
+    finally:
+        database.dispose()
+
+
 def test_student_class_mapping_upgrade_preserves_existing_profiles(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-class-mappings.db').as_posix()}"
     environment = _migration_environment(database_url)

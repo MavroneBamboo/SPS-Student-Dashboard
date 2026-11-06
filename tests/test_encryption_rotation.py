@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
@@ -79,7 +79,20 @@ def test_rotation_is_read_only_by_default_and_covers_all_encrypted_storage(monke
             new_count=0,
             created_by=1,
         )
-        db.add_all([roster, batch])
+        purged_batch = StudentImportBatch(
+            status="EXPIRED",
+            source_ciphertext=None,
+            rows_ciphertext=None,
+            payload_purged_at=datetime.now(UTC),
+            row_count=1,
+            valid_count=1,
+            invalid_count=0,
+            warning_count=0,
+            existing_count=0,
+            new_count=1,
+            created_by=1,
+        )
+        db.add_all([roster, batch, purged_batch])
         db.commit()
 
         original_name = student.name_encrypted

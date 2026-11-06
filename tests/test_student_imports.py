@@ -1,7 +1,7 @@
 import json
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from uuid import uuid4
 
@@ -216,6 +216,144 @@ def test_parser_maps_supported_2023_headers_and_keeps_values_private():
     assert fields["academic_year"] == "2023" and fields["age_in_academic_year"] == 23
     assert fields["next_of_kin_address_from_student"] == "Synthetic home address"
     assert fields["date_of_birth"] == "2000-01-02"
+
+
+def test_import_retention_is_admin_only_dry_run_and_expires_preview_payloads(lesson_context, monkeypatch):
+    from app.config import get_settings
+    from app.routes import student_imports
+
+    client, headers, _ = lesson_context
+    settings = get_settings().model_copy(update={"student_import_retention_days": 1})
+    monkeypatch.setattr(student_imports, "get_settings", lambda: settings)
+    preview = upload(client, headers, workbook([intake_row()])).json()
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, preview["id"])
+        batch.created_at = datetime.now(UTC) - timedelta(days=2)
+        db.commit()
+
+    retention_path = f"{BASE}/retention"
+    purge_path = f"{BASE}/retention/purge"
+    assert client.get(retention_path, headers=headers["operator"]).status_code == 403
+    assert client.get(retention_path, headers=headers["executive"]).status_code == 403
+    assert client.post(purge_path, json={"apply": True}, headers=headers["operator"]).status_code == 403
+    status_response = client.get(retention_path, headers=headers["admin"])
+    assert status_response.status_code == 200, status_response.text
+    assert status_response.json()["eligible_preview_batches"] == 1
+
+    dry_run = client.post(purge_path, json={"apply": False}, headers=headers["admin"])
+    assert dry_run.status_code == 200, dry_run.text
+    assert dry_run.json()["eligible_batches"] == 1 and not dry_run.json()["applied"]
+    purge_token = dry_run.json()["purge_token"]
+    assert purge_token
+    assert client.post(purge_path, json={"apply": True}, headers=headers["admin"]).status_code == 409
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, preview["id"])
+        assert batch.status == "PREVIEW" and batch.source_ciphertext and batch.rows_ciphertext
+
+    apply = client.post(purge_path, json={"apply": True, "purge_token": purge_token}, headers=headers["admin"])
+    assert apply.status_code == 200, apply.text
+    assert apply.json()["purged_batches"] == 1 and apply.json()["eligible_batches"] == 0
+    expired = client.get(f"{BASE}/{preview['id']}", headers=headers["operator"])
+    assert expired.status_code == 200 and expired.json()["status"] == "EXPIRED"
+    assert expired.json()["expired"] and not expired.json()["payload_available"]
+    assert expired.json()["row_errors"] == [] and expired.json()["row_warnings"] == []
+    assert client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"]).status_code == 410
+    repeated = client.post(purge_path, json={"apply": True, "purge_token": purge_token}, headers=headers["admin"])
+    assert repeated.status_code == 200 and repeated.json()["purged_batches"] == 0
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, preview["id"])
+        assert batch.source_ciphertext is None and batch.rows_ciphertext is None and batch.payload_purged_at
+        assert (
+            db.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.action == "student.import_payload.purged", AuditEvent.entity_id == str(batch.id)
+                )
+            )
+            == 1
+        )
+
+
+def test_import_retention_preserves_committed_student_and_idempotent_result(lesson_context, monkeypatch):
+    from app.config import get_settings
+    from app.routes import student_imports
+
+    client, headers, _ = lesson_context
+    settings = get_settings().model_copy(update={"student_import_retention_days": 1})
+    monkeypatch.setattr(student_imports, "get_settings", lambda: settings)
+    student_identifier = "RETENTION-" + uuid4().hex[:10].upper()
+    preview = upload(client, headers, workbook([intake_row(student_identifier)])).json()
+    committed = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert committed.status_code == 200, committed.text
+    expected_result = committed.json()["result"]
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, preview["id"])
+        batch.created_at = datetime.now(UTC) - timedelta(days=2)
+        db.commit()
+
+    dry_run = client.post(f"{BASE}/retention/purge", json={"apply": False}, headers=headers["admin"])
+    assert dry_run.status_code == 200 and dry_run.json()["purge_token"]
+    purged = client.post(
+        f"{BASE}/retention/purge",
+        json={"apply": True, "purge_token": dry_run.json()["purge_token"]},
+        headers=headers["admin"],
+    )
+    assert purged.status_code == 200 and purged.json()["purged_batches"] == 1
+    after_purge = client.get(f"{BASE}/{preview['id']}", headers=headers["operator"])
+    assert after_purge.status_code == 200
+    assert after_purge.json()["status"] == "COMMITTED" and not after_purge.json()["payload_available"]
+    assert after_purge.json()["result"] == expected_result
+    idempotent_commit = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert idempotent_commit.status_code == 200 and idempotent_commit.json()["result"] == expected_result
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count(Student.id)).where(Student.pris_no == student_identifier)) == 1
+        batch = db.get(StudentImportBatch, preview["id"])
+        assert batch.status == "COMMITTED" and batch.result_json
+        assert batch.source_ciphertext is None and batch.rows_ciphertext is None
+
+
+def test_import_retention_purge_token_is_actor_bound_and_rejects_stale_preview(lesson_context, monkeypatch):
+    from app.config import get_settings
+    from app.routes import student_imports
+
+    client, headers, _ = lesson_context
+    settings = get_settings().model_copy(update={"student_import_retention_days": 1})
+    monkeypatch.setattr(student_imports, "get_settings", lambda: settings)
+    first = upload(client, headers, workbook([intake_row()])).json()
+    second = upload(client, headers, workbook([intake_row()])).json()
+    with SessionLocal() as db:
+        db.get(StudentImportBatch, first["id"]).created_at = datetime.now(UTC) - timedelta(days=2)
+        db.commit()
+
+    dry_run = client.post(f"{BASE}/retention/purge", json={"apply": False}, headers=headers["admin"])
+    assert dry_run.status_code == 200 and dry_run.json()["eligible_batches"] == 1
+    token = dry_run.json()["purge_token"]
+    denied = client.post(f"{BASE}/retention/purge", json={"apply": True, "purge_token": token}, headers=headers["superuser"])
+    assert denied.status_code == 409
+
+    with SessionLocal() as db:
+        db.get(StudentImportBatch, second["id"]).created_at = datetime.now(UTC) - timedelta(days=2)
+        db.commit()
+    stale = client.post(f"{BASE}/retention/purge", json={"apply": True, "purge_token": token}, headers=headers["admin"])
+    assert stale.status_code == 409
+    with SessionLocal() as db:
+        assert all(db.get(StudentImportBatch, batch_id).source_ciphertext is not None for batch_id in (first["id"], second["id"]))
+        for batch_id in (first["id"], second["id"]):
+            db.get(StudentImportBatch, batch_id).created_at = datetime.now(UTC)
+        db.commit()
+
+
+def test_student_import_retention_disabled_rejects_apply_and_roles_stay_scoped(lesson_context, monkeypatch):
+    from app.config import get_settings
+    from app.routes import student_imports
+
+    client, headers, _ = lesson_context
+    settings = get_settings().model_copy(update={"student_import_retention_days": 0})
+    monkeypatch.setattr(student_imports, "get_settings", lambda: settings)
+    assert client.get(f"{BASE}/retention", headers=headers["admin"]).json()["enabled"] is False
+    disabled = client.post(f"{BASE}/retention/purge", json={"apply": True}, headers=headers["admin"])
+    assert disabled.status_code == 409
+    upload_denied = client.post(BASE, content=b"not an upload", headers=headers["admin"])
+    assert upload_denied.status_code == 403
 
 
 def test_parser_rejects_formulas_unknown_headers_numeric_identifiers_and_bad_archives():

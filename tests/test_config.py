@@ -64,3 +64,15 @@ def test_development_configuration_keeps_local_defaults_usable():
     settings = Settings(_env_file=None, app_env="development", database_url="sqlite:///./sps-dashboard.db")
 
     assert settings.database_url.startswith("sqlite:")
+
+
+@pytest.mark.parametrize("days", [-1, 3651])
+def test_student_import_retention_period_is_bounded(days):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, app_env="development", student_import_retention_days=days)
+
+
+def test_student_import_retention_is_disabled_by_default():
+    settings = Settings(_env_file=None, app_env="development")
+
+    assert settings.student_import_retention_days == 0

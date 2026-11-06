@@ -459,14 +459,14 @@ class StudentStatusHistory(Base):
 class StudentImportBatch(Base):
     __tablename__ = "student_import_batches"
     __table_args__ = (
-        CheckConstraint("status IN ('PREVIEW', 'COMMITTED')", name="ck_student_import_status"),
+        CheckConstraint("status IN ('PREVIEW', 'COMMITTED', 'EXPIRED')", name="ck_student_import_status"),
         CheckConstraint("row_count >= 0 AND valid_count >= 0 AND invalid_count >= 0", name="ck_student_import_counts"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     status: Mapped[str] = mapped_column(String(20), default="PREVIEW", server_default="PREVIEW", index=True)
-    source_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
-    rows_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    source_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    rows_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer)
     valid_count: Mapped[int] = mapped_column(Integer)
     invalid_count: Mapped[int] = mapped_column(Integer)
@@ -477,6 +477,7 @@ class StudentImportBatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AttendanceSession(Base):
