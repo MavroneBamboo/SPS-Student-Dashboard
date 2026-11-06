@@ -348,7 +348,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     run(event.currentTarget, async () => {
       const form = event.currentTarget;
       await api("/student-reference/class-mappings", "POST", {
-        source_workbook: "STUDENT_INTAKE_2023",
+        source_workbook: form.elements.source_workbook.value,
         source_label: form.elements.source_label.value,
         instructional_class_id: Number(form.elements.instructional_class_id.value),
       });

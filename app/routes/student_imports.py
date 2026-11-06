@@ -47,6 +47,7 @@ class ImportRowWarning(BaseModel):
 class ImportBatchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    source_workbook: str
     status: str
     row_count: int
     valid_count: int
@@ -107,6 +108,7 @@ def _safe_batch_view(batch: StudentImportBatch) -> ImportBatchResponse:
     ]
     return ImportBatchResponse(
         id=batch.id,
+        source_workbook=batch.source_workbook,
         status=batch.status,
         row_count=batch.row_count,
         valid_count=batch.valid_count,
@@ -349,7 +351,12 @@ def _database_values(fields: dict) -> dict:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_roles("Operator", "Superuser"))],
 )
-async def upload_student_workbook(request: Request, db: DbSession, claims: Claims) -> ImportBatchResponse:
+async def upload_student_workbook(
+    request: Request,
+    db: DbSession,
+    claims: Claims,
+    source_workbook: Literal["STUDENT_INTAKE_2021", "STUDENT_INTAKE_2023"] = STUDENT_INTAKE_2023,
+) -> ImportBatchResponse:
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != XLSX_MEDIA_TYPE:
         raise HTTPException(status_code=415, detail="Upload an .xlsx Student Intake workbook")
     declared_length = request.headers.get("content-length")
@@ -364,7 +371,7 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
         raise HTTPException(status_code=400, detail="Workbook is empty")
     source = bytes(content)
     try:
-        rows = parse_student_workbook(source)
+        rows = parse_student_workbook(source, source_workbook)
     except ImportFileError as exc:
         if exc.code == "file_too_large":
             raise HTTPException(status_code=413, detail="Workbook exceeds the upload limit") from exc
@@ -393,7 +400,7 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
         mapping_rows = db.execute(
             select(StudentClassMapping, InstructionalClass)
             .join(InstructionalClass, InstructionalClass.id == StudentClassMapping.instructional_class_id)
-            .where(StudentClassMapping.source_workbook == STUDENT_INTAKE_2023)
+            .where(StudentClassMapping.source_workbook == source_workbook)
         ).all()
         mappings_by_key = {mapping.source_key: (mapping, instructional_class) for mapping, instructional_class in mapping_rows}
         for row in rows:
@@ -426,6 +433,7 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
         valid_rows = [row for row in rows if not row["errors"]]
         existing_count = sum(row["existing_student_id"] is not None for row in valid_rows)
         batch = StudentImportBatch(
+            source_workbook=source_workbook,
             status="PREVIEW",
             source_ciphertext=encrypt_sensitive_bytes(source),
             rows_ciphertext=encrypt_sensitive_bytes(json.dumps(rows, separators=(",", ":"), sort_keys=True).encode()),
@@ -450,6 +458,7 @@ async def upload_student_workbook(request: Request, db: DbSession, claims: Claim
                 "valid_count": batch.valid_count,
                 "invalid_count": batch.invalid_count,
                 "warning_count": batch.warning_count,
+                "source_workbook": batch.source_workbook,
             },
         )
         db.commit()
