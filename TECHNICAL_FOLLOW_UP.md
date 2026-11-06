@@ -1,5 +1,7 @@
 # SPS Student Dashboard
 
+Production transport follow-up (6 November 2026): `docker-compose.production.yml` enables Nginx TLS termination from host-mounted Compose secrets, enforces TLS 1.2/1.3, redirects only the configured hostname, rejects unknown hosts, and sends HSTS. CI checks the merged production Compose topology and makes live TLS/redirect/header requests against the packaged proxy. Trusted certificate management, key custody/renewal, full application-over-HTTPS browser acceptance, firewall controls and release approval/rollback remain deployment work. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
+
 Amend 4-up follow-up (3 November 2026): the browser now calls the existing atomic swap endpoint from a two-selection workflow. It only offers swaps for editable drafts, prevents locked blocks from being selected, and leaves revision/conflict validation to the API. Chromium CI now covers selection and a successful swap; drag/drop, single-block shift, title rename and broader release recovery checks remain outstanding.
 
 Current timetable UI status (3 November 2026): the production browser follows the supplied redesign with By class/By teacher boards, Amend 4-up, browser print-to-PDF reports, teacher/class/subject tabs, default/class/cluster period editing and revision-guarded two-block swaps. Superuser has full application access. Drag-and-drop, single-block shift, title rename, server-side PDF output and full deployment/recovery verification remain follow-up items. Earlier delivery notes below describe prior increments.
