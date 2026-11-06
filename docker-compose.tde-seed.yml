@@ -1,0 +1,15 @@
+services:
+  postgres-vanilla-seed:
+    image: postgres:17.2-alpine
+    environment:
+      POSTGRES_DB: sps_dashboard
+      POSTGRES_USER: sps_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD for the TDE integration test}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./tests/tde/preseed.sql:/docker-entrypoint-initdb.d/20-tde-preseed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sps_app -d sps_dashboard"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

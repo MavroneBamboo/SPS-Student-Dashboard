@@ -138,6 +138,29 @@ jobs:
           POSTGRES_PASSWORD: ci-only-database-maintenance-password #gitleaks:allow
         run: bash deploy/test-database-maintenance.sh
 
+      - name: Test PostgreSQL TDE bootstrap, storage, WAL, and key persistence
+        env:
+          POSTGRES_PASSWORD: ci-only-tde-password #gitleaks:allow
+          DATABASE_URL: postgresql+psycopg://sps_runtime:ci-only-runtime-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:ci-only-tde-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_RUNTIME_PASSWORD: ci-only-runtime-password #gitleaks:allow
+          JWT_SECRET: ci-only-jwt-secret-long-enough-for-tde #gitleaks:allow
+          BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
+          APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
+        run: bash scripts/test-postgres-tde.sh
+
+      - name: Scan the PostgreSQL TDE image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: percona/percona-distribution-postgresql:17.11.1-4-ubi8
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
+          severity: CRITICAL,HIGH
+
       - name: Verify browser assets in the production image
         run: docker run --rm --entrypoint python sps-student-dashboard:ci -c "from importlib.resources import files; assert all(files('app').joinpath('static', name).is_file() for name in ('index.html', 'app.js', 'app.css', 'students.js', 'attendance.js', 'timetable.js', 'reference-data.js', 'timetable-print.css', 'sps-dashboard-logo.svg', 'sps-crest.png'))"
 
@@ -238,6 +261,20 @@ jobs:
             (.services.proxy.volumes | length == 0) and
             (.services.proxy.restart == "unless-stopped") and
             (.services.proxy.build.dockerfile == "deploy/nginx.Dockerfile")'
+
+      - name: Validate production Vault-backed TDE Compose overlay
+        env:
+          APP_ENV: production
+          POSTGRES_PASSWORD: ci-only-password #gitleaks:allow
+          DATABASE_URL: postgresql+psycopg://sps_runtime:ci-only-runtime-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:ci-only-password@db:5432/sps_dashboard #gitleaks:allow
+          DATABASE_RUNTIME_PASSWORD: ci-only-runtime-password #gitleaks:allow
+          JWT_SECRET: ci-only-jwt-secret-long-enough-for-compose #gitleaks:allow
+          BOOTSTRAP_PASSWORD: ci-only-bootstrap-password #gitleaks:allow
+          APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
+          TDE_VAULT_URL: https://vault.example.invalid
+          TDE_VAULT_TOKEN_HOST_FILE: /tmp/ci-pg-tde-token
+        run: docker compose --file docker-compose.yml --file docker-compose.tde-production.yml config --quiet
 
   deploy-staging:
     name: Deploy staging on WSL laptop

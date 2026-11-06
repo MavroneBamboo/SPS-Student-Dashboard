@@ -56,7 +56,11 @@ compose=(
 
 export APP_BUILD_SHA="$revision"
 "${compose[@]}" config --quiet
-"${compose[@]}" up --detach --build --remove-orphans
+bash "$release/scripts/compose-up.sh" \
+  --project-name sps-student-dashboard-staging \
+  --project-directory "$release" \
+  --env-file "$env_file" \
+  --file "$release/docker-compose.yml"
 
 for attempt in $(seq 1 30); do
   if health_payload="$(curl --fail --silent --show-error http://127.0.0.1:8080/health/ready 2>/dev/null)"; then

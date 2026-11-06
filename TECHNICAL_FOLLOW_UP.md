@@ -371,7 +371,7 @@ The backend must:
 
 Database protection must include:
 
-- Encryption at rest using the database/server storage capabilities.
+- PostgreSQL relation and WAL encryption with Percona `pg_tde` is implemented in the current feature branch. CI must pass the disposable conversion/WAL/key-persistence integration test before merge. Production host/storage encryption, Vault recovery and a full-size conversion/restore rehearsal remain release gates; `pg_tde` does not encrypt PostgreSQL system catalogs or temporary spill files. See [POSTGRES_TDE.md](POSTGRES_TDE.md).
 - TLS for database connections where supported and practical.
 - Least-privilege database accounts separated by application role where appropriate.
 - Application-level authenticated encryption for designated sensitive fields, such as personal identifiers and contact details.
