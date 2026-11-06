@@ -170,8 +170,9 @@ def _verify_application_tables(connection: psycopg.Connection) -> None:
         FROM pg_class AS relation
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
         WHERE relation.relkind IN ('r', 'i', 'S', 'm', 't')
-          AND namespace.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_tde')
+          AND namespace.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_tde', 'pg_toast')
           AND namespace.nspname NOT LIKE 'pg_temp_%'
+          AND namespace.nspname NOT LIKE 'pg_toast_temp_%'
           AND namespace.nspname NOT LIKE 'pg_toast_temp_%'
         ORDER BY namespace.nspname, relation.relname
         """
