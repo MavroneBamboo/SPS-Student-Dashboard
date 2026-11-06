@@ -26,7 +26,7 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 - Timetable interface redesign (27 October): production UI implements By class/By teacher weekly views, browser print-to-PDF reports, teacher/class/subject tabs, period and rule management, and clickable Amend 4-up at 2/4/6/8/12/16/24/32 classes per page. Display maps the lunch interval to P3 while preserving stable database/API slot codes. See [TIMETABLE_INTEGRATION.md](TIMETABLE_INTEGRATION.md).
 
-- Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. The existing audited XLSX exports remain available. Attendance publishing coordination remains open; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
+- Timetable PDF-layout increment (28 October): browser print reports now follow the supplied legacy landscape A4 layout with weekday rows, period columns, configured times, Lunch / Muster at displayed Period 3, SPS crest, and one schedule per page. Browser coverage checks grid content, crest loading and output page dimensions. This establishes the layout contract, not pixel-perfect matching; the output uses the browser print dialog rather than a server PDF service. Audited XLSX exports remain available. Attendance creation from the currently published timetable is implemented with class mapping and immutable session provenance; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md) and [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md).
 
 - Browser brand increment (28 October): added a custom scalable SPS Student Dashboard mark, reused in the sign-in/application header and SVG favicon. The production-image asset gate and browser sign-in test verify the packaged logo and favicon reference.
 
@@ -437,11 +437,10 @@ Exit criteria: operators can correct a generated draft entirely in Amend 4-up, s
 
 **Estimated duration:** 1–2 weeks
 
-- Generate By Instructional Class and By Teacher reports from the same approved version.
-- Compare output against the latest supplied PDFs.
-- Add version, timestamp and audit metadata.
-- Add executive read-only timetable view and downloads.
-- Add approval and publish status before attendance users consume the timetable.
+- Delivered: By Instructional Class and By Teacher reports are generated from the same immutable timetable version; audited XLSX downloads and browser print-to-PDF are available.
+- Delivered: reports include version and generation metadata; Executives can read approved timetables and reports.
+- Delivered: IT approval and publication controls expose the current approved version to attendance users. Attendance session creation validates the published week/class and stores version provenance; manual sessions remain supported.
+- Remaining: compare both report layouts and content against the latest supplied PDFs; server-generated PDF output remains a follow-up.
 
 Exit criteria: both report types reconcile with the approved grid and the report renderer does not mutate timetable data.
 
