@@ -114,7 +114,10 @@ services:
     restart: "no"
 
   postgres-data-init:
-    image: percona/percona-distribution-postgresql:17.11.1-4-ubi10
+    image: sps-postgres-tde:${POSTGRES_TDE_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/postgres-tde.Dockerfile
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -129,7 +132,7 @@ services:
     restart: "no"
 
   db:
-    image: percona/percona-distribution-postgresql:17.11.1-4-ubi10
+    image: sps-postgres-tde:${POSTGRES_TDE_IMAGE_TAG:-local}
     command: ["postgres", "-c", "shared_preload_libraries=pg_tde", "-c", "pg_tde.cipher=aes_256"]
     environment:
       POSTGRES_DB: sps_dashboard

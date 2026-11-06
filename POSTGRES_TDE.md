@@ -1,6 +1,6 @@
 # PostgreSQL storage encryption
 
-The Compose database uses Percona Distribution for PostgreSQL 17.11.1-4 on UBI 10 (`17.11.1-4-ubi10`) with `pg_tde`. The image metadata identifies it as Percona PostgreSQL 17.11-1, based on Red Hat UBI 10. The application remains PostgreSQL-compatible and connects through the private Compose network. Application field encryption, TDE, and age-encrypted logical backups protect different data copies and are all retained.
+The Compose database derives from Percona Distribution for PostgreSQL 17.11.1-4 on UBI 10 (`17.11.1-4-ubi10`) with `pg_tde`. Its Dockerfile rebuilds upstream `gosu` commit `29b939aa5bd4dc588af765b8248f6e39150d2565` with Go 1.26.10 and replaces the base binary to include the Go `crypto/x509` security fix. The final image is scanned in CI for critical and high vulnerabilities. The application remains PostgreSQL-compatible and connects through the private Compose network. Application field encryption, TDE, and age-encrypted logical backups protect different data copies and are all retained.
 
 ## What is encrypted
 

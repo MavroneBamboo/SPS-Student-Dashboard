@@ -133,6 +133,9 @@ jobs:
       - name: Build database maintenance image
         run: docker build --file deploy/database-maintenance.Dockerfile --tag sps-database-maintenance:ci .
 
+      - name: Build PostgreSQL TDE image
+        run: docker build --file deploy/postgres-tde.Dockerfile --tag sps-postgres-tde:ci .
+
       - name: Test encrypted database backup and restore in Compose
         env:
           POSTGRES_PASSWORD: ci-only-database-maintenance-password #gitleaks:allow
@@ -140,6 +143,7 @@ jobs:
 
       - name: Test PostgreSQL TDE bootstrap, storage, WAL, and key persistence
         env:
+          POSTGRES_TDE_IMAGE_TAG: ci
           POSTGRES_PASSWORD: ci-only-tde-password #gitleaks:allow
           DATABASE_URL: postgresql+psycopg://sps_runtime:ci-only-runtime-password@db:5432/sps_dashboard #gitleaks:allow
           DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:ci-only-tde-password@db:5432/sps_dashboard #gitleaks:allow
@@ -153,7 +157,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: percona/percona-distribution-postgresql:17.11.1-4-ubi10
+          image-ref: sps-postgres-tde:ci
           format: table
           exit-code: "1"
           ignore-unfixed: true
