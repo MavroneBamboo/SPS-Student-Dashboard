@@ -124,7 +124,7 @@ fi
 "${psql[@]}" --command "CREATE DATABASE sps_restore_target OWNER sps_app" >/dev/null
 RESTORE_TARGET_DATABASE=sps_restore_target "${restore_compose[@]}" run --build --rm --no-deps tde-restore-setup
 "${compose[@]}" exec --no-TTY db pg_dump --no-owner --format=custom -U sps_app -d sps_dashboard --table=public.tde_preserved_probe \
-  | "${compose[@]}" exec --no-TTY db pg_restore --exit-on-error --no-owner --dbname=sps_restore_target
+  | "${compose[@]}" exec --no-TTY db pg_restore --exit-on-error --no-owner -U sps_app --dbname=sps_restore_target
 restored_value="$("${compose[@]}" exec --no-TTY db psql --no-psqlrc --tuples-only --no-align -U sps_app -d sps_restore_target --command 'SELECT secret FROM public.tde_preserved_probe WHERE id = 1')"
 [[ "$restored_value" == "SPS_TDE_EXISTING_DATA_SENTINEL_7f4cdb1a" ]]
 restored_encrypted="$("${compose[@]}" exec --no-TTY db psql --no-psqlrc --tuples-only --no-align -U sps_app -d sps_restore_target --command "SELECT pg_tde_is_encrypted('public.tde_preserved_probe')")"
