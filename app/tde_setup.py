@@ -65,10 +65,12 @@ def _ensure_provider(connection: psycopg.Connection, name: str, kind: str) -> No
 
 def _ensure_key(connection: psycopg.Connection, key_name: str, provider_name: str, info_function: str, set_function: str) -> None:
     info = connection.execute(sql.SQL("SELECT key_name, provider_name FROM {}() LIMIT 1").format(sql.Identifier(info_function))).fetchone()
-    if info:
+    if info and info[0] is not None:
         if info[0] != key_name or info[1] != provider_name:
             raise RuntimeError(f"TDE already uses key {info[0]!r} from provider {info[1]!r}; refusing implicit key rotation")
         return
+    if info and info[1] is not None:
+        raise RuntimeError("TDE key metadata is incomplete; refusing implicit key rotation")
 
     try:
         connection.execute("SELECT pg_tde_create_key_using_global_key_provider(%s, %s)", (key_name, provider_name))
