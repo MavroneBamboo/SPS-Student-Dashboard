@@ -316,6 +316,9 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
     assert sheet.cell(5, 2).value.startswith("B-")
     assert sheet.cell(5, 3).value == "Monthly Browser Student"
 
+    with SessionLocal() as db:
+        db.get(Student, student_id).class_name = class_name
+        db.commit()
     page.locator("#dashboard-filter input[name='class_name']").fill(class_name)
     page.locator('#dashboard-filter select[name="status"]').select_option("ALL")
     page.get_by_role("button", name="Apply filters").click()
