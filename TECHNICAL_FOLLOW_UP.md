@@ -317,16 +317,16 @@ The following must be confirmed before implementation:
 
 The pull-request CI foundation runs for every pull request, including stacked pull requests whose base is another feature branch. It runs Ruff lint/format checks, Bandit static analysis, `pip-audit`, API tests against disposable PostgreSQL, clean and repeat Alembic upgrades plus model/schema parity, Python compilation, production-container build and Trivy scanning, Compose configuration validation, and Gitleaks full-history scanning. It uploads coverage while the baseline is being established; aggregate coverage thresholds are intentionally deferred until they can be based on measured results. Dependabot is configured to propose weekly Python and GitHub Actions updates.
 
-The current workflow does not yet verify all of the release gates below. Add gates with the associated feature and keep the implementation status explicit:
+The current workflow verifies the pull-request and staging gates described above. The manual production image release workflow now requires a successful CI/staging run for the exact `main` commit, publishes scanned images by digest, records checksums and CycloneDX SBOMs, and signs/verifies image digests with Cosign and GitHub OIDC before creating a release. It does not deploy to production. See [PRODUCTION_RELEASE.md](PRODUCTION_RELEASE.md). Continue implementing and verifying these remaining release gates:
 
 1. Frontend unit and accessibility tests; Chromium end-to-end coverage exists for delivered workspaces and must continue to grow with each feature.
 2. Timetable invariant/property and PDF golden-output tests with scheduling and Amend 4-up.
 3. Broader workbook import malformed-file, production-template golden fixture and catalog/reconciliation tests. Synthetic tests already cover parser, encryption, permissions, duplicate handling and atomic commit.
 4. Report reconciliation fixtures with each approved business report.
-5. Disposable Compose full-stack startup/readiness/smoke tests and artifact publication before release deployment.
-6. Backup/restore, load, expanded penetration/security, signing and deployment approval gates before production readiness.
+5. Production deployment validation, smoke tests and operational rollback using the exact published image digests.
+6. Production backup/restore, load, expanded penetration/security, air-gapped image transfer and deployment approval gates before production readiness.
 
-The required workflow must fail on test failures, migration failures, critical/high container vulnerabilities, dependency advisories, secret detections or broken required behavior. Production deployment will require an approved change and the exact tested artifact once that release workflow is implemented. Environment-specific secrets must remain outside source control.
+The required workflows must fail on test failures, migration failures, critical/high container vulnerabilities, dependency advisories, secret detections or broken required behavior. Production deployment will require an approved change, verified release signatures and the exact tested artifact. Environment-specific secrets must remain outside source control.
 
 ## 15. Living test policy
 

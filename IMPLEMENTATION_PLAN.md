@@ -319,7 +319,7 @@ As the application grows, add and require these gates alongside their owning fea
 - Backup/restore, load, and expanded security tests before production-readiness approval.
 - Increase coverage thresholds from the observed baseline in small, explicit steps; critical security, migration, and scheduling invariants must have direct tests regardless of aggregate coverage.
 
-The release pipeline additionally performs immutable artifact publication, integrity/signature recording, deployment validation, smoke tests and approval gates. A failed security, migration, or required behavior gate blocks promotion. Temporary exceptions must identify an owner, rationale, and expiry.
+The manual production image release workflow now requires successful CI and staging for the exact `main` commit, builds and scans digest-addressed images, records checksums/SBOMs, and signs the exact image digests before creating a GitHub Release. It is limited to a `MavroneBamboo` dispatch on `main` and references the `production` environment; private-repository required-reviewer enforcement depends on the GitHub plan. It does not deploy production or run production smoke tests. See [PRODUCTION_RELEASE.md](PRODUCTION_RELEASE.md). Production deployment validation, smoke tests, backup/restore rehearsal and rollback gates remain required before production readiness. A failed security, migration or required behavior gate blocks promotion. Temporary exceptions must identify an owner, rationale and expiry.
 
 ## 6. Definition of done
 

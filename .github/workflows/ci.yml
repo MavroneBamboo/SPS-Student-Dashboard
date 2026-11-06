@@ -42,6 +42,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Validate GitHub Actions workflow YAML
+        run: >-
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path, aliases: true); puts "Valid YAML #{path}" }' .github/workflows/ci.yml .github/workflows/production-release.yml
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:

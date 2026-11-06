@@ -56,6 +56,10 @@ This remains an early foundation, not a production-ready release. Remaining work
 
 The staging CD workflow deploys only a successfully tested push to `main` to a labeled self-hosted runner on the WSL laptop. Pull request tests remain on GitHub-hosted runners. Follow [STAGING_DEPLOYMENT.md](STAGING_DEPLOYMENT.md) to enable Docker Desktop's WSL integration, prepare a local synthetic-data environment, register the `sps-staging` runner and configure the GitHub `staging` environment. The proxy binds to localhost by default. This staging process is not production deployment or a backup/rollback plan.
 
+## Production image releases
+
+The manual, `main`-only [production release workflow](PRODUCTION_RELEASE.md) requires successful CI and staging for the exact commit, scans digest-addressed candidates, and publishes signed images with a release manifest and CycloneDX SBOMs. It does not deploy production.
+
 ## Continuous integration
 
 Every pull request runs lint and formatting checks, Python static-security and dependency audits, PostgreSQL-backed API tests with coverage reporting, Alembic migration checks, application and database-maintenance container builds/scans, Compose configuration validation, full-history secret scanning, and a Compose PostgreSQL backup/restore round trip that checks encryption, target safety, no-overwrite behavior and tamper rollback. This includes stacked pull requests whose base is another feature branch. Weekly Dependabot updates are enabled for Python and GitHub Actions dependencies. CI uses disposable test credentials and isolated PostgreSQL data; it does not connect to operational data.
