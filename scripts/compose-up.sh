@@ -20,7 +20,7 @@ for attempt in $(seq 1 90); do
   sleep 2
 done
 
-dc run --build --rm --no-deps tde-setup --prepare
+dc run --build --rm --no-deps --entrypoint python tde-setup -m app.tde_setup --prepare
 
 wal_setting="$(dc exec --no-TTY db psql --no-psqlrc --tuples-only --no-align -U "${POSTGRES_USER:-sps_app}" -d "${POSTGRES_DB:-sps_dashboard}" --command 'SHOW pg_tde.wal_encrypt' | tr '[:upper:]' '[:lower:]')"
 if [[ "$wal_setting" != on && "$wal_setting" != true && "$wal_setting" != 1 ]]; then
@@ -36,7 +36,7 @@ fi
 wal_setting="$(dc exec --no-TTY db psql --no-psqlrc --tuples-only --no-align -U "${POSTGRES_USER:-sps_app}" -d "${POSTGRES_DB:-sps_dashboard}" --command 'SHOW pg_tde.wal_encrypt' | tr '[:upper:]' '[:lower:]')"
 [[ "$wal_setting" == on || "$wal_setting" == true || "$wal_setting" == 1 ]] || { echo "PostgreSQL WAL encryption is not enabled" >&2; exit 1; }
 
-dc run --build --rm --no-deps tde-setup --verify
+dc run --build --rm --no-deps --entrypoint python tde-setup -m app.tde_setup --verify
 
 case "${SPS_COMPOSE_UP_DB_ONLY:-0}" in
   1) echo "PostgreSQL is ready with TDE verified; application services were not started."; exit 0 ;;

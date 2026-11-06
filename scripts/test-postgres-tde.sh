@@ -80,7 +80,7 @@ for attempt in $(seq 1 90); do
   sleep 2
 done
 
-"${compose[@]}" run --build --rm --no-deps tde-setup --verify
+"${compose[@]}" run --build --rm --no-deps --entrypoint python tde-setup -m app.tde_setup --verify
 
 psql=("${compose[@]}" exec --no-TTY db psql -v ON_ERROR_STOP=1 -U sps_app -d sps_dashboard)
 
