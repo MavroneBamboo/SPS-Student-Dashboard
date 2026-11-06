@@ -277,6 +277,42 @@ async function showDashboard() {
   }
   $("dashboard-freshness").textContent = `Committed data refreshed ${new Date(data.refreshed_at).toLocaleString()}`;
 }
+$("dashboard-export").addEventListener("click", () => run($("dashboard-export"), async () => {
+  const started = epoch;
+  const activeToken = token;
+  const fields = Object.fromEntries(new FormData($("dashboard-filter")));
+  if (fields.date_from && fields.date_to && fields.date_from > fields.date_to) throw new Error("Attendance from must be on or before attendance to.");
+  const query = new URLSearchParams(Object.entries(fields).filter(([, value]) => value));
+  const response = await fetch(`/api/v1/reports/dashboard.xlsx?${query}`, {
+    headers: {Authorization: `Bearer ${activeToken}`},
+    cache: "no-store",
+    credentials: "omit",
+    signal: requests.signal,
+  });
+  if (started !== epoch) throw new DOMException("Session changed", "AbortError");
+  if (response.status === 401 && token) {
+    signedOut("Your session ended. Sign in again.");
+    throw new DOMException("Session ended", "AbortError");
+  }
+  if (response.status === 403 && token) {
+    signedOut("Your access changed. Sign in again.");
+    throw new DOMException("Access changed", "AbortError");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Could not generate the filtered dashboard report.");
+  }
+  const blob = await response.blob();
+  if (started !== epoch || activeToken !== token) throw new DOMException("Session changed", "AbortError");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}));
 const monthlyReportForm = $("monthly-attendance-report");
 monthlyReportForm.addEventListener("submit", (event) => {
   event.preventDefault();

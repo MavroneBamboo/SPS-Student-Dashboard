@@ -316,6 +316,20 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
     assert sheet.cell(5, 2).value.startswith("B-")
     assert sheet.cell(5, 3).value == "Monthly Browser Student"
 
+    page.locator("#dashboard-filter input[name='class_name']").fill(class_name)
+    page.locator('#dashboard-filter select[name="status"]').select_option("ALL")
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
+    with page.expect_download() as dashboard_download_info:
+        page.get_by_role("button", name="Download filtered Excel report").click()
+    dashboard_download = dashboard_download_info.value
+    dashboard_target = tmp_path / dashboard_download.suggested_filename
+    dashboard_download.save_as(dashboard_target)
+    dashboard_workbook = load_workbook(dashboard_target, data_only=False)
+    assert dashboard_workbook.sheetnames == ["Overview", "Profile breakdowns", "Attendance sessions"]
+    assert dashboard_workbook["Profile breakdowns"]["B2"].value == class_name
+    assert dashboard_workbook["Attendance sessions"]["B2"].value == class_name
+
 
 def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):
     account = make_account()
