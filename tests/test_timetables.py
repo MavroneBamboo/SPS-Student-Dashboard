@@ -165,6 +165,115 @@ def test_draft_amend_lock_swap_remove_approve_and_snapshot_history(timetable_con
     )
 
 
+def test_single_block_move_is_revision_guarded_validated_and_audited(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    version = _draft(ctx)
+    path = f"{BASE}/versions/{version['id']}"
+    first = _place(ctx, version).json()
+    second = _place(ctx, first, weekday="THU").json()
+    first_id = next(block["id"] for block in second["placements"] if block["weekday"] == "MON")
+
+    conflict = client.patch(
+        f"{path}/placements/{first_id}/move",
+        json={"expected_revision": second["revision"], "weekday": "THU", "start_period": "P1"},
+        headers=headers["operator"],
+    )
+    assert conflict.status_code == 409
+    assert client.get(path, headers=headers["operator"]).json() == second
+
+    moved = client.patch(
+        f"{path}/placements/{first_id}/move",
+        json={"expected_revision": second["revision"], "weekday": "FRI", "start_period": "P1"},
+        headers=headers["operator"],
+    )
+    assert moved.status_code == 200, moved.text
+    version = moved.json()
+    assert version["revision"] == second["revision"] + 1
+    assert next(block for block in version["placements"] if block["id"] == first_id)["weekday"] == "FRI"
+    assert (
+        client.patch(
+            f"{path}/placements/{first_id}/move",
+            json={"expected_revision": second["revision"], "weekday": "WED", "start_period": "P1"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+
+    locked = client.patch(
+        f"{path}/placements/{first_id}/lock",
+        json={"expected_revision": version["revision"], "is_locked": True},
+        headers=headers["operator"],
+    ).json()
+    assert (
+        client.patch(
+            f"{path}/placements/{first_id}/move",
+            json={"expected_revision": locked["revision"], "weekday": "WED", "start_period": "P1"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+
+    with SessionLocal() as db:
+        events = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == "timetable_version",
+                AuditEvent.entity_id == str(version["id"]),
+                AuditEvent.action == "timetable.lesson.moved",
+            )
+        ).all()
+        assert len(events) == 1
+        assert json.loads(events[0].details_json)["after"][0]["weekday"] == "FRI"
+
+
+def test_draft_rename_is_audited_revision_guarded_and_immutable_after_approval(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    version = _draft(ctx)
+    path = f"{BASE}/versions/{version['id']}"
+    renamed = client.patch(
+        path + "/name", json={"expected_revision": version["revision"], "name": "Quarter 4 timetable"}, headers=headers["operator"]
+    )
+    assert renamed.status_code == 200, renamed.text
+    version = renamed.json()
+    assert (version["name"], version["revision"]) == ("Quarter 4 timetable", 2)
+    assert (
+        client.patch(path + "/name", json={"expected_revision": 1, "name": "Stale rename"}, headers=headers["operator"]).status_code == 409
+    )
+    assert client.patch(path + "/name", json={"expected_revision": 2, "name": "   "}, headers=headers["operator"]).status_code == 422
+    assert client.patch(path + "/name", json={"expected_revision": 2, "name": "Denied"}, headers=headers["executive"]).status_code == 403
+
+    generated = _generate(ctx, version)
+    assert generated.status_code == 200, generated.text
+    version = generated.json()["timetable"]
+    approved = client.post(path + "/approve", json={"expected_revision": version["revision"]}, headers=headers["admin"])
+    assert approved.status_code == 200, approved.text
+    assert (
+        client.patch(
+            path + "/name",
+            json={"expected_revision": approved.json()["revision"], "name": "Approved rename"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+
+    with SessionLocal() as db:
+        events = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == "timetable_version",
+                AuditEvent.entity_id == str(version["id"]),
+                AuditEvent.action == "timetable.version.renamed",
+            )
+        ).all()
+        assert len(events) == 1
+        assert json.loads(events[0].details_json) == {
+            "previous_revision": 1,
+            "revision": 2,
+            "before": "Operational week",
+            "after": "Quarter 4 timetable",
+        }
+
+
 def test_rule_limits_availability_lunch_and_block_pattern_are_enforced(timetable_context):
     ctx = timetable_context
     client, headers = ctx["client"], ctx["headers"]

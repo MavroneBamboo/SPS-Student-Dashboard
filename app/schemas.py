@@ -167,6 +167,16 @@ class TimetableRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class TimetableRenameRequest(TimetableRevisionRequest):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class TimetableMoveRequest(TimetableRevisionRequest):
+    weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
+    start_period: Literal["P1", "P2", "P3", "P4"]
+
+
 class TimetablePlacementWrite(TimetableRevisionRequest):
     lesson_requirement_id: int = Field(gt=0)
     weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]

@@ -96,6 +96,34 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     except AssertionError as error:
         raise AssertionError(f"Generation failed; UI message: {page.locator('#notice').inner_text()}") from error
     expect(page.locator("#timetable-pending")).to_contain_text("All weekly lesson requirements are placed")
+    page.get_by_role("button", name="Rename draft", exact=True).click()
+    page.locator("#timetable-rename-input").fill("Browser Amend 4-up Revised")
+    page.get_by_role("button", name="Save name", exact=True).click()
+    expect(page.get_by_role("heading", name="Browser Amend 4-up Revised", exact=True)).to_be_visible()
+
+    placement_ids = page.evaluate("""() => [...new Set([...document.querySelectorAll('.amend-grid .lesson-cell[data-placement-id]')]
+      .map((node) => node.dataset.placementId))]""")
+    target_info = page.evaluate("""() => {
+      const candidates = [...document.querySelectorAll('.amend-grid .empty-cell[data-start-period="P1"]')];
+      const target = candidates.find((cell) => {
+        const day = cell.dataset.weekday;
+        const classId = cell.dataset.classId;
+        return !document.querySelector(`.amend-grid .lesson-cell[data-class-id="${classId}"][data-weekday="${day}"][data-start-period="P2"]`);
+      });
+      return target ? {day: target.dataset.weekday, period: target.dataset.startPeriod} : null;
+    }""")
+    assert len(placement_ids) == 2 and target_info, (
+        f"Expected two placements and a free double-block start; got {placement_ids}, {target_info}"
+    )
+    page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first.drag_to(
+        page.locator(f'.amend-grid .empty-cell[data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]')
+    )
+    expect(page.get_by_role("status")).to_contain_text("Lesson moved")
+    moved_cell = page.locator(
+        f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"][data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]'
+    )
+    expect(moved_cell).to_be_visible()
+
     page.get_by_role("button", name="Select lessons to swap", exact=True).click()
     swap_button = page.get_by_role("button", name="Swap selected lessons", exact=True)
     expect(page.locator("#timetable-swap-status")).to_contain_text("0/2 selected")

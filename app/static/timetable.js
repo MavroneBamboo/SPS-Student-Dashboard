@@ -13,6 +13,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let detailSequence = 0;
   let swapSelectionMode = false;
   let selectedPlacementIds = [];
+  let draggedPlacementId = null;
   const currentRole = () => typeof role === "function" ? role() : role;
   const canEdit = () => ["Superuser", "Operator", "IT Administrator"].includes(currentRole());
   const canApprove = () => ["Superuser", "IT Administrator"].includes(currentRole());
@@ -32,6 +33,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("new-timetable").hidden = true;
     placementForm.reset();
     placementForm.hidden = true;
+    $("timetable-rename-form").reset();
+    $("timetable-rename-form").hidden = true;
     $("timetable-generation-summary").textContent = "";
     viewBy = "class";
     $("timetable-amend-tools").hidden = true;
@@ -62,6 +65,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     for (const id of ["timetable-remove", "timetable-lock"]) $(id).disabled = draftMutationPending || !editable;
     $("timetable-swap-mode").disabled = draftMutationPending || !editable;
     $("timetable-swap-confirm").disabled = draftMutationPending || !editable || selectedPlacementIds.length !== 2;
+    $("timetable-rename-open").disabled = draftMutationPending || !editable;
+    $("timetable-rename-save").disabled = draftMutationPending || !editable;
     for (const button of placementForm.querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
     for (const button of $("timetable-grid").querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
   }
@@ -492,7 +497,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       ? selectedPlacementIds.length === 2
         ? "Two blocks selected. Swap them, or click a selected block to change the selection."
         : `Select two unlocked lesson blocks (${selectedPlacementIds.length}/2 selected). Click a selected block again to deselect it.`
-      : "Select two unlocked lesson blocks to exchange their day and period.";
+      : "Select two unlocked lesson blocks to swap, or drag an unlocked block to an empty slot in the same class.";
     $("timetable-editor").classList.toggle("amend-mode", amendMode);
     document.querySelector(".timetable-board-layout").classList.toggle("amend-mode", amendMode);
     $("timetable-density").parentElement.hidden = !amendMode;
@@ -542,8 +547,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             slot.instructional_class_id === classItem.id && slot.weekday === day && slot.slot_code === period));
           const button = document.createElement("button");
           button.className = placement ? "lesson-cell" : "empty-cell";
+          button.dataset.classId = String(classItem.id);
+          button.dataset.weekday = day;
+          button.dataset.startPeriod = period;
           if (placement) {
             button.dataset.placementId = String(placement.id);
+            button.draggable = amendMode && editableDraft() && !placement.is_locked && !swapSelectionMode;
             if (swapSelectionMode) {
               const selected = selectedPlacementIds.includes(placement.id);
               button.setAttribute("aria-pressed", String(selected));
@@ -561,6 +570,38 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           });
           else if (swapSelectionMode) button.addEventListener("click", () => notice("Select populated lesson blocks; empty cells cannot be selected for a swap."));
           else if (editableDraft()) button.addEventListener("click", () => run(button, () => addPlacement(classItem, day, period)));
+          button.addEventListener("dragstart", (event) => {
+            if (!amendMode || !editableDraft() || swapSelectionMode || placement?.is_locked) {
+              event.preventDefault();
+              return;
+            }
+            draggedPlacementId = placement.id;
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", String(placement.id));
+            button.classList.add("dragging-lesson");
+          });
+          button.addEventListener("dragend", () => {
+            draggedPlacementId = null;
+            document.querySelectorAll(".drop-target").forEach((target) => target.classList.remove("drop-target"));
+            button.classList.remove("dragging-lesson");
+          });
+          button.addEventListener("dragover", (event) => {
+            if (placement || !amendMode || !editableDraft() || swapSelectionMode || draggedPlacementId === null) return;
+            const source = current.placements.find((block) => block.id === draggedPlacementId);
+            if (String(source?.slots[0]?.instructional_class_id) !== button.dataset.classId) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            button.classList.add("drop-target");
+          });
+          button.addEventListener("drop", (event) => {
+            if (placement || !amendMode || !editableDraft() || swapSelectionMode) return;
+            const id = Number(event.dataTransfer.getData("text/plain")) || draggedPlacementId;
+            const source = current.placements.find((block) => block.id === id);
+            if (!source || String(source.slots[0]?.instructional_class_id) !== button.dataset.classId) return;
+            event.preventDefault();
+            button.classList.remove("drop-target");
+            runDraftMutation(button, () => movePlacement(id, button.dataset.weekday, button.dataset.startPeriod));
+          });
           td.append(button);
         }
         body.append(row);
@@ -599,6 +640,32 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     placementForm.hidden = true;
     render();
     notice("Lesson blocks swapped. The full draft was revalidated and saved.");
+  }
+
+  async function movePlacement(placementId, weekday, startPeriod) {
+    const placement = current.placements.find((block) => block.id === placementId);
+    if (!placement || (placement.weekday === weekday && placement.start_period === startPeriod)) return;
+    current = await api(`/timetable/versions/${current.id}/placements/${placementId}/move`, "PATCH", {
+      expected_revision: current.revision,
+      weekday,
+      start_period: startPeriod,
+    });
+    placementForm.hidden = true;
+    render();
+    notice("Lesson moved. The full draft was revalidated and saved.");
+  }
+
+  async function renameDraft(event) {
+    event.preventDefault();
+    const name = $("timetable-rename-input").value.trim();
+    if (!current || !name) return;
+    current = await api(`/timetable/versions/${current.id}/name`, "PATCH", {
+      expected_revision: current.revision,
+      name,
+    });
+    $("timetable-rename-form").hidden = true;
+    render();
+    notice("Draft renamed and saved.");
   }
 
   function renderWeeklyBoard(host) {
@@ -837,6 +904,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     fillSelect($("timetable-teacher-filter"), Object.values(current.snapshot.teachers).sort((a, b) => a.short_code.localeCompare(b.short_code)), (row) => `${row.short_code} · ${row.full_name}`);
     $("timetable-editor").hidden = false;
     $("timetable-editor-title").textContent = current.name;
+    $("timetable-rename-open").hidden = !editableDraft();
     $("timetable-version-detail").textContent = `${current.academic_year} · week of ${current.week_start} · ${current.status} · revision ${current.revision}`;
     if (current.is_published) $("timetable-version-detail").textContent += " · PUBLISHED";
     $("timetable-generate").hidden = !editableDraft();
@@ -856,6 +924,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     if (sequence !== detailSequence) return;
     current = result;
     placementForm.hidden = true;
+    $("timetable-rename-form").hidden = true;
     $("timetable-generation-summary").textContent = "";
     pageOffset = 0;
     render();
@@ -1038,6 +1107,17 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     renderGrid();
   });
   $("timetable-swap-confirm").addEventListener("click", () => runDraftMutation($("timetable-swap-confirm"), swapSelectedPlacements));
+  $("timetable-rename-open").addEventListener("click", () => {
+    const form = $("timetable-rename-form");
+    form.hidden = false;
+    $("timetable-rename-input").value = current?.name || "";
+    $("timetable-rename-input").focus();
+  });
+  $("timetable-rename-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    runDraftMutation($("timetable-rename-save"), () => renameDraft(event));
+  });
+  $("timetable-rename-cancel").addEventListener("click", () => { $("timetable-rename-form").hidden = true; });
   $("timetable-cancel-placement").addEventListener("click", () => { placementForm.hidden = true; });
   $("timetable-generate").addEventListener("click", () => runDraftMutation($("timetable-generate"), generate));
   $("timetable-approve").addEventListener("click", () => runDraftMutation($("timetable-approve"), approve));
