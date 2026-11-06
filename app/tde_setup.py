@@ -212,12 +212,13 @@ def _verify() -> None:
         row = connection.execute(
             "SELECT current_setting('default_table_access_method'), current_setting('pg_tde.enforce_encryption'), current_setting('pg_tde.wal_encrypt')"
         ).fetchone()
+        settings = tuple(value.decode("utf-8") if isinstance(value, bytes) else value for value in row)
         enabled = {"on", "true", "1"}
-        if row[0] != "tde_heap" or row[1].lower() not in enabled or row[2].lower() not in enabled:
+        if settings[0] != "tde_heap" or settings[1].lower() not in enabled or settings[2].lower() not in enabled:
             raise RuntimeError(
                 "PostgreSQL TDE settings are not fully enabled: "
-                f"default_table_access_method={row[0]!r}, "
-                f"pg_tde.enforce_encryption={row[1]!r}, pg_tde.wal_encrypt={row[2]!r}"
+                f"default_table_access_method={settings[0]!r}, "
+                f"pg_tde.enforce_encryption={settings[1]!r}, pg_tde.wal_encrypt={settings[2]!r}"
             )
         _verify_application_tables(connection)
     print(f"PostgreSQL TDE verified for all stored user tables in {database_name}.")
