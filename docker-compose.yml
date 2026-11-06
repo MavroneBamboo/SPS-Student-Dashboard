@@ -114,7 +114,7 @@ services:
     restart: "no"
 
   postgres-data-init:
-    image: percona/percona-distribution-postgresql:17.11.1-4
+    image: percona/percona-distribution-postgresql:17.11.1-4-ubi10
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -129,7 +129,7 @@ services:
     restart: "no"
 
   db:
-    image: percona/percona-distribution-postgresql:17.11.1-4
+    image: percona/percona-distribution-postgresql:17.11.1-4-ubi10
     command: ["postgres", "-c", "shared_preload_libraries=pg_tde", "-c", "pg_tde.cipher=aes_256"]
     environment:
       POSTGRES_DB: sps_dashboard
