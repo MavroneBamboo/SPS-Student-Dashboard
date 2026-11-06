@@ -19,8 +19,11 @@ mkdir -m 0700 "$test_root/backups"
 export POSTGRES_USER=sps_app
 export POSTGRES_DB=sps_dashboard
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:?CI PostgreSQL password is required}"
+export DATABASE_ADMIN_URL="postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard"
 export BACKUP_DATABASE_USER=sps_runtime
 export BACKUP_DATABASE_PASSWORD=ci-only-runtime-password
+export DATABASE_RUNTIME_PASSWORD="$BACKUP_DATABASE_PASSWORD"
+export DATABASE_URL="postgresql+psycopg://${BACKUP_DATABASE_USER}:${DATABASE_RUNTIME_PASSWORD}@db:5432/sps_dashboard"
 export BACKUP_HOST_PATH="$test_root/backups"
 export BACKUP_AGE_IDENTITY_HOST_PATH="$test_root/backup.agekey"
 export BACKUP_CONTAINER_UID="$(id -u)"
@@ -46,7 +49,10 @@ docker run --rm --user "$(id -u):$(id -g)" --volume "$test_root:/keys" \
 export BACKUP_AGE_RECIPIENT="$(docker run --rm --volume "$test_root:/keys:ro" \
   --entrypoint age-keygen "$maintenance_image" -y /keys/backup.agekey)"
 
-"${compose[@]}" up --detach db
+SPS_COMPOSE_UP_DB_ONLY=1 bash "$repository_root/scripts/compose-up.sh" \
+  --project-name "$project" \
+  --project-directory "$repository_root" \
+  --env-file "$repository_root/.env.example"
 ready=false
 for attempt in $(seq 1 30); do
   if "${compose[@]}" exec --no-TTY db pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then

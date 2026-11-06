@@ -36,4 +36,12 @@ fi
 wal_setting="$(dc exec --no-TTY db psql --no-psqlrc --tuples-only --no-align -U "${POSTGRES_USER:-sps_app}" -d "${POSTGRES_DB:-sps_dashboard}" --command 'SHOW pg_tde.wal_encrypt' | tr '[:upper:]' '[:lower:]')"
 [[ "$wal_setting" == on || "$wal_setting" == true || "$wal_setting" == 1 ]] || { echo "PostgreSQL WAL encryption is not enabled" >&2; exit 1; }
 
+dc run --build --rm --no-deps tde-setup --verify
+
+case "${SPS_COMPOSE_UP_DB_ONLY:-0}" in
+  1) echo "PostgreSQL is ready with TDE verified; application services were not started."; exit 0 ;;
+  0) ;;
+  *) echo "SPS_COMPOSE_UP_DB_ONLY must be 0 or 1" >&2; exit 2 ;;
+esac
+
 dc up --detach --build --remove-orphans

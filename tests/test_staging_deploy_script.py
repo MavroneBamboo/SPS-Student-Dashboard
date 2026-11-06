@@ -12,7 +12,7 @@ def _fake_commands(tmp_path: Path) -> tuple[Path, Path]:
     docker_log = tmp_path / "docker.log"
     docker = fake_bin / "docker"
     docker.write_text(
-        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"\nprintf "APP_BUILD_SHA=%s\\n" "${APP_BUILD_SHA:-}" >> "$FAKE_DOCKER_LOG"\n',
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"\nprintf "APP_BUILD_SHA=%s\\n" "${APP_BUILD_SHA:-}" >> "$FAKE_DOCKER_LOG"\ncase "$*" in\n  *"ps --all --quiet db"*) printf "fake-db-container\\n" ;;\n  *"inspect --format {{.State.Health.Status}} fake-db-container"*) printf "healthy\\n" ;;\n  *"SHOW pg_tde.wal_encrypt"*) printf "on\\n" ;;\nesac\n',
         encoding="utf-8",
     )
     docker.chmod(0o755)
