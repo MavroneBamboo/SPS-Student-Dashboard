@@ -105,6 +105,7 @@ if "${compose[@]}" run --rm database-restore >"$test_root/wrong-target.log" 2>&1
 fi
 grep --fixed-strings --quiet 'after confirming the restore target' "$test_root/wrong-target.log" || {
   cat "$test_root/wrong-target.log" >&2
+  "${compose[@]}" logs --no-color tde-restore-setup >&2 || true
   exit 1
 }
 export RESTORE_TARGET_ACK=db/sps_restore_target
