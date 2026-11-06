@@ -69,6 +69,13 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     class_select.select_option(str(class_item["id"]))
     form.get_by_role("button", name="Create draft", exact=True).click()
     page.locator("#timetable-board-mode").select_option("amend")
+    density = page.locator("#timetable-density")
+    assert density.locator("option").evaluate_all("options => options.map(option => Number(option.value))") == [2, 4, 6, 8, 12, 16, 24, 32]
+    density.select_option("32")
+    expect(page.locator("#timetable-grid")).to_have_attribute("data-density", "32")
+    expect(page.locator("#timetable-grid")).to_have_attribute("data-columns", "8")
+    expect(page.locator("#timetable-grid")).to_have_class(re.compile("compact-amend"))
+    density.select_option("4")
     expect(page.get_by_role("heading", name="C" + suffix + " · Browser Timetable Class", exact=True)).to_be_visible()
     expect(page.locator(".amend-grid .lunch-cell").first).to_contain_text("Lunch")
     expect(page.locator("#timetable-pending")).to_contain_text("Browser Timetable Subject")
@@ -137,6 +144,11 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
         f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"][data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]'
     )
     expect(moved_cell).to_be_visible()
+
+    occupied_source = page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first
+    occupied_target = page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[1]}"]').first
+    occupied_source.drag_to(occupied_target, steps=10)
+    expect(page.get_by_role("status")).to_contain_text("Lesson blocks swapped")
 
     page.get_by_role("button", name="Select lessons to swap", exact=True).click()
     swap_button = page.get_by_role("button", name="Swap selected lessons", exact=True)

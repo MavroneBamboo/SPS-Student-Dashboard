@@ -88,9 +88,14 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     dragThresholdReached = true;
     document.querySelector(`.lesson-cell[data-placement-id="${draggedPlacementId}"]`)?.classList.add("dragging-lesson");
     document.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".empty-cell");
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".empty-cell, .lesson-cell");
     const source = current?.placements.find((block) => block.id === draggedPlacementId);
-    if (target && source && String(source.slots[0]?.instructional_class_id) === target.dataset.classId) target.classList.add("drop-target");
+    const occupiedTarget = target?.dataset.placementId
+      ? current?.placements.find((block) => block.id === Number(target.dataset.placementId))
+      : null;
+    if (target && target.dataset.placementId !== String(draggedPlacementId) && source
+      && !occupiedTarget?.is_locked
+      && String(source.slots[0]?.instructional_class_id) === target.dataset.classId) target.classList.add("drop-target");
   }, true);
   document.addEventListener("pointerup", () => {
     if (draggedPlacementId !== null) clearDragState();
@@ -529,6 +534,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-previous").hidden = !amendMode;
     $("timetable-next").hidden = !amendMode;
     if (current && !amendMode) {
+      host.style.removeProperty("--amend-columns");
+      host.style.overflowX = "";
+      host.classList.remove("compact-amend");
       renderWeeklyBoard(host);
       if (draftMutationPending) {
         for (const button of host.querySelectorAll("button")) button.disabled = true;
@@ -538,6 +546,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-summary").hidden = true;
     const all = classRows();
     const density = Number($("timetable-density").value) || 4;
+    const columns = ({2: 2, 4: 2, 6: 3, 8: 4, 12: 4, 16: 4, 24: 6, 32: 8})[density] || 2;
+    host.dataset.density = String(density);
+    host.dataset.columns = String(columns);
+    host.classList.toggle("compact-amend", density >= 12);
+    host.style.setProperty("--amend-columns", String(columns));
     const visible = all.slice(pageOffset, pageOffset + density);
     $("timetable-previous").disabled = pageOffset === 0;
     $("timetable-next").disabled = pageOffset + density >= all.length;
@@ -626,8 +639,16 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             event.stopPropagation();
             suppressNextCellClick = true;
             window.setTimeout(() => { suppressNextCellClick = false; }, 0);
-            if (placement || !source || String(source.slots[0]?.instructional_class_id) !== button.dataset.classId) {
-              notice("Drop lesson blocks onto an empty slot in the same class.");
+            if (!source || String(source.slots[0]?.instructional_class_id) !== button.dataset.classId) {
+              notice("Drop lesson blocks within the same class timetable.");
+              return;
+            }
+            if (placement) {
+              if (placement.is_locked) {
+                notice("Locked lesson blocks cannot be swapped. Unlock the block first.");
+                return;
+              }
+              runDraftMutation(button, () => swapPlacements(id, placement.id));
               return;
             }
             runDraftMutation(button, () => movePlacement(id, button.dataset.weekday, button.dataset.startPeriod));
@@ -660,6 +681,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   async function swapSelectedPlacements() {
     if (!current || selectedPlacementIds.length !== 2) return;
     const [firstPlacementId, secondPlacementId] = selectedPlacementIds;
+    await swapPlacements(firstPlacementId, secondPlacementId);
+  }
+
+  async function swapPlacements(firstPlacementId, secondPlacementId) {
+    if (!current || firstPlacementId === secondPlacementId) return;
     current = await api(`/timetable/versions/${current.id}/swap`, "POST", {
       expected_revision: current.revision,
       first_placement_id: firstPlacementId,

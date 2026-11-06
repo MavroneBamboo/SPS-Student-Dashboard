@@ -274,7 +274,7 @@ Generation must create a new draft version or require an explicit replacement co
 
 ### 15.3 Amend 4-up workspace
 
-The production timetable browser follows the supplied redesign with a navy timetable sidebar and four sections: weekly timetable, reports/export, classes/teachers, and periods/rules. The weekly board toggles By class and By teacher. A separate Amend 4-up mode retains 4/8/12/16 class paging for rapid review and editing.
+The production timetable browser follows the supplied redesign with a navy timetable sidebar and four sections: weekly timetable, reports/export, classes/teachers, and periods/rules. The weekly board toggles By class and By teacher. Amend 4-up supports the legacy page sizes 2/4/6/8/12/16/24/32, with denser compact tables for 12 or more classes.
 
 Required interactions:
 
@@ -284,7 +284,7 @@ Required interactions:
 - Click a populated cell to open the lesson form for amendment.
 - Click an empty teaching cell to add a lesson after validating subject, teacher, class, availability and clashes.
 - Select two unlocked lesson blocks and exchange their weekday/start positions through one revision-checked, full-grid-validated swap request.
-- Drag an unlocked lesson to an empty teaching slot in the same class; validate the destination and full plan before saving.
+- Drag an unlocked lesson to an empty teaching slot in the same class to move it, or onto another unlocked lesson in that class to swap them; validate the resulting full plan before saving.
 - Open a lesson to change its weekday/start period or remove it; these actions remain keyboard-accessible and do not depend on context-menu gestures.
 - Use the draft header's Rename action to submit a controlled rename.
 - Lock/unlock a slot.
