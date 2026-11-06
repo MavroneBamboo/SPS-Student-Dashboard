@@ -265,6 +265,7 @@ The module must generate both timetable report types and preserve a clear relati
 Teacher profiles are separate from application login accounts. A teacher profile is a scheduling resource, not a user permission identity. Before a timetable can be generated, an Operator or IT Administrator must maintain:
 
 - Teacher short code, full name, adjunct status and day/period availability.
+- Composite teacher groups built from at least two individual teacher profiles. Every member's availability and timetable clashes must be checked; one group lesson occupies all members simultaneously.
 - Subjects with name, short code and description.
 - Instructional classes with short name and description.
 - Class clusters that group instructional classes for shared scheduling changes.

@@ -333,6 +333,148 @@ def test_teacher_clashes_use_actual_overridden_times_and_database_guards(timetab
             db.rollback()
 
 
+def test_composite_teacher_groups_validate_member_availability_and_clashes(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    _single_requirement(ctx, count=1)
+    second_teacher = client.post(
+        f"{BASE}/teachers",
+        json={
+            "short_code": f"T{uuid4().hex[:10]}",
+            "full_name": "Second group member",
+            "availability": {day: ["P1", "P2", "P3"] for day in ("MON", "TUE", "WED", "THU", "FRI")},
+        },
+        headers=headers["admin"],
+    )
+    assert second_teacher.status_code == 201, second_teacher.text
+    group_payload = {
+        "short_code": f"G{uuid4().hex[:10]}",
+        "full_name": "Composite teaching team",
+        "member_ids": [ctx["lesson"]["teacher_id"], second_teacher.json()["id"]],
+    }
+    assert client.post(f"{BASE}/teacher-groups", json=group_payload, headers=headers["operator"]).status_code == 403
+    group_response = client.post(
+        f"{BASE}/teacher-groups",
+        json=group_payload,
+        headers=headers["admin"],
+    )
+    assert group_response.status_code == 201, group_response.text
+    group = group_response.json()
+    assert group["is_composite"] is True
+    assert set(group["member_ids"]) == {ctx["lesson"]["teacher_id"], second_teacher.json()["id"]}
+    assert (
+        client.post(
+            f"{BASE}/teacher-groups",
+            json={"short_code": "INVALID", "full_name": "Invalid", "member_ids": [ctx["lesson"]["teacher_id"]]},
+            headers=headers["admin"],
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"{BASE}/teacher-groups",
+            json={
+                "short_code": "NESTED",
+                "full_name": "Nested group",
+                "member_ids": [group["id"], second_teacher.json()["id"]],
+            },
+            headers=headers["admin"],
+        ).status_code
+        == 422
+    )
+
+    other_class = client.post(
+        f"{BASE}/classes", json={"code": f"O{uuid4().hex[:10]}", "name": "Group lesson class"}, headers=headers["admin"]
+    )
+    assert other_class.status_code == 201
+    other_id = other_class.json()["id"]
+    assert client.post(f"{BASE}/rules", json={**ctx["rule"], "target_id": other_id}, headers=headers["admin"]).status_code == 201
+    group_lesson = client.post(
+        f"{BASE}/lessons",
+        json={
+            **ctx["lesson"],
+            "instructional_class_id": other_id,
+            "teacher_id": group["id"],
+            "weekly_count": 1,
+            "block_length": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert group_lesson.status_code == 201, group_lesson.text
+    version = _draft(ctx, class_ids=[ctx["lesson"]["instructional_class_id"], other_id])
+    individual_placement = _place(ctx, version, period_count=1)
+    assert individual_placement.status_code == 201, individual_placement.text
+    clash = client.post(
+        f"{BASE}/versions/{version['id']}/placements",
+        json={
+            "expected_revision": individual_placement.json()["revision"],
+            "lesson_requirement_id": group_lesson.json()["id"],
+            "weekday": "MON",
+            "start_period": "P1",
+            "period_count": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert clash.status_code == 409 and "teacher conflict" in clash.json()["detail"]
+    if engine.dialect.name == "postgresql":
+        with SessionLocal() as db:
+            direct_parent = TimetablePlacement(
+                version_id=version["id"],
+                lesson_requirement_id=group_lesson.json()["id"],
+                weekday="MON",
+                start_period="P1",
+                period_count=1,
+                is_locked=False,
+                note="",
+                created_by=1,
+                updated_by=1,
+            )
+            db.add(direct_parent)
+            db.flush()
+            db.add(
+                TimetableSlot(
+                    placement_id=direct_parent.id,
+                    version_id=version["id"],
+                    instructional_class_id=other_id,
+                    teacher_id=group["id"],
+                    subject_id=ctx["lesson"]["subject_id"],
+                    weekday="MON",
+                    slot_code="P1",
+                    starts_at=time(8, 30),
+                    ends_at=time(10, 15),
+                )
+            )
+            with pytest.raises(IntegrityError) as error:
+                db.flush()
+            assert "double-booked" in str(error.value)
+            db.rollback()
+    group_placement = client.post(
+        f"{BASE}/versions/{version['id']}/placements",
+        json={
+            "expected_revision": individual_placement.json()["revision"],
+            "lesson_requirement_id": group_lesson.json()["id"],
+            "weekday": "TUE",
+            "start_period": "P1",
+            "period_count": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert group_placement.status_code == 201, group_placement.text
+    availability_draft = _draft(ctx, class_ids=[other_id])
+    unavailable = client.post(
+        f"{BASE}/versions/{availability_draft['id']}/placements",
+        json={
+            "expected_revision": availability_draft["revision"],
+            "lesson_requirement_id": group_lesson.json()["id"],
+            "weekday": "TUE",
+            "start_period": "P4",
+            "period_count": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert unavailable.status_code == 409 and "member is unavailable" in unavailable.json()["detail"]
+
+
 def test_concurrent_draft_writes_use_revision_and_do_not_leave_partial_cells(timetable_context):
     ctx = timetable_context
     version = _draft(ctx)
