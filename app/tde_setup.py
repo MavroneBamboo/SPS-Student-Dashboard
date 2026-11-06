@@ -44,7 +44,10 @@ def _provider_settings() -> tuple[str, str]:
 
 def _ensure_provider(connection: psycopg.Connection, name: str, kind: str) -> None:
     providers = connection.execute("SELECT name, type FROM pg_tde_list_all_global_key_providers()").fetchall()
-    existing = next((provider_type for provider_name, provider_type in providers if provider_name == name), None)
+    existing = next(
+        (_text(provider_type) for provider_name, provider_type in providers if _text(provider_name) == name),
+        None,
+    )
     if existing:
         if existing != kind:
             raise RuntimeError(f"Configured TDE provider {name!r} has type {existing!r}; expected {kind!r}")
@@ -69,6 +72,8 @@ def _ensure_provider(connection: psycopg.Connection, name: str, kind: str) -> No
 
 def _ensure_key(connection: psycopg.Connection, key_name: str, provider_name: str, info_function: str, set_function: str) -> None:
     info = connection.execute(sql.SQL("SELECT key_name, provider_name FROM {}() LIMIT 1").format(sql.Identifier(info_function))).fetchone()
+    if info:
+        info = tuple(_text(value) if isinstance(value, bytes) else value for value in info)
     if info and info[0] is not None:
         if info[0] != key_name or info[1] != provider_name:
             raise RuntimeError(f"TDE already uses key {info[0]!r} from provider {info[1]!r}; refusing implicit key rotation")
