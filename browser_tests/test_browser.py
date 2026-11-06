@@ -171,6 +171,47 @@ def test_it_admin_named_account_reset_and_server_logout(page, make_account, live
     )
 
 
+@pytest.mark.parametrize("role", ["Superuser", "IT Administrator", "Operator", "Executive"])
+def test_every_role_can_open_its_own_account_sessions(page, make_account, role):
+    account = make_account(role)
+    login(page, account)
+    expect(page.get_by_role("button", name="Account sessions", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Account sessions", exact=True).click()
+    expect(page.get_by_role("heading", name="Account sessions", exact=True)).to_be_visible()
+    expect(page.locator("#session-rows")).to_contain_text("Current session")
+    expect(page.locator("#revoke-other-sessions")).to_be_disabled()
+
+
+def test_account_sessions_can_revoke_one_or_all_other_sessions_without_signing_out(page, make_account, live_url):
+    account = make_account("Operator")
+    login(page, account)
+    other_tokens = []
+    for _ in range(2):
+        response = page.request.post(
+            live_url + "/api/v1/auth/login", data={"username": account["username"], "password": account["password"]}
+        )
+        assert response.status == 200
+        other_tokens.append(response.json()["access_token"])
+
+    page.get_by_role("button", name="Account sessions", exact=True).click()
+    expect(page.locator("#session-rows tr")).to_have_count(3)
+    expect(page.locator("#revoke-other-sessions")).to_be_enabled()
+
+    other_row = page.locator("#session-rows tr").filter(has_text="Other session").first
+    other_row.get_by_role("button", name="Revoke session", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Session revoked.")
+    expect(page.locator("#session-rows tr")).to_have_count(2)
+    assert page.request.get(live_url + "/api/v1/auth/me", headers={"Authorization": f"Bearer {other_tokens[0]}"}).status == 401
+    assert page.request.get(live_url + "/api/v1/auth/me", headers={"Authorization": f"Bearer {other_tokens[1]}"}).status == 200
+
+    page.get_by_role("button", name="Revoke other sessions", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("This session remains active")
+    expect(page.locator("#session-rows tr")).to_have_count(1)
+    expect(page.locator("#session-rows")).to_contain_text("Current session")
+    expect(page.locator("#revoke-other-sessions")).to_be_disabled()
+    assert page.request.get(live_url + "/api/v1/auth/me", headers={"Authorization": f"Bearer {other_tokens[1]}"}).status == 401
+
+
 @pytest.mark.parametrize("role", ["Operator", "Executive"])
 def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(page, make_account, role):
     account = make_account(role)
