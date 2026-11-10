@@ -37,6 +37,20 @@ def _safe_text(value: object) -> object:
     return value
 
 
+def _fixed_event(snapshot: dict, audience_type: str, target_id: int, weekday: str, slot_code: str) -> str:
+    event = next(
+        (
+            event
+            for event in snapshot.get("fixed_events", [])
+            if event["audience_type"] == audience_type
+            and target_id in event["target_ids"]
+            and any(slot["weekday"] == weekday and slot["slot_code"] == slot_code for slot in event["slots"])
+        ),
+        None,
+    )
+    return event["label"] if event else ""
+
+
 def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> bytes:
     snapshot = view["snapshot"]
     classes = sorted(snapshot["classes"].values(), key=lambda item: (item["reporting_order"], item["code"]))
@@ -99,6 +113,7 @@ def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> by
                 "Teacher name",
                 "Lesson note",
                 "Placement ID",
+                "Fixed event",
             ]
         )
         for class_item in classes:
@@ -125,6 +140,9 @@ def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> by
                             teacher["full_name"] if teacher else "",
                             placed["note"] if placed else "",
                             placed["placement_id"] if placed else "",
+                            _fixed_event(snapshot, "CLASS", class_item["id"], weekday_code, period["slot_code"])
+                            if placed is None and period["is_schedulable"]
+                            else "",
                         ]
                     )
 
@@ -144,6 +162,7 @@ def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> by
                 "Instructional class",
                 "Lesson note",
                 "Placement ID",
+                "Fixed event",
             ]
         )
         teacher_periods: dict[int, dict[tuple[str, str, str, str], dict]] = defaultdict(dict)
@@ -171,10 +190,13 @@ def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> by
                     class_item = placed["class"] if placed else None
                     slot = placed["slot"] if placed else {}
                     subject = placed["subject"] if placed else None
+                    fixed_event = _fixed_event(snapshot, "TEACHER", teacher["id"], weekday_code, period["slot_code"])
                     if not period["is_schedulable"]:
                         state = "Lunch / Muster"
                     else:
-                        state = "Scheduled" if placed else ("Free" if period["slot_code"] in availability else "Unavailable")
+                        state = (
+                            "Scheduled" if placed else (fixed_event or ("Free" if period["slot_code"] in availability else "Unavailable"))
+                        )
                     sheet.append(
                         [
                             teacher["short_code"],
@@ -189,6 +211,7 @@ def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> by
                             class_item["name"] if class_item else "",
                             placed["note"] if placed else "",
                             placed["placement_id"] if placed else "",
+                            fixed_event if placed is None and period["is_schedulable"] else "",
                         ]
                     )
 

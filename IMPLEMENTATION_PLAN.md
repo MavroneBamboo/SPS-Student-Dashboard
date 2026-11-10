@@ -393,7 +393,7 @@ Exit criteria: a representative legacy project imports into a staging database w
 - Implement teachers, subjects, instructional classes, availability and lesson requirements.
 - Implement deterministic draft generation with five days and four teaching periods, displayed as `P1`, `P2`, `Lunch`, `P3`, `P4`.
 - Report unplaced lessons, class clashes, teacher clashes and availability failures.
-- Make fixed school events configurable.
+- [x] Configure recurring school events for classes and teachers, with overlap checks, immutable draft snapshots, audit history and free-cell display in browser/PDF/XLSX reports. See [TIMETABLE_FIXED_EVENTS.md](TIMETABLE_FIXED_EVENTS.md).
 - Preserve approved versions when generating a replacement draft.
 
 Resource setup is an explicit delivery slice before lesson scheduling:

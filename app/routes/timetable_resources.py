@@ -80,6 +80,7 @@ def list_teachers(db: DbSession, claims: Claims) -> list[TeacherResponse]:
 
 @router.post("/teachers", response_model=TeacherResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def create_teacher(payload: TeacherCreate, db: DbSession, claims: Claims) -> TeacherResponse:
+    lock_timetable_configuration(db)
     _ensure_unique_code(db, Teacher, payload.short_code)
     row = Teacher(
         short_code=_normalized_code(payload.short_code),

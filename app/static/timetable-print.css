@@ -60,6 +60,8 @@ html, body {
 .report-table .day-heading, .report-table tbody th { width: 10%; font-size: 18pt; font-weight: 400; }
 .report-table tbody td { width: 18%; font-size: 12pt; position: relative; }
 .report-table td.lunch-cell { background: #f2f2f2; font-size: 11pt; font-weight: 600; }
+.report-table .fixed-event-entry { display: block; padding: 3px; border: 1px solid #e5b95b; background: #fff4d8; color: #6f4b06; }
+.report-table .fixed-event-entry small { display: block; }
 
 .lesson-entry { display: block; position: relative; min-height: 100%; padding: 2mm 1mm 4mm; }
 .lesson-entry strong { display: block; font-size: 11pt; font-weight: 500; overflow-wrap: anywhere; }

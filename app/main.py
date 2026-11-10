@@ -21,6 +21,7 @@ from app.routes import (
     student_reference,
     students,
     timetable_exports,
+    timetable_fixed_events,
     timetable_publications,
     timetable_resources,
     timetables,
@@ -52,6 +53,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(setup.router, prefix="/api/v1")
 app.include_router(rules.router, prefix="/api/v1")
 app.include_router(timetable_resources.router, prefix="/api/v1")
+app.include_router(timetable_fixed_events.router, prefix="/api/v1")
 app.include_router(lessons.router, prefix="/api/v1")
 app.include_router(timetables.router, prefix="/api/v1")
 app.include_router(timetable_exports.router, prefix="/api/v1")
