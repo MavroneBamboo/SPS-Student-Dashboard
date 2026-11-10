@@ -8,7 +8,10 @@ COPY app ./app
 COPY alembic.ini .
 COPY migrations ./migrations
 ARG INSTALL_TEST_DEPENDENCIES=false
-RUN pip install --no-cache-dir --upgrade pip setuptools urllib3 msgpack \
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade pip setuptools urllib3 msgpack \
     && if [ "$INSTALL_TEST_DEPENDENCIES" = "true" ]; then \
       pip install --no-cache-dir ".[test]"; \
     else \

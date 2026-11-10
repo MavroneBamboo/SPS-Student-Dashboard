@@ -38,16 +38,17 @@ def test_fixed_event_role_boundaries_and_schema_validation(lesson_context):
 
 def test_fixed_event_overlap_detection_scope_and_optimistic_update(lesson_context):
     client, headers, refs = lesson_context
+    year = f"OVERLAP-{refs['teacher_id']}"
     first = client.post(
         BASE,
-        json=_event("2026", "Teacher EA", "TEACHER", [refs["teacher_id"]], weekday="MON", slot="P2"),
+        json=_event(year, "Teacher EA", "TEACHER", [refs["teacher_id"]], weekday="MON", slot="P2"),
         headers=headers["admin"],
     )
     assert first.status_code == 201, first.text
     assert first.json()["label"] == "Teacher EA"
     same_target = client.post(
         BASE,
-        json=_event("2026", "Assembly duty", "TEACHER", [refs["teacher_id"]], weekday="MON", slot="P2"),
+        json=_event(year, "Assembly duty", "TEACHER", [refs["teacher_id"]], weekday="MON", slot="P2"),
         headers=headers["admin"],
     )
     assert same_target.status_code == 409
@@ -59,25 +60,25 @@ def test_fixed_event_overlap_detection_scope_and_optimistic_update(lesson_contex
     assert second_teacher.status_code == 201, second_teacher.text
     different_target = client.post(
         BASE,
-        json=_event("2026", "Second teacher duty", "TEACHER", [second_teacher.json()["id"]], weekday="MON", slot="P2"),
+        json=_event(year, "Second teacher duty", "TEACHER", [second_teacher.json()["id"]], weekday="MON", slot="P2"),
         headers=headers["admin"],
     )
     assert different_target.status_code == 201, different_target.text
     all_targets = client.post(
         BASE,
-        json=_event("2026", "All teacher assembly", "TEACHER", [], weekday="MON", slot="P2", mode="ALL"),
+        json=_event(year, "All teacher assembly", "TEACHER", [], weekday="MON", slot="P2", mode="ALL"),
         headers=headers["admin"],
     )
     assert all_targets.status_code == 409
     other_year = client.post(
         BASE,
-        json=_event("2027", "Assembly duty", "TEACHER", [refs["teacher_id"]], weekday="MON", slot="P2"),
+        json=_event(f"{year}-NEXT", "Assembly duty", "TEACHER", [refs["teacher_id"]], weekday="MON", slot="P2"),
         headers=headers["admin"],
     )
     assert other_year.status_code == 201, other_year.text
     class_audience = client.post(
         BASE,
-        json=_event("2026", "Class assembly", "CLASS", [refs["instructional_class_id"]], weekday="MON", slot="P2"),
+        json=_event(year, "Class assembly", "CLASS", [refs["instructional_class_id"]], weekday="MON", slot="P2"),
         headers=headers["admin"],
     )
     assert class_audience.status_code == 201, class_audience.text
