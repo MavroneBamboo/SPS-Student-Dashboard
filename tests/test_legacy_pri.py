@@ -1,11 +1,16 @@
+import io
 import json
 import zipfile
 
 import pytest
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from sqlalchemy import select
 
-from app.legacy_pri import LegacyPriError, read_legacy_pri, reconcile_legacy_pri
+from app.config import get_settings
+from app.db import SessionLocal
+from app.legacy_pri import LegacyPriError, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
+from app.models import AuditEvent
 
 KEY = bytes(range(16))
 
@@ -33,10 +38,16 @@ def sample_data():
 
 
 def write_pri(path, members=None):
+    path.write_bytes(encrypted_archive(members))
+
+
+def encrypted_archive(members=None):
     values = members or sample_data()
-    with zipfile.ZipFile(path, "w") as archive:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
         for name, value in values.items():
             archive.writestr(name, encrypted_member(value))
+    return buffer.getvalue()
 
 
 def test_reads_exact_encrypted_json_members_without_mutating_source(tmp_path):
@@ -45,9 +56,11 @@ def test_reads_exact_encrypted_json_members_without_mutating_source(tmp_path):
     before = source.read_bytes()
     data = read_legacy_pri(source, KEY)
     report = reconcile_legacy_pri(data)
-    assert report["valid"] is False
-    assert report["import_ready"] is False
-    assert "legacy_period_mapping_required" in report["issue_counts"]
+    assert report["valid"] is True
+    assert report["import_ready"] is True
+    assert report["issue_counts"] == {}
+    assert report["period_mapping"] == {"1": "P1", "2": "P2", "3": "LUNCH", "4": "P3", "5": "P4"}
+    assert report["availability_profiles"] == {"25_period_position_profiles": 1}
     assert report["counts"] == {
         "teachers": 1,
         "subjects": 1,
@@ -112,3 +125,116 @@ def test_reports_missing_placement_teacher_without_fabricating_a_clash(tmp_path)
     assert report["issue_counts"]["missing_placement_teacher"] == 1
     assert "invalid_placement_teacher_reference" not in report["issue_counts"]
     assert "duplicate_teacher_slot" not in report["issue_counts"]
+
+
+@pytest.mark.parametrize("availability_size", [20, 25])
+def test_accepts_legacy_availability_profiles(tmp_path, availability_size):
+    path = tmp_path / "sample.pri"
+    values = sample_data()
+    values["R01.bin"][0]["Availability"] = ":".join(["1"] * availability_size)
+    write_pri(path, values)
+
+    report = reconcile_legacy_pri(read_legacy_pri(path, KEY))
+
+    expected_profile = "20_teaching_slot_profiles" if availability_size == 20 else "25_period_position_profiles"
+    assert report["availability_profiles"] == {expected_profile: 1}
+    assert "invalid_teacher_availability" not in report["issue_counts"]
+
+
+def test_blank_teacher_lunch_row_is_reviewable_not_a_lesson(tmp_path):
+    path = tmp_path / "sample.pri"
+    values = sample_data()
+    values["R05.bin"][0].update({"Teacher": "", "Period": 3})
+    write_pri(path, values)
+
+    report = reconcile_legacy_pri(read_legacy_pri(path, KEY))
+
+    assert report["issue_counts"]["lunch_entry_requires_review"] == 1
+    assert "missing_placement_teacher" not in report["issue_counts"]
+    assert "lesson_in_lunch_slot" not in report["issue_counts"]
+    assert report["issue_counts"]["unplaced_lesson_periods"] == 1
+
+
+def test_teacher_assigned_lunch_row_is_reported_as_a_conflict(tmp_path):
+    path = tmp_path / "sample.pri"
+    values = sample_data()
+    values["R05.bin"][0]["Period"] = 3
+    write_pri(path, values)
+
+    report = reconcile_legacy_pri(read_legacy_pri(path, KEY))
+
+    assert report["issue_counts"]["lesson_in_lunch_slot"] == 1
+    assert report["issue_counts"]["unplaced_lesson_periods"] == 1
+
+
+def test_read_legacy_pri_bytes_matches_read_only_path_parser(tmp_path):
+    source = tmp_path / "sample.pri"
+    archive_bytes = encrypted_archive()
+    source.write_bytes(archive_bytes)
+
+    assert read_legacy_pri_bytes(archive_bytes, KEY) == read_legacy_pri(source, KEY)
+
+
+@pytest.fixture
+def configured_legacy_key(monkeypatch):
+    monkeypatch.setenv("LEGACY_PRI_KEY_HEX", KEY.hex())
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def test_legacy_project_preflight_is_role_limited_audited_and_redacted(lesson_context, configured_legacy_key):
+    client, headers, _ = lesson_context
+    archive_bytes = encrypted_archive()
+
+    response = client.post(
+        "/api/v1/timetable/legacy-projects/validate",
+        content=archive_bytes,
+        headers={**headers["admin"], "Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["valid"] is True
+    assert report["counts"]["teachers"] == 1
+    assert "T1" not in response.text
+    assert "C1" not in response.text
+    assert "S1" not in response.text
+    for role in ("operator", "executive"):
+        rejected = client.post(
+            "/api/v1/timetable/legacy-projects/validate",
+            content=archive_bytes,
+            headers={**headers[role], "Content-Type": "application/octet-stream"},
+        )
+        assert rejected.status_code == 403
+
+    with SessionLocal() as db:
+        event = db.scalar(select(AuditEvent).where(AuditEvent.action == "timetable.legacy_project.validated"))
+        assert event is not None
+        assert event.entity_type == "legacy_timetable_project"
+        assert "T1" not in event.details_json
+        assert "archive" not in event.details_json.lower()
+
+
+def test_legacy_project_preflight_requires_key_and_bounds_upload(lesson_context, monkeypatch):
+    client, headers, _ = lesson_context
+    monkeypatch.setenv("LEGACY_PRI_KEY_HEX", "")
+    get_settings.cache_clear()
+    try:
+        unavailable = client.post(
+            "/api/v1/timetable/legacy-projects/validate",
+            content=b"test",
+            headers={**headers["admin"], "Content-Type": "application/octet-stream"},
+        )
+        assert unavailable.status_code == 503
+        oversized = client.post(
+            "/api/v1/timetable/legacy-projects/validate",
+            content=b"x" * (10 * 1024 * 1024 + 1),
+            headers={
+                **headers["admin"],
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        assert oversized.status_code == 413
+    finally:
+        get_settings.cache_clear()

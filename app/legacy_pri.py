@@ -6,6 +6,7 @@ does not deserialize .NET BinaryFormatter payloads and never writes to the input
 
 from __future__ import annotations
 
+import io
 import json
 import zipfile
 from collections import Counter
@@ -21,6 +22,8 @@ MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 MAX_MEMBER_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
 LEGACY_DAYS = {"mo", "tu", "we", "th", "fr", "mon", "tue", "wed", "thu", "fri"}
+LEGACY_PERIOD_MAP = {1: "P1", 2: "P2", 3: "LUNCH", 4: "P3", 5: "P4"}
+LEGACY_LUNCH_PERIOD = 3
 
 
 class LegacyPriError(ValueError):
@@ -59,12 +62,23 @@ def _decrypt_member(data: bytes, key: bytes, name: str) -> Any:
 def read_legacy_pri(path: str | Path, key: bytes) -> LegacyPriData:
     """Read the six known members, with archive bounds and exact-name checks."""
     source = Path(path)
-    if len(key) not in (16, 24, 32):
-        raise LegacyPriError("AES key must be 16, 24 or 32 bytes")
     try:
         if source.stat().st_size > MAX_ARCHIVE_BYTES:
             raise LegacyPriError(".pri archive exceeds the size limit")
-        with zipfile.ZipFile(source) as archive:
+        archive_bytes = source.read_bytes()
+    except OSError as exc:
+        raise LegacyPriError("Unable to read the .pri archive") from exc
+    return read_legacy_pri_bytes(archive_bytes, key)
+
+
+def read_legacy_pri_bytes(archive_bytes: bytes, key: bytes) -> LegacyPriData:
+    """Read a bounded archive from memory, without writing upload bytes to disk."""
+    if len(key) not in (16, 24, 32):
+        raise LegacyPriError("AES key must be 16, 24 or 32 bytes")
+    if len(archive_bytes) > MAX_ARCHIVE_BYTES:
+        raise LegacyPriError(".pri archive exceeds the size limit")
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             entries = archive.infolist()
             names = [entry.filename for entry in entries]
             if len(names) != len(set(names)):
@@ -91,6 +105,7 @@ def read_legacy_pri(path: str | Path, key: bytes) -> LegacyPriData:
 def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
     """Return counts and row-indexed issues without exposing names or values."""
     issues: list[dict[str, Any]] = []
+    availability_mapping: Counter[str] = Counter()
     catalogs = {
         "teacher": (data.teachers, "Name"),
         "subject": (data.subjects, "Name"),
@@ -113,7 +128,11 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             if kind == "teacher":
                 availability = row.get("Availability", "")
                 slots = availability.split(":") if isinstance(availability, str) else []
-                if len(slots) != 25 or any(slot not in {"0", "1"} for slot in slots):
+                if len(slots) == 20 and all(slot in {"0", "1"} for slot in slots):
+                    availability_mapping["20_teaching_slot_profiles"] += 1
+                elif len(slots) == 25 and all(slot in {"0", "1"} for slot in slots):
+                    availability_mapping["25_period_position_profiles"] += 1
+                else:
                     issues.append({"code": "invalid_teacher_availability", "row": row_index})
 
     requirements: Counter[tuple[str, str, str]] = Counter()
@@ -149,11 +168,13 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
     for row_index, row in enumerate(data.placements):
         class_name, day, period = row.get("InstClass"), row.get("DayOfWeek"), row.get("Period")
         teacher, subject = row.get("Teacher"), row.get("Subject")
+        is_lunch_slot = type(period) is int and period == LEGACY_LUNCH_PERIOD
         for kind, value in (("class", class_name), ("teacher", teacher), ("subject", subject)):
             if kind == "teacher" and value == "ALL":
                 continue
             if kind == "teacher" and (not isinstance(value, str) or not value.strip()):
-                issues.append({"code": "missing_placement_teacher", "row": row_index})
+                if not is_lunch_slot:
+                    issues.append({"code": "missing_placement_teacher", "row": row_index})
                 continue
             if not isinstance(value, str) or (
                 value not in indexes[kind] and not (kind == "teacher" and all(part.strip() in indexes[kind] for part in value.split("/")))
@@ -161,6 +182,13 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
                 issues.append({"code": f"invalid_placement_{kind}_reference", "row": row_index})
         if type(period) is not int or not 1 <= period <= 5 or not isinstance(day, str) or day.casefold() not in LEGACY_DAYS:
             issues.append({"code": "invalid_placement_slot", "row": row_index})
+            continue
+        if is_lunch_slot:
+            has_assigned_teacher = isinstance(teacher, str) and teacher.strip() and teacher != "ALL"
+            code = "lesson_in_lunch_slot" if has_assigned_teacher else "lunch_entry_requires_review"
+            issues.append({"code": code, "row": row_index})
+            if teacher == "ALL":
+                issues.append({"code": "whole_school_event_mapping_required", "row": row_index})
             continue
         slot = (str(class_name), day.casefold(), period)
         if slot in occupied_classes:
@@ -192,9 +220,6 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
         if resource_tuple not in requirements:
             issues.append({"code": "placement_without_lesson_requirement", "count": actual})
 
-    if data.placements:
-        issues.append({"code": "legacy_period_mapping_required", "count": len(data.placements)})
-
     codes = Counter(issue["code"] for issue in issues)
     return {
         "counts": {
@@ -205,6 +230,8 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             "placements": len(data.placements),
             "pending_lessons": len(data.pending),
         },
+        "period_mapping": {str(period): display for period, display in LEGACY_PERIOD_MAP.items()},
+        "availability_profiles": dict(sorted(availability_mapping.items())),
         "issue_counts": dict(sorted(codes.items())),
         "issues": issues,
         "valid": not issues,
