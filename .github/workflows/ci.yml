@@ -77,8 +77,19 @@ jobs:
       - name: Run API and business-rule tests with coverage report
         run: pytest --cov=app --cov-report=term-missing --cov-report=xml
 
-      - name: Install Chromium for browser acceptance tests
-        run: python -m playwright install --with-deps chromium
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Chromium system dependencies
+        timeout-minutes: 15
+        run: python -m playwright install-deps chromium
+
+      - name: Install Chromium browser
+        timeout-minutes: 10
+        run: python -m playwright install chromium
 
       - name: Run browser authentication, administration, dashboard, and report tests
         run: pytest browser_tests
