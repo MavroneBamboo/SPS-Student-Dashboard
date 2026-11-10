@@ -312,7 +312,7 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
     assert sheet.cell(6, 1).value == "ACTIVE"
     assert sheet.cell(6, 2).value.startswith("B-")
     assert sheet.cell(6, 3).value == "Monthly Browser Student"
-    assert sheet.page_setup.paperSize == sheet.PAPERSIZE_A4
+    assert str(sheet.page_setup.paperSize) == sheet.PAPERSIZE_A4
 
 
 def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):

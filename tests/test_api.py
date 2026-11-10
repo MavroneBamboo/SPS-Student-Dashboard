@@ -352,7 +352,7 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
         assert "A4:A5" in {str(item) for item in sheet.merged_cells.ranges}
         assert sheet.freeze_panes == "D6"
         assert sheet.page_setup.orientation == "landscape"
-        assert sheet.page_setup.paperSize == sheet.PAPERSIZE_A4
+        assert str(sheet.page_setup.paperSize) == sheet.PAPERSIZE_A4
         assert sheet.page_setup.fitToWidth == 2
         assert sheet.page_setup.fitToHeight == 0
         assert export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
