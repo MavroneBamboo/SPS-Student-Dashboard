@@ -177,6 +177,8 @@ The application should calculate dashboard results from database queries or test
 - Data-through timestamp.
 - User who requested the report.
 
+The current dashboard increment accepts class, institution, category, status and academic-year profile filters, with active status as the default. It calculates matching totals and class/category/institution groupings in SQL and follows the workbook's `<=21` / `>21` age split, exposing missing age snapshots separately. Dashboard responses carry the requesting username, query completion time and latest matching source update times. `GET /api/v1/reports/dashboard.xlsx` applies the same filter contract and emits Overview, Profile breakdowns and Attendance sessions sheets for Operator, Executive and Superuser roles; user-supplied strings are written as literal text, no student identifiers or names are exported, and each successful download writes an audit event with the filters and aggregate counts. Attendance continues to use class and date filters against attendance sessions and their captured rosters; current profile filters cannot revise historical membership. Automated tests cover these calculations, workbook contents, formula-safe text, freshness metadata, audit recording and role access, but full source-workbook reconciliation and business sign-off are still open.
+
 For near-real-time behavior, query committed records on page refresh or use a short polling interval. A cache may be introduced later, but cached results must show their age.
 
 ## 7. Import and validation pipeline

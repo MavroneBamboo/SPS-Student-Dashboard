@@ -59,16 +59,19 @@
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
       <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="audit-nav" class="secondary" hidden>Audit log</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button></nav>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
-        <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><button id="refresh-dashboard">Refresh data</button></div>
+        <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><div class="actions"><button id="dashboard-export" class="secondary">Download filtered Excel report</button><button id="refresh-dashboard">Refresh data</button></div></div>
         <form id="dashboard-filter" class="filters">
           <label>Class<input name="class_name" maxlength="120" placeholder="All classes"></label>
           <label>Institution<input name="institution" maxlength="120" placeholder="All institutions"></label>
+          <label>Category<input name="category" maxlength="40" placeholder="All categories"></label>
+          <label>Profile status<select name="status"><option value="ACTIVE" selected>Active</option><option value="INACTIVE">Inactive</option><option value="ALL">All statuses</option></select></label>
+          <label>Academic year<input name="academic_year" maxlength="20" placeholder="All years"></label>
           <label>Attendance from<input name="date_from" type="date"></label>
           <label>Attendance to<input name="date_to" type="date"></label>
           <button type="submit">Apply filters</button>
         </form>
         <p id="dashboard-freshness"></p>
-        <p>Student totals show current active profiles. Institution filters apply to student totals; class and date filters also apply to attendance sessions.</p>
+        <p>Profile filters apply to current student profiles. Class and date filters apply to attendance sessions; attendance is not retroactively filtered by current profile attributes.</p>
         <section class="panel" aria-labelledby="monthly-report-title">
           <h3 id="monthly-report-title">Monthly attendance register</h3>
           <form id="monthly-attendance-report" class="filters">
@@ -79,7 +82,7 @@
           <p>Exports the active class roster with AM/PM columns, formatted for printing. Attendance codes: P present, A absent, L late, E excused, M missing.</p>
         </section>
         <div class="metrics" id="metrics"></div>
-        <div class="columns"><section class="panel"><h3>Active students by class</h3><div id="class-counts"></div></section><section class="panel"><h3>Active students by category</h3><div id="category-counts"></div></section><section class="panel"><h3>Active students by institution</h3><div id="institution-counts"></div></section></div>
+        <div class="columns"><section class="panel"><h3>Matching students by class</h3><div id="class-counts"></div></section><section class="panel"><h3>Matching students by category</h3><div id="category-counts"></div></section><section class="panel"><h3>Matching students by institution</h3><div id="institution-counts"></div></section><section class="panel"><h3>Matching students by recorded age</h3><p>Age is grouped using the profile's age in its recorded academic year.</p><div id="age-counts"></div></section></div>
         <section class="panel"><h3>Attendance sessions</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Class</th><th>Session</th><th>Present / late</th><th>Recorded</th><th>Expected</th><th>Rate</th></tr></thead><tbody id="attendance-trend"></tbody></table></div></section>
       </section>
       <section id="profiles-panel" hidden aria-labelledby="profiles-title">
