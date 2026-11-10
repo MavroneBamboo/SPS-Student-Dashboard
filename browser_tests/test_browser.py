@@ -305,11 +305,14 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
     download.save_as(target)
     sheet = load_workbook(target, data_only=True).active
     attendance_column = 4 + (session_date.day - 1) * 2
-    assert sheet.cell(4, attendance_column).value == "AM"
-    assert sheet.cell(5, attendance_column).value == "P"
-    assert sheet.cell(5, 1).value == "ACTIVE"
-    assert sheet.cell(5, 2).value.startswith("B-")
-    assert sheet.cell(5, 3).value == "Monthly Browser Student"
+    assert sheet.cell(3, attendance_column).value == session_date.strftime("%a").upper()
+    assert sheet.cell(4, attendance_column).value.date() == session_date
+    assert sheet.cell(5, attendance_column).value == "AM"
+    assert sheet.cell(6, attendance_column).value == "P"
+    assert sheet.cell(6, 1).value == "ACTIVE"
+    assert sheet.cell(6, 2).value.startswith("B-")
+    assert sheet.cell(6, 3).value == "Monthly Browser Student"
+    assert sheet.page_setup.paperSize == sheet.PAPERSIZE_A4
 
 
 def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):

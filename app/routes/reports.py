@@ -221,8 +221,9 @@ def attendance_monthly_xlsx(
         cell.data_type = "s"
 
     days_in_month = calendar.monthrange(year, month_number)[1]
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3 + days_in_month * 2)
-    sheet.cell(1, 1, f"MONTHLY ATTENDANCE | {first_day.strftime('%B %Y')}")
+    sheet.cell(1, 1, "MONTH")
+    sheet.cell(1, 3, first_day)
+    sheet.cell(1, 3).number_format = "mmmm yyyy"
     sheet.cell(2, 1, "CLASS")
     write_literal(2, 3, class_name)
     legacy_sessions = [session for session in sessions if session.roster_snapshot_state != "CAPTURED"]
@@ -232,29 +233,37 @@ def attendance_monthly_xlsx(
         roster_note = "Roster source: session snapshots."
     else:
         roster_note = "Roster source: current active profiles; no sessions exist in this month."
+    sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=3)
     sheet.cell(3, 1, roster_note)
-    sheet.cell(4, 1, "STATUS")
-    sheet.cell(4, 2, "PRIS NO.")
-    sheet.cell(4, 3, "NAME")
+    sheet.cell(3, 1).alignment = Alignment(vertical="center", wrap_text=True)
+    for column, value in ((1, "STATUS"), (2, "PRIS NO."), (3, "NAME")):
+        sheet.merge_cells(start_row=4, start_column=column, end_row=5, end_column=column)
+        cell = sheet.cell(4, column, value)
+        cell.fill = PatternFill("solid", fgColor="17365D")
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     header_fill = PatternFill("solid", fgColor="17365D")
     header_font = Font(color="FFFFFF", bold=True)
-    for column in range(1, 4):
-        cell = sheet.cell(4, column)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center")
     for day in range(1, days_in_month + 1):
         first_col = 4 + (day - 1) * 2
+        day_date = date(year, month_number, day)
         sheet.merge_cells(start_row=3, start_column=first_col, end_row=3, end_column=first_col + 1)
-        sheet.cell(3, first_col, date(year, month_number, day))
-        sheet.cell(3, first_col).number_format = "ddd, d mmm"
+        weekday = sheet.cell(3, first_col, day_date.strftime("%a").upper())
+        weekday.alignment = Alignment(horizontal="center", vertical="center")
+        weekday.fill = PatternFill("solid", fgColor="D9EAF7")
+        sheet.merge_cells(start_row=4, start_column=first_col, end_row=4, end_column=first_col + 1)
+        day_header = sheet.cell(4, first_col, day_date)
+        day_header.number_format = "d mmm"
+        day_header.alignment = Alignment(horizontal="center", vertical="center")
+        day_header.fill = header_fill
+        day_header.font = header_font
         for slot, column in (("AM", first_col), ("PM", first_col + 1)):
-            cell = sheet.cell(4, column, slot)
+            cell = sheet.cell(5, column, slot)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
     ordered_roster = sorted(roster_entries.values(), key=lambda entry: entry.pris_no_snapshot)
-    for row_number, entry in enumerate(ordered_roster, start=5):
+    for row_number, entry in enumerate(ordered_roster, start=6):
         write_literal(row_number, 1, entry.student_status or "")
         write_literal(row_number, 2, entry.pris_no_snapshot)
         write_literal(row_number, 3, decrypt_sensitive(entry.student_name_encrypted) or "")
@@ -264,7 +273,7 @@ def attendance_monthly_xlsx(
                 code = attendance.get((entry.student_id, day, slot))
                 if code:
                     sheet.cell(row_number, column, code)
-    sheet.freeze_panes = "D5"
+    sheet.freeze_panes = "D6"
     sheet.sheet_view.showGridLines = False
     sheet.column_dimensions["A"].width = 12
     sheet.column_dimensions["B"].width = 16
@@ -272,12 +281,16 @@ def attendance_monthly_xlsx(
     for column in range(4, 4 + days_in_month * 2):
         sheet.column_dimensions[get_column_letter(column)].width = 5
     sheet.page_setup.orientation = "landscape"
-    sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
-    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+    sheet.page_setup.fitToWidth = 2
     sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.print_title_rows = "1:4"
-    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(4, 4 + len(ordered_roster))}"
+    sheet.page_margins.left = 0.2
+    sheet.page_margins.right = 0.2
+    sheet.page_margins.top = 0.25
+    sheet.page_margins.bottom = 0.25
+    sheet.print_title_rows = "1:5"
+    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(5, 5 + len(ordered_roster))}"
     output = io.BytesIO()
     workbook.save(output)
     safe_class = quote(class_name.strip().replace(" ", "_"), safe="")

@@ -330,19 +330,31 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
         assert export.status_code == 200
         workbook = load_workbook(io.BytesIO(export.content), data_only=True)
         sheet = workbook.active
+        assert sheet["A1"].value == "MONTH"
+        assert sheet["C1"].value.strftime("%Y-%m-%d") == "2026-10-01"
+        assert sheet["A2"].value == "CLASS"
+        assert sheet["C2"].value == class_name
+        assert sheet["H3"].value == "SAT"
         assert sheet["A4"].value == "STATUS"
         assert sheet["B4"].value == "PRIS NO."
         assert sheet["C4"].value == "NAME"
-        assert sheet["D4"].value == "AM"
-        assert sheet["E4"].value == "PM"
-        assert sheet["H5"].value == "P"
-        assert sheet["I5"].value == "L"
-        assert sheet["A5"].value == "ACTIVE"
-        assert sheet["B5"].value == pris_no.upper()
-        assert sheet["C5"].value == "Monthly Report Student"
+        assert sheet["H4"].value.strftime("%Y-%m-%d") == "2026-10-03"
+        assert sheet["H5"].value == "AM"
+        assert sheet["I5"].value == "PM"
+        assert sheet["H6"].value == "P"
+        assert sheet["I6"].value == "L"
+        assert sheet["A6"].value == "ACTIVE"
+        assert sheet["B6"].value == pris_no.upper()
+        assert sheet["C6"].value == "Monthly Report Student"
         assert "session snapshots" in sheet["A3"].value
-        assert sheet.freeze_panes == "D5"
+        assert "H3:I3" in {str(item) for item in sheet.merged_cells.ranges}
+        assert "H4:I4" in {str(item) for item in sheet.merged_cells.ranges}
+        assert "A4:A5" in {str(item) for item in sheet.merged_cells.ranges}
+        assert sheet.freeze_panes == "D6"
         assert sheet.page_setup.orientation == "landscape"
+        assert sheet.page_setup.paperSize == sheet.PAPERSIZE_A4
+        assert sheet.page_setup.fitToWidth == 2
+        assert sheet.page_setup.fitToHeight == 0
         assert export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         bootstrap_headers = login_headers(client)
