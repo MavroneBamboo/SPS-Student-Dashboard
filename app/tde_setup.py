@@ -9,6 +9,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import psycopg
 from psycopg import sql
@@ -34,6 +35,25 @@ def _provider_settings() -> tuple[str, str]:
         raise RuntimeError("TDE_PROVIDER_NAME must be set and TDE_PROVIDER must be 'file' or 'vault'")
     if app_env == "production" and provider_type != "vault":
         raise RuntimeError("Production requires TDE_PROVIDER=vault; local key files are only for development and tests")
+    if provider_type == "vault":
+        vault_url = os.environ.get("TDE_VAULT_URL", "").strip()
+        try:
+            parsed_vault_url = urlsplit(vault_url)
+            hostname = parsed_vault_url.hostname
+            _ = parsed_vault_url.port
+        except ValueError as exc:
+            raise RuntimeError("TDE_VAULT_URL must be a valid Vault HTTP(S) URL") from exc
+        if (
+            parsed_vault_url.scheme.lower() not in {"http", "https"}
+            or not hostname
+            or parsed_vault_url.username is not None
+            or parsed_vault_url.password is not None
+            or parsed_vault_url.query
+            or parsed_vault_url.fragment
+        ):
+            raise RuntimeError("TDE_VAULT_URL must be a valid Vault HTTP(S) URL without embedded credentials")
+        if app_env == "production" and parsed_vault_url.scheme.lower() != "https":
+            raise RuntimeError("Production requires HTTPS for the Vault TDE key provider")
     if provider_type == "file":
         key_path = Path(os.environ.get("TDE_FILE_KEY_PATH", "/var/lib/postgresql/tde-keyring/pg_tde_keyring"))
         data_path = Path(os.environ.get("PGDATA", "/var/lib/postgresql/data"))
