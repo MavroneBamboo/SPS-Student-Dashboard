@@ -25,7 +25,14 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int, username: str, role: str, must_change_password: bool = False, token_version: int = 0) -> str:
+def create_access_token(
+    user_id: int,
+    username: str,
+    role: str,
+    must_change_password: bool = False,
+    token_version: int = 0,
+    session_id: str | None = None,
+) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
     payload = {
@@ -35,7 +42,7 @@ def create_access_token(user_id: int, username: str, role: str, must_change_pass
         "must_change_password": must_change_password,
         "typ": "access",
         "ver": token_version,
-        "jti": secrets.token_hex(16),
+        "jti": session_id or secrets.token_hex(16),
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
         "iat": now,
