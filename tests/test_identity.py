@@ -1,13 +1,17 @@
 """Exercise revocation and delegated account administration against PostgreSQL."""
 
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from uuid import uuid4
 
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.main import app
 from app.models import AuditEvent, User
 from app.routes.users import preserve_last_admin
@@ -53,6 +57,93 @@ def test_login_audits_success_and_failures_without_storing_credentials_or_unknow
     }
     assert PASSWORD not in str(events) and "wrong-audit-password" not in str(events)
     assert unknown_username not in str(events)
+
+
+def test_repeated_account_failures_start_a_bounded_cooldown_and_success_resets_it():
+    username = f"cooldown-{uuid4().hex[:12]}"
+    with SessionLocal() as db:
+        user = User(username=username, password_hash=hash_password(PASSWORD), role="Operator", is_active=True)
+        db.add(user)
+        db.commit()
+        user_id = user.id
+
+    with TestClient(app) as client:
+        for _ in range(5):
+            failed = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+            assert failed.status_code == 401
+        blocked = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+        assert blocked.status_code == 401
+        successful = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+        assert successful.status_code == 200
+
+        for _ in range(5):
+            failed = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+            assert failed.status_code == 401
+        with SessionLocal() as db:
+            recent_failures = db.scalars(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.actor_id == user_id,
+                    AuditEvent.action == "auth.login.failed",
+                    AuditEvent.entity_type == "user",
+                )
+                .order_by(AuditEvent.id.desc())
+                .limit(5)
+            ).all()
+            assert len(recent_failures) == 5
+            expired_at = datetime.now(UTC) - timedelta(minutes=16)
+            for event in recent_failures:
+                event.created_at = expired_at
+            db.commit()
+
+        after_cooldown = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+        assert after_cooldown.status_code == 401
+
+    with SessionLocal() as db:
+        actions = list(
+            db.scalars(
+                select(AuditEvent.action)
+                .where(AuditEvent.actor_id == user_id, AuditEvent.entity_type == "user", AuditEvent.entity_id == str(user_id))
+                .order_by(AuditEvent.id)
+            )
+        )
+    assert actions.count("auth.login.blocked") == 1
+    assert actions.count("auth.login.succeeded") == 1
+    assert actions.count("auth.login.failed") == 11
+
+
+def test_concurrent_login_failures_cannot_race_past_account_cooldown():
+    if engine.dialect.name != "postgresql":
+        pytest.skip("Concurrent account cooldown behavior depends on PostgreSQL row locks")
+    username = f"cooldown-race-{uuid4().hex[:12]}"
+    with SessionLocal() as db:
+        user = User(username=username, password_hash=hash_password(PASSWORD), role="Operator", is_active=True)
+        db.add(user)
+        db.commit()
+        user_id = user.id
+
+    barrier = Barrier(7)
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=7) as executor:
+
+        def fail_login():
+            barrier.wait(timeout=10)
+            return client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+
+        responses = list(executor.map(lambda _: fail_login(), range(7)))
+
+    assert all(response.status_code == 401 for response in responses)
+    with SessionLocal() as db:
+        actions = list(
+            db.scalars(
+                select(AuditEvent.action).where(
+                    AuditEvent.actor_id == user_id,
+                    AuditEvent.entity_type == "user",
+                    AuditEvent.entity_id == str(user_id),
+                )
+            )
+        )
+    assert actions.count("auth.login.failed") == 5
+    assert actions.count("auth.login.blocked") == 2
 
 
 def account(client: TestClient, role: str, password: str = PASSWORD) -> tuple[int, dict]:

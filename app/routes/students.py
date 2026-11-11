@@ -29,6 +29,7 @@ ENCRYPTED_PROFILE_FIELDS = {
     "next_of_kin_address_ports": "next_of_kin_address_ports_encrypted",
     "next_of_kin_address_from_student": "next_of_kin_address_from_student_encrypted",
     "student_contact": "student_contact_encrypted",
+    "verification_note": "verification_note_encrypted",
 }
 PLAIN_PROFILE_FIELDS = (
     "edr_ros",
@@ -48,6 +49,7 @@ PLAIN_PROFILE_FIELDS = (
     "commerce_2",
     "commerce_3",
     "aa",
+    "elective",
 )
 
 

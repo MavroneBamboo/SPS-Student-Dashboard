@@ -1,6 +1,6 @@
 import json
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Path, Response, status
 from sqlalchemy import func, select
@@ -18,6 +18,35 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 # A well-formed PBKDF2 value ensures unknown usernames take the same password
 # verification path as known accounts without generating a new hash per request.
 _DUMMY_PASSWORD_HASH = f"pbkdf2_sha256$310000${'00' * 16}${'00' * 32}"
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_FAILURE_WINDOW = timedelta(minutes=15)
+LOGIN_COOLDOWN = timedelta(minutes=15)
+
+
+def _login_cooldown_active(db: DbSession, user: User, now: datetime) -> bool:
+    recent = db.execute(
+        select(AuditEvent.action, AuditEvent.created_at)
+        .where(
+            AuditEvent.actor_id == user.id,
+            AuditEvent.entity_type == "user",
+            AuditEvent.entity_id == str(user.id),
+            AuditEvent.action.in_(("auth.login.failed", "auth.login.succeeded")),
+        )
+        .order_by(AuditEvent.id.desc())
+        .limit(LOGIN_FAILURE_LIMIT)
+    ).all()
+    failures = []
+    for action, created_at in recent:
+        if action != "auth.login.failed":
+            break
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        failures.append(created_at.astimezone(UTC))
+    if len(failures) < LOGIN_FAILURE_LIMIT:
+        return False
+    if any(now - timestamp > LOGIN_FAILURE_WINDOW for timestamp in failures):
+        return False
+    return now - failures[0] < LOGIN_COOLDOWN
 
 
 def issue_session(db: DbSession, user: User) -> tuple[str, int]:
@@ -51,16 +80,17 @@ def current_identity(claims: CurrentClaims) -> dict:
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
     username = payload.username.strip().lower()
-    user = db.scalar(select(User).where(func.lower(User.username) == username))
+    user = db.scalar(select(User).where(func.lower(User.username) == username).with_for_update())
     password_valid = verify_password(payload.password, user.password_hash if user is not None else _DUMMY_PASSWORD_HASH)
+    cooldown = user is not None and user.is_active and _login_cooldown_active(db, user, datetime.now(UTC))
     if user is None or not user.is_active or not password_valid:
         record_event(
             db,
             user.id if user is not None else 0,
-            "auth.login.failed",
+            "auth.login.blocked" if cooldown else "auth.login.failed",
             "user" if user is not None else "authentication_attempt",
             str(user.id) if user is not None else "unknown",
-            {"outcome": "failed"},
+            {"outcome": "blocked" if cooldown else "failed"},
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
