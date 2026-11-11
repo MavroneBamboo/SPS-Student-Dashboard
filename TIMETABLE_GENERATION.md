@@ -1,6 +1,6 @@
 # Timetable generation API
 
-Weekly drafts can be generated from their frozen configuration in both the API and the production timetable browser. Operators can fill pending lessons or explicitly replace unlocked lessons; the browser displays completion and unplaced requirements. Publishing coordination, fixed events, composite teacher groups and exports remain future work.
+Weekly drafts can be generated from their frozen configuration in both the API and the production timetable browser. Operators can fill pending lessons or explicitly replace unlocked lessons; the browser displays completion and unplaced requirements. Composite teacher groups are snapshotted and checked per member during generation. Fixed school events remain future work.
 
 ## Generate
 

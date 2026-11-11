@@ -199,6 +199,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   async function refreshSetup() {
     const canConfigure = ["IT Administrator", "Superuser"].includes(currentRole());
+    $("timetable-teacher-group-form").hidden = !canConfigure;
     const [teacherRows, subjects, instructionalClasses, clusters, periodRows, classMappings, attendanceMappings] = await Promise.all([
       api("/timetable/teachers"), api("/timetable/subjects"), api("/timetable/classes"), api("/timetable/clusters"), api("/timetable/periods"),
       ["Operator", "IT Administrator", "Superuser"].includes(currentRole()) ? api("/student-reference/class-mappings") : Promise.resolve([]),
@@ -211,6 +212,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     lastClusters = activeClusters;
     fillSelect($("timetable-lesson-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-lesson-form").elements.teacher_id, activeTeachers, (row) => `${row.short_code} · ${row.full_name}`);
+    fillSelect($("timetable-teacher-group-form").elements.member_ids, activeTeachers.filter((row) => !row.is_composite), (row) => `${row.short_code} · ${row.full_name}`);
     fillSelect($("timetable-lesson-form").elements.subject_id, activeSubjects, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-cluster-member-form").elements.cluster_id, activeClusters, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-cluster-member-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
@@ -226,10 +228,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       for (const item of values) {
         const row = document.createElement("tr");
         const code = item.short_code || item.code;
-        for (const value of [code, item.full_name || item.name, item.is_active ? "Active" : "Inactive"]) cell(row, value);
+        for (const value of [code, item.full_name || item.name, `${item.is_active ? "Active" : "Inactive"}${item.is_composite ? " · Group" : " · Individual"}`]) cell(row, value);
         if (id === "timetable-teacher-rows") {
           const periodsPerWeek = Object.values(item.availability || {}).reduce((sum, day) => sum + (Array.isArray(day) ? day.length : 0), 0);
           cell(row, periodsPerWeek);
+          cell(row, item.member_ids?.map((memberId) => teacherRows.find((member) => member.id === memberId)?.short_code || memberId).join(", ") || "—");
         }
         body.append(row);
       }
@@ -376,6 +379,20 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     is_adjunct: form.elements.is_adjunct.checked,
     availability: availabilityPayload(),
   }), "Teacher profile created.");
+  $("timetable-teacher-group-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(event.currentTarget, async () => {
+      const form = event.currentTarget;
+      await api("/timetable/teacher-groups", "POST", {
+        short_code: form.elements.short_code.value,
+        full_name: form.elements.full_name.value,
+        member_ids: [...form.elements.member_ids.selectedOptions].map((option) => Number(option.value)),
+      });
+      form.reset();
+      await refresh();
+      notice("Composite teacher group created. Member availability and clashes will be checked individually.");
+    });
+  });
   submitJSON("timetable-subject-form", "/timetable/subjects", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Subject created.");
   submitJSON("timetable-class-form", "/timetable/classes", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Instructional class created.");
   $("student-class-mapping-form").addEventListener("submit", (event) => {
@@ -493,6 +510,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     const teacher = current.snapshot.teachers[String(requirement.teacher_id)];
     const subject = current.snapshot.subjects[String(requirement.subject_id)];
     return `${subject.code} · ${teacher.short_code}${block.is_locked ? " · locked" : ""}`;
+  }
+
+  function teacherMatchesRequirement(requirement, teacherId) {
+    if (!requirement) return false;
+    const assigned = current.snapshot.teachers[String(requirement.teacher_id)];
+    return requirement.teacher_id === teacherId || (assigned?.participant_ids || []).includes(teacherId);
   }
 
   function requirementLabel(id) {
@@ -767,7 +790,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
           const matchesEntity = viewBy === "class"
             ? req?.instructional_class_id === entity.id
-            : req?.teacher_id === entity.id;
+              : teacherMatchesRequirement(req, entity.id);
           return matchesEntity && candidate.slots.some((slot) => slot.weekday === day && slot.slot_code === period);
         });
         const button = document.createElement("button");
@@ -798,7 +821,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   function addTeacherPlacement(teacher, weekday, startPeriod) {
-    const pending = current.pending.filter((item) => current.snapshot.requirements[String(item.lesson_requirement_id)]?.teacher_id === teacher.id);
+    const pending = current.pending.filter((item) => teacherMatchesRequirement(current.snapshot.requirements[String(item.lesson_requirement_id)], teacher.id));
     if (!pending.length) {
       notice(`No unplaced lesson requirements remain for ${teacher.full_name}.`);
       return;
@@ -811,7 +834,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   function renderTeacherSummary(teacher) {
-    const placements = current.placements.filter((block) => current.snapshot.requirements[String(block.lesson_requirement_id)]?.teacher_id === teacher.id);
+    const placements = current.placements.filter((block) => teacherMatchesRequirement(current.snapshot.requirements[String(block.lesson_requirement_id)], teacher.id));
     const taught = placements.reduce((sum, block) => sum + block.period_count, 0);
     const scheduledSlots = weekdays.length * periods.filter((p) => p !== "LUNCH").length;
     const free = Math.max(0, scheduledSlots - taught);
@@ -881,7 +904,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
         if (includeAllPeriods || period === "LUNCH") return true;
         return current.placements.some((candidate) => {
           const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
-          const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+          const matches = itemKind === "class" ? req?.instructional_class_id === item.id : teacherMatchesRequirement(req, item.id);
           return matches && candidate.slots.some((slot) => slot.slot_code === period);
         });
       });
@@ -901,7 +924,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           if (period === "LUNCH") return '<td class="lunch-cell" data-period="LUNCH">Lunch / Muster</td>';
           const entries = current.placements.flatMap((candidate) => {
             const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
-            const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+              const matches = itemKind === "class" ? req?.instructional_class_id === item.id : teacherMatchesRequirement(req, item.id);
             if (!matches) return [];
             return candidate.slots.filter((slot) => slot.weekday === day && slot.slot_code === period).map((slot) => ({req, slot}));
           });

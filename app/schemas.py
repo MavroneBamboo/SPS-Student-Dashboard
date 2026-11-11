@@ -228,6 +228,20 @@ class TeacherCreate(BaseModel):
 
 class TeacherResponse(TeacherCreate):
     id: int
+    is_composite: bool = False
+    member_ids: list[int] = Field(default_factory=list)
+
+
+class TeacherGroupCreate(BaseModel):
+    short_code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    full_name: str = Field(min_length=1, max_length=160)
+    member_ids: list[int] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def validate_members(self):
+        if any(member_id <= 0 for member_id in self.member_ids) or len(set(self.member_ids)) != len(self.member_ids):
+            raise ValueError("A teacher group requires at least two distinct positive teacher IDs")
+        return self
 
 
 class LessonRequirementCreate(BaseModel):
