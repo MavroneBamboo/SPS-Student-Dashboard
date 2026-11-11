@@ -1,0 +1,379 @@
+name: Production image release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Semantic release version, for example v1.0.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release-${{ inputs.release_version }}
+  cancel-in-progress: false
+
+jobs:
+  validate-request:
+    name: Verify release request and successful main CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      ci_run_id: ${{ steps.ci.outputs.run_id }}
+    steps:
+      - name: Check out the requested main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate main branch, version, and unused release tag
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_ACTOR" = "MavroneBamboo" || { echo "Only MavroneBamboo may start a production release." >&2; exit 1; }
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_tag="$(git ls-remote --refs origin "refs/tags/$RELEASE_VERSION")" || { echo "Unable to verify whether release tag $RELEASE_VERSION exists." >&2; exit 1; }
+          if test -n "$remote_tag"; then
+            echo "Release tag $RELEASE_VERSION already exists." >&2
+            exit 1
+          fi
+
+      - name: Require a successful CI and staging run for this exact commit
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=100" \
+            --jq ".workflow_runs[] | select(.head_branch == \"main\" and .head_sha == \"$GITHUB_SHA\" and .conclusion == \"success\") | .id")"
+          run_id="$(printf '%s\n' "$runs" | head -n 1)"
+          test -n "$run_id" || { echo "No successful CI push run found for $GITHUB_SHA." >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Using successful main CI and staging run: $run_id" >> "$GITHUB_STEP_SUMMARY"
+
+  build-candidates:
+    name: Build, scan, and inventory release images
+    needs: validate-request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      candidate_tag: ${{ steps.names.outputs.candidate_tag }}
+      owner: ${{ steps.names.outputs.owner }}
+      app_image: ${{ steps.names.outputs.app_image }}
+      proxy_image: ${{ steps.names.outputs.proxy_image }}
+      maintenance_image: ${{ steps.names.outputs.maintenance_image }}
+      app_digest: ${{ steps.build-app.outputs.digest }}
+      proxy_digest: ${{ steps.build-proxy.outputs.digest }}
+      maintenance_digest: ${{ steps.build-maintenance.outputs.digest }}
+    steps:
+      - name: Check out the tested main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Define unique candidate image references
+        id: names
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          candidate_tag="candidate-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "candidate_tag=$candidate_tag" >> "$GITHUB_OUTPUT"
+          echo "app_image=ghcr.io/$owner/sps-student-dashboard" >> "$GITHUB_OUTPUT"
+          echo "proxy_image=ghcr.io/$owner/sps-student-dashboard-proxy" >> "$GITHUB_OUTPUT"
+          echo "maintenance_image=ghcr.io/$owner/sps-database-maintenance" >> "$GITHUB_OUTPUT"
+          mkdir -p release-evidence
+
+      - name: Build and push application candidate with SBOM and provenance
+        id: build-app
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.names.outputs.app_image }}:${{ steps.names.outputs.candidate_tag }}
+          build-args: INSTALL_TEST_DEPENDENCIES=false
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.release_version }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push reverse proxy candidate with SBOM and provenance
+        id: build-proxy
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/nginx.Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.names.outputs.proxy_image }}:${{ steps.names.outputs.candidate_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.release_version }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push database maintenance candidate with SBOM and provenance
+        id: build-maintenance
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/database-maintenance.Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.names.outputs.maintenance_image }}:${{ steps.names.outputs.candidate_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.release_version }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Scan application image and export CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.names.outputs.app_image }}@${{ steps.build-app.outputs.digest }}
+          format: cyclonedx
+          output: release-evidence/sps-student-dashboard.cdx.json
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
+          severity: CRITICAL,HIGH
+
+      - name: Scan reverse proxy image and export CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.names.outputs.proxy_image }}@${{ steps.build-proxy.outputs.digest }}
+          format: cyclonedx
+          output: release-evidence/sps-student-dashboard-proxy.cdx.json
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
+          severity: CRITICAL,HIGH
+
+      - name: Scan database maintenance image and export CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.names.outputs.maintenance_image }}@${{ steps.build-maintenance.outputs.digest }}
+          format: cyclonedx
+          output: release-evidence/sps-database-maintenance.cdx.json
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
+          severity: CRITICAL,HIGH
+
+      - name: Record image digests and checksums
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          CI_RUN_ID: ${{ needs.validate-request.outputs.ci_run_id }}
+          OWNER: ${{ steps.names.outputs.owner }}
+          CANDIDATE_TAG: ${{ steps.names.outputs.candidate_tag }}
+          APP_IMAGE: ${{ steps.names.outputs.app_image }}
+          APP_DIGEST: ${{ steps.build-app.outputs.digest }}
+          PROXY_IMAGE: ${{ steps.names.outputs.proxy_image }}
+          PROXY_DIGEST: ${{ steps.build-proxy.outputs.digest }}
+          MAINTENANCE_IMAGE: ${{ steps.names.outputs.maintenance_image }}
+          MAINTENANCE_DIGEST: ${{ steps.build-maintenance.outputs.digest }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg version "$RELEASE_VERSION" \
+            --arg source_commit "$GITHUB_SHA" \
+            --arg ci_run_id "$CI_RUN_ID" \
+            --arg candidate_tag "$CANDIDATE_TAG" \
+            --arg app_image "$APP_IMAGE" --arg app_digest "$APP_DIGEST" \
+            --arg proxy_image "$PROXY_IMAGE" --arg proxy_digest "$PROXY_DIGEST" \
+            --arg maintenance_image "$MAINTENANCE_IMAGE" --arg maintenance_digest "$MAINTENANCE_DIGEST" \
+            '{repository:$repository, version:$version, source_commit:$source_commit, successful_ci_run:$ci_run_id, candidate_tag:$candidate_tag, images:{application:{name:$app_image,digest:$app_digest},proxy:{name:$proxy_image,digest:$proxy_digest},database_maintenance:{name:$maintenance_image,digest:$maintenance_digest}}}' \
+            > release-evidence/release-manifest.json
+          (cd release-evidence && sha256sum *.json > SHA256SUMS)
+          {
+            echo "## Production release candidate"
+            echo
+            echo "- Version: $RELEASE_VERSION"
+            echo "- Source commit: $GITHUB_SHA"
+            echo "- Successful CI and staging run: $CI_RUN_ID"
+            echo "- Candidate tag: $CANDIDATE_TAG"
+            echo "- Application digest: $APP_DIGEST"
+            echo "- Proxy digest: $PROXY_DIGEST"
+            echo "- Database maintenance digest: $MAINTENANCE_DIGEST"
+            echo
+            echo "The approval job will sign and publish these exact digests without rebuilding them."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release manifest and SBOMs for the approval job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-evidence-${{ github.run_id }}
+          path: release-evidence/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  publish-release:
+    name: Sign digests and publish approved release
+    needs: build-candidates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_version }}
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - name: Check out the tested source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download the candidate manifest and SBOMs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-evidence-${{ github.run_id }}
+          path: release-evidence
+
+      - name: Verify release evidence and ensure the version is unused
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          GH_TOKEN: ${{ github.token }}
+          APP_IMAGE: ${{ needs.build-candidates.outputs.app_image }}
+          APP_DIGEST: ${{ needs.build-candidates.outputs.app_digest }}
+          PROXY_IMAGE: ${{ needs.build-candidates.outputs.proxy_image }}
+          PROXY_DIGEST: ${{ needs.build-candidates.outputs.proxy_digest }}
+          MAINTENANCE_IMAGE: ${{ needs.build-candidates.outputs.maintenance_image }}
+          MAINTENANCE_DIGEST: ${{ needs.build-candidates.outputs.maintenance_digest }}
+        run: |
+          set -euo pipefail
+          cd release-evidence
+          sha256sum --check SHA256SUMS
+          test "$(jq -r .version release-manifest.json)" = "$RELEASE_VERSION"
+          test "$(jq -r .source_commit release-manifest.json)" = "$GITHUB_SHA"
+          jq -e \
+            --arg app_image "$APP_IMAGE" --arg app_digest "$APP_DIGEST" \
+            --arg proxy_image "$PROXY_IMAGE" --arg proxy_digest "$PROXY_DIGEST" \
+            --arg maintenance_image "$MAINTENANCE_IMAGE" --arg maintenance_digest "$MAINTENANCE_DIGEST" \
+            '.images.application.name == $app_image and .images.application.digest == $app_digest and .images.proxy.name == $proxy_image and .images.proxy.digest == $proxy_digest and .images.database_maintenance.name == $maintenance_image and .images.database_maintenance.digest == $maintenance_digest' \
+            release-manifest.json >/dev/null
+          remote_tag="$(git ls-remote --refs origin "refs/tags/$RELEASE_VERSION")" || { echo "Unable to verify whether release tag $RELEASE_VERSION exists." >&2; exit 1; }
+          if test -n "$remote_tag"; then
+            echo "Release tag $RELEASE_VERSION already exists." >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_VERSION already exists." >&2
+            exit 1
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+
+      - name: Sign image digests and attest their SBOMs
+        env:
+          APP_IMAGE: ${{ needs.build-candidates.outputs.app_image }}
+          APP_DIGEST: ${{ needs.build-candidates.outputs.app_digest }}
+          PROXY_IMAGE: ${{ needs.build-candidates.outputs.proxy_image }}
+          PROXY_DIGEST: ${{ needs.build-candidates.outputs.proxy_digest }}
+          MAINTENANCE_IMAGE: ${{ needs.build-candidates.outputs.maintenance_image }}
+          MAINTENANCE_DIGEST: ${{ needs.build-candidates.outputs.maintenance_digest }}
+          SIGNING_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/production-release.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$APP_IMAGE@$APP_DIGEST"
+          cosign attest --yes --type cyclonedx --predicate release-evidence/sps-student-dashboard.cdx.json "$APP_IMAGE@$APP_DIGEST"
+          cosign sign --yes "$PROXY_IMAGE@$PROXY_DIGEST"
+          cosign attest --yes --type cyclonedx --predicate release-evidence/sps-student-dashboard-proxy.cdx.json "$PROXY_IMAGE@$PROXY_DIGEST"
+          cosign sign --yes "$MAINTENANCE_IMAGE@$MAINTENANCE_DIGEST"
+          cosign attest --yes --type cyclonedx --predicate release-evidence/sps-database-maintenance.cdx.json "$MAINTENANCE_IMAGE@$MAINTENANCE_DIGEST"
+          cosign verify --certificate-identity "$SIGNING_IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$APP_IMAGE@$APP_DIGEST" >/dev/null
+          cosign verify --certificate-identity "$SIGNING_IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$PROXY_IMAGE@$PROXY_DIGEST" >/dev/null
+          cosign verify --certificate-identity "$SIGNING_IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$MAINTENANCE_IMAGE@$MAINTENANCE_DIGEST" >/dev/null
+          cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNING_IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$APP_IMAGE@$APP_DIGEST" >/dev/null
+          cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNING_IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$PROXY_IMAGE@$PROXY_DIGEST" >/dev/null
+          cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNING_IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$MAINTENANCE_IMAGE@$MAINTENANCE_DIGEST" >/dev/null
+
+      - name: Create the source-linked GitHub release
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          Production container release $RELEASE_VERSION.
+
+          Source commit: $GITHUB_SHA
+          Release images are referenced by immutable SHA256 digest in release-manifest.json.
+          Images were built and scanned from the main revision after its successful CI and staging run, then signed after production environment approval.
+          EOF
+          gh release create "$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "SPS Student Dashboard $RELEASE_VERSION" \
+            --notes-file release-notes.md \
+            release-evidence/release-manifest.json \
+            release-evidence/SHA256SUMS \
+            release-evidence/sps-student-dashboard.cdx.json \
+            release-evidence/sps-student-dashboard-proxy.cdx.json \
+            release-evidence/sps-database-maintenance.cdx.json
+
+      - name: Record release image digests
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          APP_IMAGE: ${{ needs.build-candidates.outputs.app_image }}
+          APP_DIGEST: ${{ needs.build-candidates.outputs.app_digest }}
+          PROXY_IMAGE: ${{ needs.build-candidates.outputs.proxy_image }}
+          PROXY_DIGEST: ${{ needs.build-candidates.outputs.proxy_digest }}
+          MAINTENANCE_IMAGE: ${{ needs.build-candidates.outputs.maintenance_image }}
+          MAINTENANCE_DIGEST: ${{ needs.build-candidates.outputs.maintenance_digest }}
+        run: |
+          {
+            echo "## Published production release"
+            echo
+            echo "- Release: $RELEASE_VERSION"
+            echo "- Source commit: $GITHUB_SHA"
+            echo "- Application: $APP_IMAGE@$APP_DIGEST"
+            echo "- Reverse proxy: $PROXY_IMAGE@$PROXY_DIGEST"
+            echo "- Database maintenance: $MAINTENANCE_IMAGE@$MAINTENANCE_DIGEST"
+            echo "- Images were signed and their CycloneDX SBOMs attested with GitHub OIDC through Cosign."
+          } >> "$GITHUB_STEP_SUMMARY"
