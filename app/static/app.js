@@ -23,7 +23,7 @@ function clearData() {
   timetable.clear();
   students.clear();
   referenceData?.clear();
-  for (const id of ["user-rows", "audit-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
+  for (const id of ["user-rows", "audit-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
@@ -210,7 +210,8 @@ function showPanel(name) {
   $("attendance-panel").hidden = name !== "attendance";
   $("timetable-panel").hidden = name !== "timetable";
   $("reference-data-panel").hidden = name !== "reference-data";
-  const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
+  $("sessions-panel").hidden = name !== "sessions";
+  const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav", sessions: "sessions-nav"};
   navIds["reference-data"] = "reference-data-nav";
   for (const [panel, id] of Object.entries(navIds)) {
     const button = $(id);
@@ -219,7 +220,7 @@ function showPanel(name) {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", "reference-data": "Reference data"}[name];
+  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", sessions: "Account sessions", "reference-data": "Reference data"}[name];
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -456,6 +457,42 @@ async function showAudit() {
   $("audit-next").disabled = events.length <= pageSize;
 }
 
+async function showSessions() {
+  showPanel("sessions");
+  const sessions = await api("/auth/sessions");
+  const rows = $("session-rows");
+  rows.replaceChildren();
+  for (const session of sessions) {
+    const row = document.createElement("tr");
+    cell(row, session.created_at ? new Date(session.created_at).toLocaleString() : "Unknown");
+    cell(row, new Date(session.expires_at).toLocaleString());
+    cell(row, session.is_current ? "Current session" : "Other session");
+    const action = document.createElement("td");
+    if (session.is_current) {
+      action.textContent = "This session";
+    } else {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "secondary";
+      revoke.textContent = "Revoke session";
+      revoke.addEventListener("click", () => run(revoke, async () => {
+        await api(`/auth/sessions/${session.id}`, "DELETE");
+        await showSessions();
+        notice("Session revoked.");
+      }));
+      action.append(revoke);
+    }
+    row.append(action);
+    rows.append(row);
+  }
+  if (!sessions.length) {
+    const row = document.createElement("tr");
+    cell(row, "No active sessions were found.").colSpan = 4;
+    rows.append(row);
+  }
+  $("revoke-other-sessions").disabled = sessions.filter((session) => !session.is_current).length === 0;
+}
+
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
 const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role, downloadXlsx});
@@ -532,6 +569,16 @@ for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener(
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
 $("audit-nav").addEventListener("click", () => run($("audit-nav"), showAudit));
 $("refresh-audit").addEventListener("click", () => run($("refresh-audit"), showAudit));
+$("sessions-nav").addEventListener("click", () => run($("sessions-nav"), showSessions));
+$("refresh-sessions").addEventListener("click", () => run($("refresh-sessions"), showSessions));
+$("revoke-other-sessions").addEventListener("click", async () => {
+  await run($("revoke-other-sessions"), async () => {
+    await api("/auth/sessions/revoke-others", "POST");
+    await showSessions();
+    notice("Other account sessions revoked. This session remains active.");
+  });
+  $("revoke-other-sessions").disabled = $("session-rows").querySelectorAll("button").length === 0;
+});
 $("audit-filter").addEventListener("submit", (event) => {
   event.preventDefault();
   auditOffset = 0;

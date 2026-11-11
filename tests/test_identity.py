@@ -15,7 +15,7 @@ from app.db import SessionLocal, engine
 from app.main import app
 from app.models import AuditEvent, User
 from app.routes.users import preserve_last_admin
-from app.security import hash_password
+from app.security import decode_access_token, hash_password
 
 PASSWORD = "identity-fixture-password"
 
@@ -158,7 +158,7 @@ def account(client: TestClient, role: str, password: str = PASSWORD) -> tuple[in
     return user_id, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-def test_password_change_and_logout_revoke_all_existing_account_tokens():
+def test_password_change_revokes_all_sessions_but_logout_revokes_only_current_session():
     with TestClient(app) as client:
         user_id, old = account(client, "Operator")
         old_login = client.post(
@@ -175,13 +175,55 @@ def test_password_change_and_logout_revoke_all_existing_account_tokens():
         assert client.get("/api/v1/auth/me", headers=other).status_code == 401
         fresh = {"Authorization": f"Bearer {changed.json()['access_token']}"}
         assert client.get("/api/v1/auth/me", headers=fresh).json()["sub"] == str(user_id)
+        username = client.get("/api/v1/auth/me", headers=fresh).json()["username"]
+        other_login = client.post("/api/v1/auth/login", json={"username": username, "password": "identity-new-password"})
+        other_after_change = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+        active_sessions = client.get("/api/v1/auth/sessions", headers=fresh)
+        assert active_sessions.status_code == 200
+        assert {row["id"] for row in active_sessions.json()} == {
+            decode_access_token(fresh["Authorization"].removeprefix("Bearer "))["jti"],
+            decode_access_token(other_after_change["Authorization"].removeprefix("Bearer "))["jti"],
+        }
         assert client.post("/api/v1/auth/logout", headers=fresh).status_code == 204
         assert client.get("/api/v1/auth/me", headers=fresh).status_code == 401
+        assert client.get("/api/v1/auth/me", headers=other_after_change).status_code == 200
         assert client.post("/api/v1/auth/logout", headers=fresh).status_code == 401
         username = client.post("/api/v1/auth/login", json={"username": "nonexistent", "password": PASSWORD})
         assert username.status_code == 401
         with SessionLocal() as db:
-            assert db.get(User, user_id).token_version == 2
+            assert db.get(User, user_id).token_version == 1
+
+
+def test_users_can_list_and_revoke_only_their_own_active_sessions():
+    with TestClient(app) as client:
+        user_id, current = account(client, "Operator")
+        current_jti = decode_access_token(current["Authorization"].removeprefix("Bearer "))["jti"]
+        username = client.get("/api/v1/auth/me", headers=current).json()["username"]
+        second_login = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+        second = {"Authorization": f"Bearer {second_login.json()['access_token']}"}
+        second_jti = decode_access_token(second_login.json()["access_token"])["jti"]
+
+        sessions = client.get("/api/v1/auth/sessions", headers=current)
+        assert sessions.status_code == 200
+        assert {row["id"] for row in sessions.json()} == {current_jti, second_jti}
+        assert {row["id"] for row in sessions.json() if row["is_current"]} == {current_jti}
+        assert client.delete(f"/api/v1/auth/sessions/{second_jti}", headers=current).status_code == 204
+        assert client.get("/api/v1/auth/me", headers=second).status_code == 401
+        assert client.get("/api/v1/auth/me", headers=current).status_code == 200
+        assert client.delete(f"/api/v1/auth/sessions/{second_jti}", headers=current).status_code == 204
+
+        other_id, other_user = account(client, "Operator")
+        other_jti = decode_access_token(other_user["Authorization"].removeprefix("Bearer "))["jti"]
+        assert other_id != user_id
+        assert client.delete(f"/api/v1/auth/sessions/{other_jti}", headers=current).status_code == 404
+
+        third_login = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+        third = {"Authorization": f"Bearer {third_login.json()['access_token']}"}
+        assert client.post("/api/v1/auth/sessions/revoke-others", headers=current).status_code == 204
+        assert client.get("/api/v1/auth/me", headers=third).status_code == 401
+        assert client.get("/api/v1/auth/me", headers=current).status_code == 200
+        remaining = client.get("/api/v1/auth/sessions", headers=current)
+        assert [row["id"] for row in remaining.json()] == [current_jti]
 
 
 def test_it_admin_can_manage_named_users_but_never_superuser():
