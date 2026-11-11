@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from uuid import uuid4
 
@@ -5,10 +6,11 @@ from openpyxl import Workbook
 from playwright.sync_api import expect
 from sqlalchemy import select
 
-from app.crypto import decrypt_sensitive
+from app.config import get_settings
+from app.crypto import decrypt_sensitive, encrypt_sensitive_bytes
 from app.db import SessionLocal
-from app.models import InstructionalClass, Student, StudentClassMapping
-from app.student_class_mapping import STUDENT_INTAKE_2023, normalize_source_class_label
+from app.models import InstructionalClass, Student, StudentClassMapping, StudentImportBatch, StudentReferenceValue
+from app.student_class_mapping import STUDENT_INTAKE_2021, STUDENT_INTAKE_2023, normalize_source_class_label
 
 from .test_browser import login
 
@@ -26,12 +28,24 @@ def _workbook(pris_no, *, name, ic_number, class_label="Browser Intake Class"):
     return output.getvalue()
 
 
-def _upload(page, *, name, data):
+def _workbook_2021(pris_no, *, name, class_label, verification_note, elective):
+    output = BytesIO()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Student Intake 2021"
+    sheet.append(["S/N", "PRIS NO", "CAT", "VERIFY", "NAME", "CLASS", "AGE IN AY'21", "ELECTIVE", "STATUS"])
+    sheet.append([1, pris_no, "OP", verification_note, name, class_label, 21, elective, "ACTIVE"])
+    workbook.save(output)
+    return output.getvalue()
+
+
+def _upload(page, *, name, data, source_workbook=STUDENT_INTAKE_2023):
+    page.locator("#student-import-form select[name=source_workbook]").select_option(source_workbook)
     page.locator("#student-import-form input[name=workbook]").set_input_files({"name": name, "mimeType": XLSX, "buffer": data})
     page.get_by_role("button", name="Upload and preview", exact=True).click()
 
 
-def _create_class_mapping(account, source_label):
+def _create_class_mapping(account, source_label, source_workbook=STUDENT_INTAKE_2023):
     label, source_key = normalize_source_class_label(source_label)
     with SessionLocal() as db:
         instructional_class = InstructionalClass(
@@ -43,7 +57,7 @@ def _create_class_mapping(account, source_label):
         db.flush()
         db.add(
             StudentClassMapping(
-                source_workbook=STUDENT_INTAKE_2023,
+                source_workbook=source_workbook,
                 source_label=label,
                 source_key=source_key,
                 instructional_class_id=instructional_class.id,
@@ -85,6 +99,51 @@ def test_operator_import_preview_create_and_explicit_update_preserves_blank_cell
         saved = db.scalar(select(Student).where(Student.pris_no == pris_no))
         assert decrypt_sensitive(saved.name_encrypted) == "Updated import name"
         assert decrypt_sensitive(saved.ic_number_encrypted) == "SYNTH-BROWSER-IC"
+
+
+def test_operator_can_preview_and_commit_2021_intake_without_losing_legacy_fields(page, make_account):
+    account = make_account()
+    pris_no = "BROWSER-2021-" + uuid4().hex[:8].upper()
+    source_class = "Browser 2021 Class " + uuid4().hex[:8]
+    _create_class_mapping(account, source_class, STUDENT_INTAKE_2021)
+    with SessionLocal() as db:
+        if (
+            db.scalar(
+                select(StudentReferenceValue.id).where(
+                    StudentReferenceValue.catalog_type == "ACADEMIC_YEAR", StudentReferenceValue.name == "2021"
+                )
+            )
+            is None
+        ):
+            db.add(StudentReferenceValue(catalog_type="ACADEMIC_YEAR", name="2021", normalized_key="2021"))
+            db.commit()
+    login(page, account)
+    page.get_by_role("button", name="Student profiles", exact=True).click()
+    _upload(
+        page,
+        name="synthetic-intake-2021.xlsx",
+        data=_workbook_2021(
+            pris_no,
+            name="Synthetic 2021 student",
+            class_label=source_class,
+            verification_note="Synthetic legacy verification note",
+            elective="Synthetic elective",
+        ),
+        source_workbook=STUDENT_INTAKE_2021,
+    )
+    expect(page.locator("#student-import-summary")).to_contain_text("2021 intake batch")
+    expect(page.locator("#student-import-summary")).to_contain_text("1 rows; 1 valid; 0 invalid")
+    page.get_by_role("button", name="Create new profiles only", exact=True).click()
+    expect(page.locator("#student-import-summary")).to_contain_text("Status: COMMITTED")
+    with SessionLocal() as db:
+        saved = db.scalar(select(Student).where(Student.pris_no == pris_no))
+        batch = db.scalar(
+            select(StudentImportBatch).where(StudentImportBatch.created_by == account["id"]).order_by(StudentImportBatch.id.desc())
+        )
+        assert saved is not None and batch is not None
+        assert decrypt_sensitive(saved.verification_note_encrypted) == "Synthetic legacy verification note"
+        assert saved.elective == "Synthetic elective"
+        assert batch.source_workbook == STUDENT_INTAKE_2021
 
 
 def test_invalid_workbook_preview_shows_field_and_row_without_values(page, make_account):
@@ -149,12 +208,14 @@ def test_it_admin_can_create_and_revise_intake_class_mappings(page, make_account
 
     mapping_form = page.locator("#student-class-mapping-form")
     expect(mapping_form).to_be_visible()
+    mapping_form.locator('[name="source_workbook"]').select_option(STUDENT_INTAKE_2021)
     mapping_form.locator('[name="source_label"]').fill(source_label)
     mapping_form.locator('[name="instructional_class_id"]').select_option(label=f"{class_code} · Canonical Intake Class")
     mapping_form.get_by_role("button", name="Save class mapping").click()
     mapping_row = page.locator("#student-class-mapping-rows tr").filter(has=page.get_by_text(source_label, exact=True))
     expect(mapping_row).to_contain_text("Canonical Intake Class")
     expect(mapping_row).to_contain_text("1")
+    expect(mapping_row).to_contain_text(STUDENT_INTAKE_2021)
 
     second_code = "IT" + uuid4().hex[:8].upper()
     class_form.locator('[name="code"]').fill(second_code)
@@ -184,3 +245,54 @@ def test_operator_can_review_but_not_edit_intake_class_mappings(page, make_accou
     expect(mapping_row.get_by_role("checkbox")).to_be_disabled()
     expect(mapping_row.get_by_role("button", name=f"Save mapping for {source_label}")).to_be_disabled()
     expect(page.locator("#student-class-mapping-form")).to_be_hidden()
+
+
+def test_it_admin_retention_controls_require_dry_run_and_explicit_confirmation(page, make_account, monkeypatch):
+    from app.routes import student_imports
+
+    settings = get_settings().model_copy(update={"student_import_retention_days": 1})
+    monkeypatch.setattr(student_imports, "get_settings", lambda: settings)
+    account = make_account("IT Administrator")
+    with SessionLocal() as db:
+        batch = StudentImportBatch(
+            status="PREVIEW",
+            source_ciphertext=encrypt_sensitive_bytes(b"synthetic workbook bytes"),
+            rows_ciphertext=encrypt_sensitive_bytes(b"[]"),
+            row_count=1,
+            valid_count=1,
+            invalid_count=0,
+            warning_count=0,
+            existing_count=0,
+            new_count=1,
+            created_by=account["id"],
+            created_at=datetime.now(UTC) - timedelta(days=2),
+        )
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+
+    login(page, account)
+    page.get_by_role("button", name="Reference data", exact=True).click()
+    status = page.locator("#student-import-retention-status")
+    expect(status).to_contain_text("1 eligible payload")
+    purge_button = page.get_by_role("button", name="Purge eligible payloads", exact=True)
+    expect(purge_button).to_be_disabled()
+    confirmation = page.get_by_label("I understand this permanently removes the retained import workbook and staged-row payloads.")
+    confirmation.check()
+    expect(purge_button).to_be_disabled()
+
+    page.get_by_role("button", name="Preview eligible payloads", exact=True).click()
+    expect(page.locator("#student-import-retention-result")).to_contain_text("Dry run complete: 1 encrypted payload")
+    expect(confirmation).not_to_be_checked()
+    expect(purge_button).to_be_disabled()
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, batch_id)
+        assert batch.status == "PREVIEW" and batch.source_ciphertext and batch.rows_ciphertext
+
+    confirmation.check()
+    expect(purge_button).to_be_enabled()
+    purge_button.click()
+    expect(page.locator("#student-import-retention-result")).to_contain_text("1 encrypted payload(s) purged")
+    with SessionLocal() as db:
+        batch = db.get(StudentImportBatch, batch_id)
+        assert batch.status == "EXPIRED" and batch.source_ciphertext is None and batch.rows_ciphertext is None

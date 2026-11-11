@@ -6,11 +6,19 @@ export function createReferenceDataWorkspace({$, api, run, notice, cell, showPan
   };
   const titles = {categories: "category", institutions: "institution", "academic-years": "academic year"};
   let currentCatalog = "categories";
+  let retentionPreviewReady = false;
+  let retentionPurgeToken = null;
 
   function clear() {
     $("reference-catalog-rows").replaceChildren();
     $("reference-catalog-create").reset();
     $("reference-catalog-help").textContent = "";
+    $("student-import-retention-status").textContent = "Retention status has not been loaded.";
+    $("student-import-retention-result").textContent = "";
+    $("student-import-retention-confirm").checked = false;
+    $("student-import-retention-purge").disabled = true;
+    retentionPreviewReady = false;
+    retentionPurgeToken = null;
   }
 
   function field(tag, value, type = "text") {
@@ -85,8 +93,29 @@ export function createReferenceDataWorkspace({$, api, run, notice, cell, showPan
     }
   }
 
+  function renderRetention(data, {previewed = false} = {}) {
+    const status = $("student-import-retention-status");
+    const result = $("student-import-retention-result");
+    status.textContent = data.enabled
+      ? `Retention: ${data.retention_days} days. ${data.eligible_batches} eligible payload(s): ${data.eligible_preview_batches} preview(s), ${data.eligible_committed_batches} committed batch(es).${data.oldest_eligible_created_at ? ` Oldest: ${new Date(data.oldest_eligible_created_at).toLocaleString()}.` : ""}`
+      : "Retention purging is disabled (STUDENT_IMPORT_RETENTION_DAYS is 0). No payloads are eligible.";
+    result.textContent = "";
+    retentionPreviewReady = previewed && data.enabled && data.eligible_batches > 0 && Boolean(data.purge_token);
+    retentionPurgeToken = retentionPreviewReady ? data.purge_token : null;
+    $("student-import-retention-confirm").checked = false;
+    $("student-import-retention-purge").disabled = !retentionPreviewReady || !$("student-import-retention-confirm").checked;
+  }
+
+  async function refreshRetention() {
+    const data = await api("/student-imports/retention");
+    renderRetention(data);
+  }
+
   async function refresh() {
-    const rows = await api(`/student-reference/catalogs/${currentCatalog}?include_inactive=true`);
+    const [rows] = await Promise.all([
+      api(`/student-reference/catalogs/${currentCatalog}?include_inactive=true`),
+      refreshRetention(),
+    ]);
     render(rows);
   }
 
@@ -121,6 +150,27 @@ export function createReferenceDataWorkspace({$, api, run, notice, cell, showPan
     button.addEventListener("click", () => selectCatalog(button.dataset.referenceTab));
   }
   $("refresh-reference-data").addEventListener("click", (event) => run(event.currentTarget, refresh));
+  $("student-import-retention-dry-run").addEventListener("click", (event) => run(event.currentTarget, async () => {
+    const data = await api("/student-imports/retention/purge", "POST", {apply: false});
+    renderRetention(data, {previewed: true});
+    $("student-import-retention-result").textContent = `Dry run complete: ${data.eligible_batches} encrypted payload(s) would be purged. No data was changed.`;
+  }));
+  $("student-import-retention-confirm").addEventListener("change", () => {
+    $("student-import-retention-purge").disabled = !retentionPreviewReady || !$("student-import-retention-confirm").checked;
+  });
+  $("student-import-retention-purge").addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    run(button, async () => {
+      if (!retentionPreviewReady || !retentionPurgeToken || !$("student-import-retention-confirm").checked) {
+        throw new Error("Preview eligible payloads and confirm the purge first.");
+      }
+      const data = await api("/student-imports/retention/purge", "POST", {apply: true, purge_token: retentionPurgeToken});
+      renderRetention(data);
+      $("student-import-retention-result").textContent = `${data.purged_batches} encrypted payload(s) purged. Student profiles, import outcomes and audit records were retained.`;
+    }).finally(() => {
+      button.disabled = !retentionPreviewReady || !$("student-import-retention-confirm").checked;
+    });
+  });
   $("reference-catalog-create").addEventListener("submit", (event) => {
     event.preventDefault();
     const form = event.currentTarget;
