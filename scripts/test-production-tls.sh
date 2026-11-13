@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$script_dir"
 image="${1:-sps-student-dashboard-proxy:ci}"
 image_tag="${image##*:}"
 project="sps-production-tls-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 temp_dir="$(mktemp -d)"
 compose=(docker compose --project-name "$project" --file docker-compose.yml --file docker-compose.production.yml)
+startup=(bash "$script_dir/scripts/compose-up.sh" --project-name "$project" --file docker-compose.yml --file docker-compose.production.yml --env-file "$temp_dir/production.env")
 
 cleanup() {
   status=$?
@@ -51,7 +54,12 @@ else
   docker run --rm --interactive python:3.12-alpine python -c "$compose_assertions" < "$temp_dir/compose.json"
 fi
 
-"${compose[@]}" --env-file "$temp_dir/production.env" up --detach
+if ! "${startup[@]}"; then
+  "${compose[@]}" --env-file "$temp_dir/production.env" ps --all || true
+  "${compose[@]}" --env-file "$temp_dir/production.env" logs --no-color || true
+  echo "Production HTTPS stack startup failed" >&2
+  exit 1
+fi
 http_headers="$temp_dir/http.headers"
 https_headers="$temp_dir/https.headers"
 https_body="$temp_dir/https.body"
