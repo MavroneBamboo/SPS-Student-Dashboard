@@ -10,6 +10,8 @@ The attendance increment adds the Operator **Attendance** screen for real daily 
 
 The subsequent profile increment adds the Operator **Student profiles** screen, with paged search, create/edit, status history and version-checked saves. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md). Operators can also upload supported intake workbooks, inspect a sanitized preview and choose create-only or explicit update-existing commit; see [STUDENT_IMPORTS.md](STUDENT_IMPORTS.md). Class/catalog reconciliation and setup/recovery remain outstanding.
 
+IT Administrators and Superusers can run an audited, read-only legacy `.pri` preflight from the **Legacy timetable preflight** workspace. It shows aggregate resource counts, the numeric period map and reconciliation issue codes without retaining the upload or exposing resource names. This is a migration readiness tool; it does not import timetable records.
+
 Start the Compose stack using the configured deployment secrets, then open `http://localhost:8080/` (redirects to `/ui/`). The approved synthetic prototype remains separately available at `/prototype/index.html`. The root now opens the actual application, with no prototype fallback. Deployments must supply approved HTTPS termination before operational use; the current development Compose listener remains HTTP.
 
 ## Delivered workflow

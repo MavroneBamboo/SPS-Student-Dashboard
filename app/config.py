@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     app_encryption_key: str = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
     app_encryption_previous_keys: str = ""
     student_import_retention_days: int = Field(default=0, ge=0, le=3650)
+    legacy_pri_key_hex: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore", hide_input_in_errors=True)
 
@@ -50,6 +51,14 @@ class Settings(BaseSettings):
             except (ValueError, TypeError):
                 problems.append("Application encryption key configuration is invalid")
                 break
+
+        if self.legacy_pri_key_hex.strip():
+            try:
+                legacy_key = bytes.fromhex(self.legacy_pri_key_hex)
+                if len(legacy_key) not in (16, 24, 32):
+                    raise ValueError
+            except ValueError:
+                problems.append("LEGACY_PRI_KEY_HEX must be a valid 16, 24 or 32 byte hexadecimal key")
 
         if problems:
             raise ValueError("Invalid production configuration: " + "; ".join(problems))

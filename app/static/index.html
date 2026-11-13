@@ -57,7 +57,7 @@
     </section>
     <section id="workspace" hidden>
       <div class="workspace-bar"><div><h1 id="workspace-title">Workspace</h1><p id="identity"></p></div><div class="actions"><button id="change-password" class="secondary">Change password</button><button id="signout" class="secondary">Sign out</button></div></div>
-      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary" hidden>Timetable / Schedule</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="audit-nav" class="secondary" hidden>Audit log</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button><button id="sessions-nav" class="secondary">Account sessions</button></nav>
+      <nav aria-label="Workspace"><button id="dashboard-nav" class="secondary">Dashboard</button><button id="profiles-nav" class="secondary" hidden>Student profiles</button><button id="attendance-nav" class="secondary" hidden>Attendance</button><button id="timetable-nav" class="secondary">Timetable / Schedule</button><button id="legacy-pri-nav" class="secondary" hidden>Legacy timetable preflight</button><button id="users-nav" class="secondary" hidden>User administration</button><button id="audit-nav" class="secondary" hidden>Audit log</button><button id="reference-data-nav" class="secondary" hidden>Reference data</button><button id="sessions-nav" class="secondary">Account sessions</button></nav>
       <section id="dashboard-panel" hidden aria-labelledby="dashboard-title">
         <div class="section-bar"><h2 id="dashboard-title">Intake and attendance overview</h2><div class="actions"><button id="dashboard-export" class="secondary">Download filtered Excel report</button><button id="refresh-dashboard">Refresh data</button></div></div>
         <form id="dashboard-filter" class="filters">
@@ -269,6 +269,25 @@
           <button type="submit">Add reference value</button>
         </form>
         <div class="panel table-wrap"><table><thead><tr><th>Name</th><th>Description</th><th>Effective from</th><th>Effective to</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="reference-catalog-rows"></tbody></table></div>
+      </section>
+      <section id="legacy-pri-panel" hidden aria-labelledby="legacy-pri-title">
+        <div class="section-bar"><div><h2 id="legacy-pri-title">Legacy timetable preflight</h2><p>Check a legacy project before planning migration. This preflight never imports timetable data.</p></div></div>
+        <section class="panel">
+          <h3>Validate a .pri project</h3>
+          <p>The encrypted project is processed in memory and discarded after validation. Results omit teacher, subject and class names. Rows in numeric Period 3 are reported for review because Period 3 is lunch in this system.</p>
+          <form id="legacy-pri-form" class="filters">
+            <label>Legacy project (.pri)<input name="project" type="file" accept=".pri,application/octet-stream" required></label>
+            <button type="submit">Validate project</button>
+          </form>
+          <p id="legacy-pri-status" aria-live="polite">No project has been checked in this session.</p>
+          <div id="legacy-pri-result" hidden>
+            <h4>Resource and record counts</h4><div id="legacy-pri-counts" class="metrics"></div>
+            <h4>Legacy period mapping</h4><div id="legacy-pri-periods" class="metrics"></div>
+            <h4>Availability profile formats</h4><div id="legacy-pri-availability" class="metrics"></div>
+            <h4>Issues to reconcile</h4><ul id="legacy-pri-issues"></ul>
+            <p id="legacy-pri-readiness"></p>
+          </div>
+        </section>
       </section>
       <section id="audit-panel" hidden aria-labelledby="audit-title">
         <div class="section-bar"><div><h2 id="audit-title">System audit</h2><p>Read-only record of application and security events, newest first.</p></div><button id="refresh-audit" class="secondary">Refresh audit log</button></div>

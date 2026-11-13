@@ -191,6 +191,7 @@ async function showSignedInWorkspace() {
   $("profiles-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
   $("attendance-nav").hidden = !["Operator", "Superuser"].includes(identity.role);
   $("timetable-nav").hidden = false;
+  $("legacy-pri-nav").hidden = !["Superuser", "IT Administrator"].includes(identity.role);
   $("reference-data-nav").hidden = !["IT Administrator", "Superuser"].includes(identity.role);
   if (identity.role === "IT Administrator") await showUsers();
   else await showDashboard();
@@ -209,10 +210,12 @@ function showPanel(name) {
   $("profiles-panel").hidden = name !== "profiles";
   $("attendance-panel").hidden = name !== "attendance";
   $("timetable-panel").hidden = name !== "timetable";
+  $("legacy-pri-panel").hidden = name !== "legacy-pri";
   $("reference-data-panel").hidden = name !== "reference-data";
   $("sessions-panel").hidden = name !== "sessions";
   const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav", sessions: "sessions-nav"};
   navIds["reference-data"] = "reference-data-nav";
+  navIds["legacy-pri"] = "legacy-pri-nav";
   for (const [panel, id] of Object.entries(navIds)) {
     const button = $(id);
     const active = panel === name;
@@ -220,7 +223,55 @@ function showPanel(name) {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", sessions: "Account sessions", "reference-data": "Reference data"}[name];
+  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", sessions: "Account sessions", "reference-data": "Reference data", "legacy-pri": "Legacy timetable preflight"}[name];
+}
+
+async function validateLegacyPri(file) {
+  const started = epoch;
+  const activeToken = token;
+  let response;
+  try {
+    response = await fetch("/api/v1/timetable/legacy-projects/validate", {
+      method: "POST",
+      headers: {Authorization: `Bearer ${activeToken}`, "Content-Type": "application/octet-stream", Accept: "application/json"},
+      body: file,
+      cache: "no-store",
+      credentials: "omit",
+      signal: requests.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    throw new Error("Unable to reach the server. Check your connection and try again.");
+  }
+  if (started !== epoch || activeToken !== token) throw new DOMException("Session changed", "AbortError");
+  const data = await response.json().catch(() => ({detail: "The server could not validate this project."}));
+  if (response.status === 401 && token) {
+    signedOut("Your session ended. Sign in again.");
+    throw new DOMException("Session ended", "AbortError");
+  }
+  if (!response.ok) throw new Error(validationMessage(data.detail));
+  return data;
+}
+
+function renderLegacyPriSummary(targetId, values) {
+  const target = $(targetId);
+  target.replaceChildren();
+  if (Object.keys(values).length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No records.";
+    target.append(empty);
+    return;
+  }
+  for (const [name, value] of Object.entries(values)) {
+    const item = document.createElement("div");
+    item.className = "metric";
+    const label = document.createElement("span");
+    label.textContent = name.replaceAll("_", " ");
+    const result = document.createElement("strong");
+    result.textContent = String(value);
+    item.append(label, result);
+    target.append(item);
+  }
 }
 function breakdown(id, values) {
   const list = document.createElement("dl");
@@ -501,6 +552,44 @@ $("profiles-nav").addEventListener("click", () => run($("profiles-nav"), student
 $("attendance-nav").addEventListener("click", () => run($("attendance-nav"), attendance.show));
 $("timetable-nav").addEventListener("click", () => run($("timetable-nav"), timetable.show));
 $("reference-data-nav").addEventListener("click", () => run($("reference-data-nav"), referenceData.show));
+$("legacy-pri-nav").addEventListener("click", () => {
+  if (!["Superuser", "IT Administrator"].includes(identity?.role)) return;
+  showPanel("legacy-pri");
+});
+$("legacy-pri-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  run(event.currentTarget, async () => {
+    const form = event.currentTarget;
+    const file = event.currentTarget.elements.project.files[0];
+    if (!file) throw new Error("Choose a .pri project file.");
+    if (file.size > 10 * 1024 * 1024) throw new Error("Legacy project exceeds the 10 MiB upload limit.");
+    $("legacy-pri-result").hidden = true;
+    $("legacy-pri-status").textContent = "Validating the project…";
+    let report;
+    try { report = await validateLegacyPri(file); }
+    finally { form.reset(); }
+    renderLegacyPriSummary("legacy-pri-counts", report.counts);
+    renderLegacyPriSummary("legacy-pri-periods", report.period_mapping);
+    renderLegacyPriSummary("legacy-pri-availability", report.availability_profiles);
+    const issues = $("legacy-pri-issues");
+    issues.replaceChildren();
+    for (const [code, count] of Object.entries(report.issue_counts)) {
+      const item = document.createElement("li");
+      item.textContent = `${code.replaceAll("_", " ")}: ${count}`;
+      issues.append(item);
+    }
+    if (!issues.childElementCount) {
+      const item = document.createElement("li");
+      item.textContent = "No reconciliation issues found.";
+      issues.append(item);
+    }
+    $("legacy-pri-readiness").textContent = report.import_ready
+      ? "Preflight passed. This report is advisory; no data was imported."
+      : "Resolve these findings before a migration. No data was imported.";
+    $("legacy-pri-result").hidden = false;
+    $("legacy-pri-status").textContent = "Validation completed. Results contain counts and issue codes only.";
+  });
+});
 
 $("login-form").addEventListener("submit", (event) => {
   event.preventDefault();
