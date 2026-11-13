@@ -50,23 +50,108 @@ services:
         INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
     command: ["sh", "-c", "alembic upgrade head && python -m app.db_permissions"]
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_ADMIN_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
       DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
       DATABASE_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set DATABASE_RUNTIME_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:?set BOOTSTRAP_PASSWORD in .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
+      APP_ENCRYPTION_PREVIOUS_KEYS: ${APP_ENCRYPTION_PREVIOUS_KEYS:-}
+    depends_on:
+      tde-setup:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+
+  tde-setup:
+    build:
+      context: .
+      args:
+        INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
+    command: ["python", "-m", "app.tde_setup", "--verify"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_ADMIN_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
+      TDE_PROVIDER: ${TDE_PROVIDER:-file}
+      TDE_PROVIDER_NAME: ${TDE_PROVIDER_NAME:-sps-key-provider}
+      TDE_DEFAULT_KEY_NAME: ${TDE_DEFAULT_KEY_NAME:-sps-default-key}
+      TDE_SERVER_KEY_NAME: ${TDE_SERVER_KEY_NAME:-sps-wal-key}
+      TDE_FILE_KEY_PATH: ${TDE_FILE_KEY_PATH:-/var/lib/postgresql/tde-keyring/pg_tde_keyring}
+      TDE_VAULT_URL: ${TDE_VAULT_URL:-}
+      TDE_VAULT_MOUNT: ${TDE_VAULT_MOUNT:-tde/data/sps-dashboard}
+      TDE_VAULT_TOKEN_FILE: ${TDE_VAULT_TOKEN_FILE:-/run/secrets/pg-tde-vault-token}
+      TDE_VAULT_CA_FILE: ${TDE_VAULT_CA_FILE:-}
     depends_on:
       db:
         condition: service_healthy
     networks: [private]
     restart: "no"
 
+  tde-restore-setup:
+    profiles: [maintenance]
+    build:
+      context: .
+      args:
+        INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
+    command: ["sh", "-c", "python -m app.tde_setup --prepare && python -m app.db_permissions"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/${RESTORE_TARGET_DATABASE:-sps_restore_target}
+      DATABASE_ADMIN_URL: postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/${RESTORE_TARGET_DATABASE:-sps_restore_target}
+      DATABASE_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set DATABASE_RUNTIME_PASSWORD in .env}
+      DATABASE_RUNTIME_ROLE: ${DATABASE_RUNTIME_ROLE:-sps_runtime}
+      TDE_PROVIDER: ${TDE_PROVIDER:-file}
+      TDE_PROVIDER_NAME: ${TDE_PROVIDER_NAME:-sps-key-provider}
+      TDE_DEFAULT_KEY_NAME: ${TDE_DEFAULT_KEY_NAME:-sps-default-key}
+      TDE_SERVER_KEY_NAME: ${TDE_SERVER_KEY_NAME:-sps-wal-key}
+      TDE_FILE_KEY_PATH: ${TDE_FILE_KEY_PATH:-/var/lib/postgresql/tde-keyring/pg_tde_keyring}
+      TDE_VAULT_URL: ${TDE_VAULT_URL:-}
+      TDE_VAULT_MOUNT: ${TDE_VAULT_MOUNT:-tde/data/sps-dashboard}
+      TDE_VAULT_TOKEN_FILE: ${TDE_VAULT_TOKEN_FILE:-/run/secrets/pg-tde-vault-token}
+      TDE_VAULT_CA_FILE: ${TDE_VAULT_CA_FILE:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+
+  postgres-data-init:
+    image: sps-postgres-tde:${POSTGRES_TDE_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/postgres-tde.Dockerfile
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for directory in /var/lib/postgresql/data /var/lib/postgresql/tde-keyring; do
+          if [ "$$(stat -c '%u' "$$directory")" != 26 ]; then chown -R 26:26 "$$directory"; fi
+          chmod 700 "$$directory"
+        done
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - tde-keyring:/var/lib/postgresql/tde-keyring
+    restart: "no"
+
   db:
-    image: postgres:17.2-alpine
+    image: sps-postgres-tde:${POSTGRES_TDE_IMAGE_TAG:-local}
+    command: ["postgres", "-c", "shared_preload_libraries=pg_tde", "-c", "pg_tde.cipher=aes_256"]
     environment:
       POSTGRES_DB: sps_dashboard
       POSTGRES_USER: sps_app
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+      PGDATA: /var/lib/postgresql/data
+    depends_on:
+      postgres-data-init:
+        condition: service_completed_successfully
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - tde-keyring:/var/lib/postgresql/tde-keyring
     networks: [private]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sps_app -d sps_dashboard"]
@@ -122,8 +207,8 @@ services:
       - ${BACKUP_HOST_PATH:-./backups}:/backups:ro
       - ${BACKUP_AGE_IDENTITY_HOST_PATH:-./secrets/backup.agekey}:/run/secrets/backup.agekey:ro
     depends_on:
-      db:
-        condition: service_healthy
+      tde-restore-setup:
+        condition: service_completed_successfully
     networks: [private]
     restart: "no"
 
@@ -150,3 +235,4 @@ networks:
 
 volumes:
   postgres-data:
+  tde-keyring:

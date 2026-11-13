@@ -5,12 +5,12 @@ import json
 from datetime import UTC, date, datetime
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
@@ -27,28 +27,52 @@ def dashboard(
     claims: Claims,
     class_name: str | None = Query(default=None, max_length=120),
     institution: str | None = Query(default=None, max_length=120),
+    category: str | None = Query(default=None, max_length=40),
+    status: str = Query(default="ACTIVE", pattern="^(ACTIVE|INACTIVE|ALL)$"),
+    academic_year: str | None = Query(default=None, max_length=20),
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict:
-    student_query = select(Student)
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must be on or before date_to")
+    profile_filters = []
     if class_name:
-        student_query = student_query.where(Student.class_name == class_name)
+        profile_filters.append(Student.class_name == class_name.strip())
     if institution:
-        student_query = student_query.where(Student.institution == institution.strip())
-    students = db.scalars(student_query).all()
-    active_students = [student for student in students if student.status == "ACTIVE"]
-    by_class: dict[str, int] = {}
-    by_category: dict[str, int] = {}
-    by_institution: dict[str, int] = {}
-    for student in active_students:
-        by_class[student.class_name] = by_class.get(student.class_name, 0) + 1
-        by_category[student.category] = by_category.get(student.category, 0) + 1
-        institution_name = student.institution or "Unassigned"
-        by_institution[institution_name] = by_institution.get(institution_name, 0) + 1
+        profile_filters.append(Student.institution == institution.strip())
+    if category:
+        profile_filters.append(Student.category == category.strip())
+    if academic_year:
+        profile_filters.append(Student.academic_year == academic_year.strip())
+    profile_scope_filters = list(profile_filters)
+    active_filters = [*profile_filters, Student.status == "ACTIVE"]
+    if status != "ALL":
+        profile_filters.append(Student.status == status)
+
+    def grouped_counts(column) -> dict[str, int]:
+        return {
+            (key if key is not None else "Unassigned"): int(count)
+            for key, count in db.execute(select(column, func.count()).select_from(Student).where(*profile_filters).group_by(column))
+        }
+
+    matching_profiles = int(db.scalar(select(func.count()).select_from(Student).where(*profile_filters)) or 0)
+    active_profiles = int(db.scalar(select(func.count()).select_from(Student).where(*active_filters)) or 0)
+    by_class = grouped_counts(Student.class_name)
+    by_category = grouped_counts(Student.category)
+    by_institution = grouped_counts(Student.institution)
+    age_counts = db.execute(
+        select(
+            func.sum(case((Student.age_in_academic_year <= 21, 1), else_=0)),
+            func.sum(case((Student.age_in_academic_year > 21, 1), else_=0)),
+            func.sum(case((Student.age_in_academic_year.is_(None), 1), else_=0)),
+        )
+        .select_from(Student)
+        .where(*profile_filters)
+    ).one()
 
     session_query = select(AttendanceSession)
     if class_name:
-        session_query = session_query.where(AttendanceSession.class_name == class_name)
+        session_query = session_query.where(AttendanceSession.class_name == class_name.strip())
     if date_from:
         session_query = session_query.where(AttendanceSession.session_date >= date_from)
     if date_to:
@@ -85,19 +109,53 @@ def dashboard(
                 "rate": round(100 * session_present / session.expected_count, 1) if session.expected_count else 0,
             }
         )
+
+    def as_utc(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    data_profile_filters = active_filters if status == "ACTIVE" else profile_scope_filters
+    if status == "INACTIVE":
+        data_profile_filters = [*profile_scope_filters, Student.status.in_(("ACTIVE", "INACTIVE"))]
+    profile_data_through = as_utc(db.scalar(select(func.max(Student.updated_at)).where(*data_profile_filters)))
+    record_data_through = (
+        as_utc(db.scalar(select(func.max(AttendanceRecord.updated_at)).where(AttendanceRecord.session_id.in_(session_ids))))
+        if session_ids
+        else None
+    )
+    session_data_through = max((as_utc(session.updated_at) for session in sessions if session.updated_at is not None), default=None)
+    attendance_timestamps = [value for value in (session_data_through, record_data_through) if value is not None]
+    attendance_data_through = max(attendance_timestamps, default=None)
+    data_timestamps = [value for value in (profile_data_through, attendance_data_through) if value is not None]
+    data_through = max(data_timestamps, default=None)
+    refreshed_at = datetime.now(UTC)
     return {
         "filters": {
-            "class_name": class_name,
-            "institution": institution,
+            "class_name": class_name.strip() if class_name else None,
+            "institution": institution.strip() if institution else None,
+            "category": category.strip() if category else None,
+            "status": status,
+            "academic_year": academic_year.strip() if academic_year else None,
             "date_from": date_from.isoformat() if date_from else None,
             "date_to": date_to.isoformat() if date_to else None,
         },
-        "refreshed_at": datetime.now(UTC).isoformat(),
+        "refreshed_at": refreshed_at.isoformat(),
+        "requested_by": claims["username"],
+        "profile_data_through_at": profile_data_through.isoformat() if profile_data_through else None,
+        "attendance_data_through_at": attendance_data_through.isoformat() if attendance_data_through else None,
+        "data_through_at": data_through.isoformat() if data_through else None,
         "students": {
-            "active": len(active_students),
+            "active": active_profiles,
+            "matching": matching_profiles,
             "by_class": dict(sorted(by_class.items())),
             "by_category": dict(sorted(by_category.items())),
             "by_institution": dict(sorted(by_institution.items())),
+            "by_age_band": {
+                "21 and under": int(age_counts[0] or 0),
+                "Over 21": int(age_counts[1] or 0),
+                "Age not recorded": int(age_counts[2] or 0),
+            },
         },
         "attendance": {
             "sessions": len(sessions),
@@ -109,6 +167,124 @@ def dashboard(
             "trend": trend,
         },
     }
+
+
+@router.get("/dashboard.xlsx", dependencies=[Depends(require_roles(*READ_ROLES))])
+def dashboard_xlsx(
+    db: DbSession,
+    claims: Claims,
+    class_name: str | None = Query(default=None, max_length=120),
+    institution: str | None = Query(default=None, max_length=120),
+    category: str | None = Query(default=None, max_length=40),
+    status: str = Query(default="ACTIVE", pattern="^(ACTIVE|INACTIVE|ALL)$"),
+    academic_year: str | None = Query(default=None, max_length=20),
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Response:
+    result = dashboard(
+        db,
+        claims,
+        class_name=class_name,
+        institution=institution,
+        category=category,
+        status=status,
+        academic_year=academic_year,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    workbook = Workbook()
+    overview = workbook.active
+    overview.title = "Overview"
+    profile_sheet = workbook.create_sheet("Profile breakdowns")
+    attendance_sheet = workbook.create_sheet("Attendance sessions")
+
+    def append_row(sheet, values: list[str | int | float | None]) -> None:
+        is_empty = sheet.max_row == 1 and sheet.max_column == 1 and sheet.cell(1, 1).value is None
+        row_number = 1 if is_empty else sheet.max_row + 1
+        for column_number, value in enumerate(values, start=1):
+            cell = sheet.cell(row_number, column_number, value)
+            if isinstance(value, str):
+                cell.data_type = "s"
+
+    append_row(overview, ["SPS Student Dashboard | Filtered report"])
+    append_row(overview, ["Generated at (UTC)", result["refreshed_at"]])
+    append_row(overview, ["Data through (UTC)", result["data_through_at"] or "No matching source records"])
+    append_row(overview, ["Profile data through (UTC)", result["profile_data_through_at"] or "No matching profile records"])
+    append_row(overview, ["Attendance data through (UTC)", result["attendance_data_through_at"] or "No matching attendance records"])
+    append_row(overview, ["Generated by", result["requested_by"]])
+    append_row(overview, ["Profile status scope", status])
+    for key, value in result["filters"].items():
+        append_row(overview, [f"Filter: {key}", value if value is not None else "All"])
+    append_row(overview, ["Matching student profiles", result["students"]["matching"]])
+    append_row(overview, ["Active profiles in selected non-status scope", result["students"]["active"]])
+    append_row(overview, ["Attendance rate (%)", result["attendance"]["rate"]])
+    append_row(overview, ["Attendance sessions", result["attendance"]["sessions"]])
+    append_row(overview, ["Expected attendance records", result["attendance"]["expected"]])
+    append_row(overview, ["Recorded attendance records", result["attendance"]["recorded"]])
+    append_row(overview, ["Missing attendance records", result["attendance"]["missing"]])
+
+    append_row(profile_sheet, ["Breakdown", "Value", "Count"])
+    for breakdown_name in ("by_class", "by_category", "by_institution", "by_age_band"):
+        for value, count in result["students"][breakdown_name].items():
+            append_row(profile_sheet, [breakdown_name.removeprefix("by_"), value, count])
+
+    append_row(
+        attendance_sheet,
+        ["Session date", "Class", "Session", "Present / late", "Recorded", "Expected", "Rate (%)"],
+    )
+    for session in result["attendance"]["trend"]:
+        append_row(
+            attendance_sheet,
+            [
+                session["date"],
+                session["class"],
+                session["session"],
+                session["present_or_late"],
+                session["recorded"],
+                session["expected"],
+                session["rate"],
+            ],
+        )
+
+    header_fill = PatternFill("solid", fgColor="17365D")
+    header_font = Font(color="FFFFFF", bold=True)
+    for sheet in workbook.worksheets:
+        sheet.freeze_panes = "A2"
+        sheet.sheet_view.showGridLines = False
+        sheet.column_dimensions["A"].width = 34
+        sheet.column_dimensions["B"].width = 36
+        sheet.column_dimensions["C"].width = 18
+        for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+    overview.column_dimensions["A"].width = 48
+    profile_sheet.auto_filter.ref = profile_sheet.dimensions
+    attendance_sheet.auto_filter.ref = attendance_sheet.dimensions
+
+    output = io.BytesIO()
+    workbook.save(output)
+    audit = AuditEvent(
+        actor_id=int(claims["sub"]),
+        action="report.dashboard.exported",
+        entity_type="DASHBOARD_REPORT",
+        entity_id="filtered-excel",
+        details_json=json.dumps(
+            {
+                "filters": result["filters"],
+                "matching_profiles": result["students"]["matching"],
+                "attendance_sessions": result["attendance"]["sessions"],
+            },
+            sort_keys=True,
+        ),
+    )
+    db.add(audit)
+    db.commit()
+    filename = f"dashboard-{date.today().isoformat()}.xlsx"
+    return Response(
+        output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/attendance.csv", dependencies=[Depends(require_roles(*READ_ROLES))])
@@ -221,8 +397,9 @@ def attendance_monthly_xlsx(
         cell.data_type = "s"
 
     days_in_month = calendar.monthrange(year, month_number)[1]
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3 + days_in_month * 2)
-    sheet.cell(1, 1, f"MONTHLY ATTENDANCE | {first_day.strftime('%B %Y')}")
+    sheet.cell(1, 1, "MONTH")
+    sheet.cell(1, 3, first_day)
+    sheet.cell(1, 3).number_format = "mmmm yyyy"
     sheet.cell(2, 1, "CLASS")
     write_literal(2, 3, class_name)
     legacy_sessions = [session for session in sessions if session.roster_snapshot_state != "CAPTURED"]
@@ -232,29 +409,37 @@ def attendance_monthly_xlsx(
         roster_note = "Roster source: session snapshots."
     else:
         roster_note = "Roster source: current active profiles; no sessions exist in this month."
+    sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=3)
     sheet.cell(3, 1, roster_note)
-    sheet.cell(4, 1, "STATUS")
-    sheet.cell(4, 2, "PRIS NO.")
-    sheet.cell(4, 3, "NAME")
+    sheet.cell(3, 1).alignment = Alignment(vertical="center", wrap_text=True)
+    for column, value in ((1, "STATUS"), (2, "PRIS NO."), (3, "NAME")):
+        sheet.merge_cells(start_row=4, start_column=column, end_row=5, end_column=column)
+        cell = sheet.cell(4, column, value)
+        cell.fill = PatternFill("solid", fgColor="17365D")
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     header_fill = PatternFill("solid", fgColor="17365D")
     header_font = Font(color="FFFFFF", bold=True)
-    for column in range(1, 4):
-        cell = sheet.cell(4, column)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center")
     for day in range(1, days_in_month + 1):
         first_col = 4 + (day - 1) * 2
+        day_date = date(year, month_number, day)
         sheet.merge_cells(start_row=3, start_column=first_col, end_row=3, end_column=first_col + 1)
-        sheet.cell(3, first_col, date(year, month_number, day))
-        sheet.cell(3, first_col).number_format = "ddd, d mmm"
+        weekday = sheet.cell(3, first_col, day_date.strftime("%a").upper())
+        weekday.alignment = Alignment(horizontal="center", vertical="center")
+        weekday.fill = PatternFill("solid", fgColor="D9EAF7")
+        sheet.merge_cells(start_row=4, start_column=first_col, end_row=4, end_column=first_col + 1)
+        day_header = sheet.cell(4, first_col, day_date)
+        day_header.number_format = "d mmm"
+        day_header.alignment = Alignment(horizontal="center", vertical="center")
+        day_header.fill = header_fill
+        day_header.font = header_font
         for slot, column in (("AM", first_col), ("PM", first_col + 1)):
-            cell = sheet.cell(4, column, slot)
+            cell = sheet.cell(5, column, slot)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
     ordered_roster = sorted(roster_entries.values(), key=lambda entry: entry.pris_no_snapshot)
-    for row_number, entry in enumerate(ordered_roster, start=5):
+    for row_number, entry in enumerate(ordered_roster, start=6):
         write_literal(row_number, 1, entry.student_status or "")
         write_literal(row_number, 2, entry.pris_no_snapshot)
         write_literal(row_number, 3, decrypt_sensitive(entry.student_name_encrypted) or "")
@@ -264,7 +449,7 @@ def attendance_monthly_xlsx(
                 code = attendance.get((entry.student_id, day, slot))
                 if code:
                     sheet.cell(row_number, column, code)
-    sheet.freeze_panes = "D5"
+    sheet.freeze_panes = "D6"
     sheet.sheet_view.showGridLines = False
     sheet.column_dimensions["A"].width = 12
     sheet.column_dimensions["B"].width = 16
@@ -272,12 +457,16 @@ def attendance_monthly_xlsx(
     for column in range(4, 4 + days_in_month * 2):
         sheet.column_dimensions[get_column_letter(column)].width = 5
     sheet.page_setup.orientation = "landscape"
-    sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
-    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+    sheet.page_setup.fitToWidth = 2
     sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.print_title_rows = "1:4"
-    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(4, 4 + len(ordered_roster))}"
+    sheet.page_margins.left = 0.2
+    sheet.page_margins.right = 0.2
+    sheet.page_margins.top = 0.25
+    sheet.page_margins.bottom = 0.25
+    sheet.print_title_rows = "1:5"
+    sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(5, 5 + len(ordered_roster))}"
     output = io.BytesIO()
     workbook.save(output)
     safe_class = quote(class_name.strip().replace(" ", "_"), safe="")

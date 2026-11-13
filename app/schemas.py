@@ -167,6 +167,16 @@ class TimetableRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class TimetableRenameRequest(TimetableRevisionRequest):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class TimetableMoveRequest(TimetableRevisionRequest):
+    weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
+    start_period: Literal["P1", "P2", "P3", "P4"]
+
+
 class TimetablePlacementWrite(TimetableRevisionRequest):
     lesson_requirement_id: int = Field(gt=0)
     weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
@@ -218,6 +228,20 @@ class TeacherCreate(BaseModel):
 
 class TeacherResponse(TeacherCreate):
     id: int
+    is_composite: bool = False
+    member_ids: list[int] = Field(default_factory=list)
+
+
+class TeacherGroupCreate(BaseModel):
+    short_code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    full_name: str = Field(min_length=1, max_length=160)
+    member_ids: list[int] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def validate_members(self):
+        if any(member_id <= 0 for member_id in self.member_ids) or len(set(self.member_ids)) != len(self.member_ids):
+            raise ValueError("A teacher group requires at least two distinct positive teacher IDs")
+        return self
 
 
 class LessonRequirementCreate(BaseModel):
@@ -402,6 +426,47 @@ class PeriodUpdate(BaseModel):
         if any(value is None for value in self.model_dump(exclude_unset=True).values()):
             raise ValueError("Period fields cannot be null")
         return self
+
+
+class FixedEventSlot(BaseModel):
+    weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
+    slot_code: Literal["P1", "P2", "P3", "P4"]
+
+
+class TimetableFixedEventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    academic_year: str = Field(min_length=1, max_length=20)
+    label: str = Field(min_length=1, max_length=120)
+    audience_type: Literal["CLASS", "TEACHER"]
+    target_mode: Literal["ALL", "SELECTED"]
+    target_ids: list[int] = Field(default_factory=list)
+    slots: list[FixedEventSlot] = Field(min_length=1, max_length=20)
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_event(self):
+        if self.target_mode == "ALL" and self.target_ids:
+            raise ValueError("ALL fixed events must not include target_ids")
+        if self.target_mode == "SELECTED" and not self.target_ids:
+            raise ValueError("SELECTED fixed events require at least one target_id")
+        if len(self.target_ids) != len(set(self.target_ids)) or any(target_id < 1 for target_id in self.target_ids):
+            raise ValueError("target_ids must be unique positive IDs")
+        keys = [(slot.weekday, slot.slot_code) for slot in self.slots]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Fixed event slots must be unique")
+        if not self.academic_year.strip() or not self.label.strip():
+            raise ValueError("Academic year and event label are required")
+        return self
+
+
+class TimetableFixedEventUpdate(TimetableFixedEventCreate):
+    expected_version: int = Field(ge=1)
+
+
+class TimetableFixedEventResponse(TimetableFixedEventCreate):
+    id: int
+    version: int
 
 
 class StudentCreate(BaseModel):

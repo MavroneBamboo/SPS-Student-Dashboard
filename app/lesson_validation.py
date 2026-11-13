@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import InstructionalClass, LessonRequirement, PeriodDefinition, Subject, Teacher
+from app.models import InstructionalClass, LessonRequirement, PeriodDefinition, Subject, Teacher, TeacherGroupMember
 from app.schemas import WEEKDAYS, LessonRequirementCreate, TeacherCreate
 from app.timetable_periods import resolve_period_rows, validate_period_intervals
 
@@ -62,6 +62,11 @@ def validate_lesson_resources(db: Session, payload: LessonRequirementCreate, *, 
             raise HTTPException(status_code=422, detail=f"{label} is inactive")
     if not is_active:
         return
+    if teacher.is_composite:
+        member_ids = db.scalars(select(TeacherGroupMember.member_teacher_id).where(TeacherGroupMember.group_teacher_id == teacher.id)).all()
+        members = [db.get(Teacher, member_id) for member_id in member_ids]
+        if len(member_ids) < 2 or any(member is None or not member.is_active or member.is_composite for member in members):
+            raise HTTPException(status_code=409, detail="Teacher group must contain at least two active individual teachers")
     try:
         availability = TeacherCreate(
             short_code=teacher.short_code,

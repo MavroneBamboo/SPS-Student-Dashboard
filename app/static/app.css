@@ -272,7 +272,7 @@ td button { min-height: 34px; padding: 7px 10px; font-size: .78rem; }
 #audit-panel summary { color: var(--blue); cursor: pointer; font-weight: 650; }
 
 /* Timetable workspace */
-.timetable-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.timetable-grid { display: grid; grid-template-columns: repeat(var(--amend-columns, 2), minmax(0, 1fr)); gap: 14px; }
 .timetable-class { min-width: 0; padding: 14px; }
 .timetable-class h4 { margin: 2px 2px 10px; }
 .amend-grid { table-layout: fixed; font-size: .74rem; }
@@ -281,9 +281,24 @@ td button { min-height: 34px; padding: 7px 10px; font-size: .78rem; }
 .amend-grid button { width: 100%; min-height: 48px; padding: 5px; font-size: .7rem; line-height: 1.25; overflow-wrap: anywhere; }
 .amend-grid .empty-cell { border: 1px dashed #c6d3e3; background: #f7faff; color: #71829a; }
 .amend-grid .empty-cell:hover:not(:disabled) { border-color: #90afe0; background: #edf4ff; }
+.amend-grid .fixed-event-cell, .weekly-board .fixed-event-cell { border: 1px solid #e5b95b; background: #fff4d8; color: #6f4b06; }
+.amend-grid .fixed-event-cell:hover:not(:disabled), .weekly-board .fixed-event-cell:hover:not(:disabled) { background: #ffedbd; }
 .amend-grid .lesson-cell:disabled { border-color: #cadcf6; background: #eaf2ff; box-shadow: none; color: #224a85; cursor: default; opacity: 1; }
 .amend-grid .lesson-cell.selected-for-swap { border: 2px solid #205ac7; background: #dceaff; box-shadow: 0 0 0 2px rgb(32 90 199 / 14%); color: #173f87; }
+.amend-grid .lesson-cell[data-movable="true"] { cursor: grab; }
+.amend-grid .lesson-cell.dragging-lesson { opacity: .45; cursor: grabbing; }
+.amend-grid .empty-cell.drop-target { border: 2px solid #205ac7; background: #e6f0ff; }
+.amend-grid .lesson-cell.drop-target { border: 2px solid #205ac7; background: #dceaff; }
+.timetable-grid.compact-amend { gap: 8px; }
+.compact-amend .timetable-class { padding: 8px; }
+.compact-amend .timetable-class h4 { margin: 0 0 6px; font-size: .78rem; }
+.compact-amend .amend-grid th, .compact-amend .amend-grid td { padding: 3px 2px; font-size: .62rem; }
+.compact-amend .amend-grid th:first-child, .compact-amend .amend-grid td:first-child { width: 32px; }
+.compact-amend .amend-grid button { min-height: 38px; padding: 3px 2px; font-size: .6rem; }
 .amend-grid .lunch-cell { background: #fff6e3; color: #80581b; font-weight: 700; }
+.timetable-rename-form { align-items: end; margin-top: 8px; }
+.timetable-rename-form label { display: grid; gap: 4px; font-size: .8rem; }
+.timetable-rename-form input { min-width: min(320px, 60vw); }
 .amend-tools { align-items: center; margin: 10px 0; padding: 10px 12px; border: 1px solid #dce6f4; border-radius: 12px; background: #f8fafd; }
 .amend-tools span { color: #52677f; font-size: .82rem; }
 .timetable-actions { align-items: end; }

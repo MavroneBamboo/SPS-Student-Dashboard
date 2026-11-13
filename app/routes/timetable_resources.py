@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
 from app.lesson_validation import validate_existing_class_lessons
-from app.models import ClassCluster, ClassClusterMember, InstructionalClass, PeriodDefinition, Subject, Teacher
+from app.models import ClassCluster, ClassClusterMember, InstructionalClass, PeriodDefinition, Subject, Teacher, TeacherGroupMember
 from app.scheduling_rules import assert_membership_rules_compatible
 from app.schemas import (
     ClusterCreate,
@@ -22,6 +22,7 @@ from app.schemas import (
     SubjectCreate,
     SubjectResponse,
     TeacherCreate,
+    TeacherGroupCreate,
     TeacherResponse,
 )
 from app.timetable_lock import lock_timetable_configuration
@@ -62,7 +63,12 @@ def _flush_or_conflict(db: DbSession, detail: str) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
 
 
-def _teacher_response(row: Teacher) -> TeacherResponse:
+def _teacher_response(db: DbSession, row: Teacher) -> TeacherResponse:
+    member_ids = db.scalars(
+        select(TeacherGroupMember.member_teacher_id)
+        .where(TeacherGroupMember.group_teacher_id == row.id)
+        .order_by(TeacherGroupMember.member_teacher_id)
+    ).all()
     return TeacherResponse(
         id=row.id,
         short_code=row.short_code,
@@ -70,16 +76,19 @@ def _teacher_response(row: Teacher) -> TeacherResponse:
         is_adjunct=row.is_adjunct,
         availability=json.loads(row.availability_json),
         is_active=row.is_active,
+        is_composite=row.is_composite,
+        member_ids=member_ids,
     )
 
 
 @router.get("/teachers", response_model=list[TeacherResponse], dependencies=[READ_ACCESS])
 def list_teachers(db: DbSession, claims: Claims) -> list[TeacherResponse]:
-    return [_teacher_response(row) for row in db.scalars(select(Teacher).order_by(Teacher.short_code)).all()]
+    return [_teacher_response(db, row) for row in db.scalars(select(Teacher).order_by(Teacher.short_code)).all()]
 
 
 @router.post("/teachers", response_model=TeacherResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def create_teacher(payload: TeacherCreate, db: DbSession, claims: Claims) -> TeacherResponse:
+    lock_timetable_configuration(db)
     _ensure_unique_code(db, Teacher, payload.short_code)
     row = Teacher(
         short_code=_normalized_code(payload.short_code),
@@ -94,7 +103,55 @@ def create_teacher(payload: TeacherCreate, db: DbSession, claims: Claims) -> Tea
     record_event(db, int(claims["sub"]), "timetable.teacher.created", "teacher", str(row.id), {"short_code": row.short_code})
     _commit_or_conflict(db, "Teacher code already exists")
     db.refresh(row)
-    return _teacher_response(row)
+    return _teacher_response(db, row)
+
+
+@router.post("/teacher-groups", response_model=TeacherResponse, status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
+def create_teacher_group(payload: TeacherGroupCreate, db: DbSession, claims: Claims) -> TeacherResponse:
+    lock_timetable_configuration(db)
+    _ensure_unique_code(db, Teacher, payload.short_code)
+    members = db.scalars(select(Teacher).where(Teacher.id.in_(payload.member_ids)).order_by(Teacher.id)).all()
+    if len(members) != len(payload.member_ids) or any(not member.is_active or member.is_composite for member in members):
+        raise HTTPException(status_code=422, detail="Teacher groups can contain only distinct active individual teachers")
+    try:
+        member_availability = [
+            TeacherCreate(
+                short_code=member.short_code,
+                full_name=member.full_name,
+                availability=json.loads(member.availability_json),
+            ).availability
+            for member in members
+        ]
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="A teacher group member has invalid availability that IT must correct") from exc
+    common_availability = {
+        day: sorted(set.intersection(*(set(availability[day]) for availability in member_availability)))
+        for day in ("MON", "TUE", "WED", "THU", "FRI")
+    }
+    row = Teacher(
+        short_code=_normalized_code(payload.short_code),
+        full_name=payload.full_name.strip(),
+        is_adjunct=False,
+        is_composite=True,
+        availability_json=json.dumps(common_availability, separators=(",", ":"), sort_keys=True),
+        is_active=True,
+        created_by=int(claims["sub"]),
+    )
+    db.add(row)
+    _flush_or_conflict(db, "Teacher group code already exists")
+    for member in members:
+        db.add(TeacherGroupMember(group_teacher_id=row.id, member_teacher_id=member.id, created_by=int(claims["sub"])))
+    record_event(
+        db,
+        int(claims["sub"]),
+        "timetable.teacher_group.created",
+        "teacher_group",
+        str(row.id),
+        {"short_code": row.short_code, "member_ids": sorted(payload.member_ids)},
+    )
+    _commit_or_conflict(db, "Teacher group could not be created")
+    db.refresh(row)
+    return _teacher_response(db, row)
 
 
 @router.get("/subjects", response_model=list[SubjectResponse], dependencies=[READ_ACCESS])

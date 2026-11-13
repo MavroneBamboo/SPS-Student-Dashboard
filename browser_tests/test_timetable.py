@@ -38,6 +38,28 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
         },
     )
     assert rule["target_id"] == class_item["id"]
+    additional_class_ids = []
+    for index in range(1, 33):
+        extra_class = create(
+            "/api/v1/timetable/classes",
+            {"code": f"Z{suffix}{index:02}", "name": f"Browser Density Class {index:02}"},
+        )
+        additional_class_ids.append(extra_class["id"])
+        create(
+            "/api/v1/timetable/rules",
+            {
+                "academic_year": "2026",
+                "target_type": "CLASS",
+                "target_id": extra_class["id"],
+                "effective_from": "2026-01-01",
+                "rule": {
+                    "schema_version": 1,
+                    "max_lessons_per_day": 4,
+                    "allowed_days": ["MON", "TUE", "WED", "THU", "FRI"],
+                    "allowed_periods": ["P1", "P2", "P3", "P4"],
+                },
+            },
+        )
     create(
         "/api/v1/timetable/lessons",
         {
@@ -66,14 +88,31 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     expect(class_select).to_be_visible()
     class_option = class_select.locator(f'option[value="{class_item["id"]}"]')
     expect(class_option).to_be_attached()
-    class_select.select_option(str(class_item["id"]))
+    class_select.select_option([str(class_item["id"]), *(str(class_id) for class_id in additional_class_ids)])
     form.get_by_role("button", name="Create draft", exact=True).click()
     page.locator("#timetable-board-mode").select_option("amend")
+    density = page.locator("#timetable-density")
+    assert density.locator("option").evaluate_all("options => options.map(option => Number(option.value))") == [2, 4, 6, 8, 12, 16, 24, 32]
+    host = page.locator("#timetable-grid")
+    for size, columns in ((2, 2), (4, 2), (6, 3), (8, 4), (12, 4), (16, 4), (24, 6), (32, 8)):
+        density.select_option(str(size))
+        expect(host).to_have_attribute("data-density", str(size))
+        expect(host).to_have_attribute("data-columns", str(columns))
+        expect(host.locator(".timetable-class")).to_have_count(size)
+        assert ("compact-amend" in (host.get_attribute("class") or "")) is (size >= 12)
+    expect(page.locator("#timetable-next")).to_be_enabled()
+    page.locator("#timetable-next").click()
+    expect(host.locator(".timetable-class")).to_have_count(1)
+    expect(host.locator(".timetable-class h4")).to_contain_text("Browser Density Class 32")
+    expect(page.locator("#timetable-next")).to_be_disabled()
+    page.locator("#timetable-previous").click()
+    expect(host.locator(".timetable-class")).to_have_count(32)
+    density.select_option("4")
     expect(page.get_by_role("heading", name="C" + suffix + " · Browser Timetable Class", exact=True)).to_be_visible()
     expect(page.locator(".amend-grid .lunch-cell").first).to_contain_text("Lunch")
     expect(page.locator("#timetable-pending")).to_contain_text("Browser Timetable Subject")
     expect(page.locator("#timetable-pending")).to_contain_text("Browser Timetable Class")
-    header = page.locator(".amend-grid thead tr").inner_text()
+    header = page.locator(".amend-grid thead tr").first.inner_text()
     assert header.index("P2") < header.index("Lunch")
     assert header.index("Lunch") < header.index("P4")
 
@@ -85,7 +124,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
         raise AssertionError(f"Lesson form did not open; UI status: {page.get_by_role('status').inner_text()}") from error
     expect(page.get_by_role("heading", name="Add lesson block", exact=True)).to_be_visible()
     page.get_by_role("button", name="Save lesson", exact=True).click()
-    expect(page.locator(".amend-grid")).to_contain_text(f"S{suffix} · T{suffix}")
+    expect(page.locator(".amend-grid").first).to_contain_text(f"S{suffix} · T{suffix}")
     page.locator(".amend-grid .lesson-cell").first.click()
     page.locator('#timetable-placement-form select[name="start_period"]').select_option("P3")
     page.get_by_role("button", name="Save lesson", exact=True).click()
@@ -96,6 +135,55 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     except AssertionError as error:
         raise AssertionError(f"Generation failed; UI message: {page.locator('#notice').inner_text()}") from error
     expect(page.locator("#timetable-pending")).to_contain_text("All weekly lesson requirements are placed")
+    page.get_by_role("button", name="Rename draft", exact=True).click()
+    page.locator("#timetable-rename-input").fill("Browser Amend 4-up Revised")
+    page.get_by_role("button", name="Save name", exact=True).click()
+    expect(page.get_by_role("heading", name="Browser Amend 4-up Revised", exact=True)).to_be_visible()
+
+    placement_ids = page.evaluate("""() => [...new Set([...document.querySelectorAll('.amend-grid .lesson-cell[data-placement-id]')]
+      .map((node) => node.dataset.placementId))]""")
+    target_info = page.evaluate("""() => {
+      const candidates = [...document.querySelectorAll('.amend-grid .empty-cell[data-start-period="P1"]')];
+      const target = candidates.find((cell) => {
+        const day = cell.dataset.weekday;
+        const classId = cell.dataset.classId;
+        return !document.querySelector(`.amend-grid .lesson-cell[data-class-id="${classId}"][data-weekday="${day}"][data-start-period="P2"]`);
+      });
+      return target ? {classId: target.dataset.classId, day: target.dataset.weekday, period: target.dataset.startPeriod} : null;
+    }""")
+    assert len(placement_ids) == 2 and target_info, (
+        f"Expected two placements and a free double-block start; got {placement_ids}, {target_info}"
+    )
+    source = page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first
+    target = page.locator(
+        f'.amend-grid .empty-cell[data-class-id="{target_info["classId"]}"][data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]'
+    )
+    expect(source).to_have_attribute("data-movable", "true")
+    expect(source).to_be_enabled()
+    expect(target).to_be_enabled()
+    page.evaluate("""() => {
+      window.__dragEvents = [];
+      for (const type of ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "dragstart", "drop"]) {
+        document.addEventListener(type, (event) => window.__dragEvents.push({type, target: event.target.className}), true);
+      }
+    }""")
+    source.drag_to(target, steps=10)
+    try:
+        expect(page.get_by_role("status")).to_contain_text("Lesson moved")
+    except AssertionError as error:
+        raise AssertionError(f"Drag/drop did not move the block; events={page.evaluate('window.__dragEvents')}") from error
+    assert {"pointerdown", "pointermove", "pointerup"}.issubset({event["type"] for event in page.evaluate("window.__dragEvents")})
+    expect(page.get_by_role("status")).to_contain_text("Lesson moved")
+    moved_cell = page.locator(
+        f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"][data-weekday="{target_info["day"]}"][data-start-period="{target_info["period"]}"]'
+    )
+    expect(moved_cell).to_be_visible()
+
+    occupied_source = page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[0]}"]').first
+    occupied_target = page.locator(f'.amend-grid .lesson-cell[data-placement-id="{placement_ids[1]}"]').first
+    occupied_source.drag_to(occupied_target, steps=10)
+    expect(page.get_by_role("status")).to_contain_text("Lesson blocks swapped")
+
     page.get_by_role("button", name="Select lessons to swap", exact=True).click()
     swap_button = page.get_by_role("button", name="Swap selected lessons", exact=True)
     expect(page.locator("#timetable-swap-status")).to_contain_text("0/2 selected")
@@ -113,7 +201,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     expect(page.get_by_role("button", name="Select lessons to swap", exact=True)).to_be_visible()
     page.locator(".amend-grid .lesson-cell").first.click()
     page.get_by_role("button", name="Lock lesson", exact=True).click()
-    expect(page.locator(".amend-grid")).to_contain_text("locked")
+    expect(page.locator(".amend-grid").first).to_contain_text("locked")
     locked_placement_id = page.locator(".amend-grid .lesson-cell[data-placement-id]").first.get_attribute("data-placement-id")
     page.get_by_role("button", name="Select lessons to swap", exact=True).click()
     page.locator(f'.amend-grid .lesson-cell[data-placement-id="{locked_placement_id}"]').first.click()
@@ -146,16 +234,17 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
         page.get_by_role("button", name="Open class print view", exact=True).click()
     report_page = popup_info.value
     report_page.wait_for_load_state("load")
-    expect(report_page.locator(".report-page")).to_have_count(1)
+    expect(report_page.locator(".report-page")).to_have_count(33)
     expect(report_page.locator('link[rel="stylesheet"]')).to_have_attribute("href", "/ui/timetable-print.css")
-    expect(report_page.locator(".report-title h1")).to_have_text(f"C{suffix}")
-    expect(report_page.locator(".report-table thead th")).to_have_count(6)
-    expect(report_page.locator(".report-table tbody tr")).to_have_count(5)
-    expect(report_page.locator('.report-table th[data-period="P1"]')).to_contain_text("Period 1")
-    expect(report_page.locator('.report-table th[data-period="P1"]')).to_contain_text("8:30")
-    expect(report_page.locator('.report-table th[data-period="LUNCH"]')).to_contain_text("Lunch / Muster")
-    expect(report_page.locator(".report-page")).to_contain_text("Browser Timetable Subject")
-    crest = report_page.locator(".report-brand img")
+    first_report = report_page.locator(".report-page").first
+    expect(first_report.locator(".report-title h1")).to_have_text(f"C{suffix}")
+    expect(first_report.locator(".report-table thead th")).to_have_count(6)
+    expect(first_report.locator(".report-table tbody tr")).to_have_count(5)
+    expect(first_report.locator('.report-table th[data-period="P1"]')).to_contain_text("Period 1")
+    expect(first_report.locator('.report-table th[data-period="P1"]')).to_contain_text("8:30")
+    expect(first_report.locator('.report-table th[data-period="LUNCH"]')).to_contain_text("Lunch / Muster")
+    expect(first_report).to_contain_text("Browser Timetable Subject")
+    crest = first_report.locator(".report-brand img")
     expect(crest).to_have_js_property("complete", True)
     assert report_page.evaluate("document.querySelector('.report-brand img').naturalWidth") > 0
 
@@ -175,7 +264,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     assert pdf.startswith(b"%PDF")
     assert pdf_path.stat().st_size > 5000
     page_boxes = re.findall(rb"/MediaBox\s*\[([^\]]+)\]", pdf)
-    assert len(page_boxes) == 1, f"Expected one report page, found {len(page_boxes)}; print layout: {layout}"
+    assert len(page_boxes) == 33, f"Expected one page per selected class, found {len(page_boxes)}; print layout: {layout}"
     page_bounds = [float(value) for value in page_boxes[0].split()]
     assert len(page_bounds) == 4
     _, _, page_width, page_height = page_bounds
@@ -210,6 +299,20 @@ def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(pa
     page.get_by_label("Teacher name", exact=True).fill("Setup Workspace Teacher")
     page.get_by_role("button", name="Create teacher", exact=True).click()
     expect(page.get_by_role("status")).to_contain_text("Teacher profile created")
+    page.get_by_role("button", name="Add teacher", exact=True).click()
+    page.get_by_label("Teacher code", exact=True).fill(f"T2{suffix}")
+    page.get_by_label("Teacher name", exact=True).fill("Second Setup Workspace Teacher")
+    page.get_by_role("button", name="Create teacher", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Teacher profile created")
+    group_form = page.locator("#timetable-teacher-group-form")
+    group_form.get_by_label("Group code", exact=True).fill(f"G2{suffix}")
+    group_form.get_by_label("Group name", exact=True).fill("Setup Workspace Team")
+    group_form.locator('select[name="member_ids"]').select_option(
+        label=[f"T{suffix} · Setup Workspace Teacher", f"T2{suffix} · Second Setup Workspace Teacher"]
+    )
+    group_form.get_by_role("button", name="Create teacher group", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Composite teacher group created")
+    expect(page.locator("#timetable-teacher-rows")).to_contain_text(f"T{suffix}, T2{suffix}")
     page.get_by_role("button", name="Subjects", exact=True).click()
     page.get_by_label("Subject code", exact=True).fill(f"S{suffix}")
     page.get_by_label("Subject name", exact=True).fill("Setup Workspace Subject")
@@ -261,3 +364,65 @@ def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(pa
     expect(page.get_by_role("status")).to_contain_text("Weekly lesson requirement saved")
     expect(page.locator("#timetable-resource-summary")).to_contain_text("clusters")
     expect(page.locator("#timetable-period-rows")).to_contain_text("Early start")
+
+
+def test_it_configures_fixed_event_and_sees_it_on_board_and_print_report(page, make_account, live_url):
+    admin = make_account("IT Administrator")
+    login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
+    assert login.status == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    suffix = uuid4().hex[:8].upper()
+    class_response = page.request.post(
+        live_url + "/api/v1/timetable/classes",
+        data={"code": f"E{suffix}", "name": "Fixed Event Test Class"},
+        headers=headers,
+    )
+    assert class_response.status == 201, class_response.text()
+    class_item = class_response.json()
+    rule = page.request.post(
+        live_url + "/api/v1/timetable/rules",
+        data={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": class_item["id"],
+            "effective_from": "2026-01-01",
+            "rule": {},
+        },
+        headers=headers,
+    )
+    assert rule.status == 201, rule.text()
+
+    page.goto(live_url + "/ui/")
+    page.get_by_label("Username", exact=True).fill(admin["username"])
+    page.get_by_label("Password", exact=True).fill(admin["password"])
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    page.get_by_role("button", name="Fixed events", exact=True).click()
+    page.get_by_role("button", name="New fixed event", exact=True).click()
+    event_form = page.locator("#timetable-fixed-event-form")
+    event_form.get_by_label("Academic year", exact=True).fill("2026")
+    event_form.get_by_label("Event name", exact=True).fill("Monday Assembly")
+    event_form.locator('select[name="audience_type"]').select_option("CLASS")
+    event_form.locator('select[name="target_mode"]').select_option("SELECTED")
+    event_form.locator('select[name="target_ids"]').select_option(str(class_item["id"]))
+    page.get_by_label("MON P1 · Period 1 fixed event", exact=True).check()
+    event_form.get_by_role("button", name="Save fixed event", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Fixed event created")
+    expect(page.locator("#fixed-event-rows")).to_contain_text("Monday Assembly")
+
+    page.get_by_role("button", name="Timetable", exact=True).click()
+    page.get_by_role("button", name="Create weekly draft", exact=True).click()
+    draft_form = page.locator("#timetable-create-form")
+    draft_form.get_by_label("Draft name", exact=True).fill("Fixed Event Board")
+    draft_form.get_by_label("Academic year", exact=True).fill("2026")
+    draft_form.get_by_label("Week starting Monday", exact=True).fill("2026-10-26")
+    draft_form.locator('select[name="class_ids"]').select_option(str(class_item["id"]))
+    draft_form.get_by_role("button", name="Create draft", exact=True).click()
+    expect(page.locator(".weekly-board")).to_contain_text("Monday Assembly")
+
+    page.get_by_role("button", name="Reports & export", exact=True).click()
+    with page.expect_popup() as popup_info:
+        page.get_by_role("button", name="Open class print view", exact=True).click()
+    report = popup_info.value
+    report.wait_for_load_state("load")
+    expect(report.locator(".fixed-event-entry")).to_contain_text("Monday Assembly")

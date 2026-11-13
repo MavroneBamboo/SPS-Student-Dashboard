@@ -69,10 +69,11 @@ def test_superuser_and_operator_operational_access(lesson_context):
 
     for role in ("operator", "executive", "superuser"):
         assert client.get("/api/v1/reports/dashboard", headers=headers[role]).status_code == 200
+        assert client.get("/api/v1/reports/dashboard.xlsx", headers=headers[role]).status_code == 200
         assert client.get("/api/v1/reports/attendance.csv", headers=headers[role]).status_code == 200
     for role in ("admin", "superuser"):
         assert client.get("/api/v1/reports/audit", headers=headers[role]).status_code == 200
     for role in ("operator", "executive"):
         assert client.get("/api/v1/reports/audit", headers=headers[role]).status_code == 403
-    for path in ("/api/v1/reports/dashboard", "/api/v1/reports/attendance.csv"):
+    for path in ("/api/v1/reports/dashboard", "/api/v1/reports/dashboard.xlsx", "/api/v1/reports/attendance.csv"):
         assert client.get(path, headers=headers["admin"]).status_code == 403

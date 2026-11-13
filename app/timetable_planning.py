@@ -9,7 +9,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.lesson_validation import validate_lesson_resources
-from app.models import InstructionalClass, LessonRequirement, Subject, Teacher, TimetablePlacement, TimetableSlot, TimetableVersion
+from app.models import (
+    InstructionalClass,
+    LessonRequirement,
+    Subject,
+    Teacher,
+    TeacherGroupMember,
+    TimetableFixedEvent,
+    TimetablePlacement,
+    TimetableSlot,
+    TimetableVersion,
+)
 from app.scheduling_rules import resolve_rules
 from app.schemas import WEEKDAYS, LessonRequirementResponse, RuleResolutionRequest
 from app.timetable_periods import resolve_period_rows, validate_period_intervals
@@ -25,7 +35,7 @@ def build_snapshot(db: Session, academic_year: str, week_start: date, class_ids:
             )
         }
     validate_period_intervals(db, class_ids)
-    snapshot = {"schema_version": 1, "classes": {}, "requirements": {}, "teachers": {}, "subjects": {}}
+    snapshot = {"schema_version": 2, "classes": {}, "requirements": {}, "teachers": {}, "subjects": {}, "fixed_events": []}
     for class_id in sorted(class_ids):
         row = db.get(InstructionalClass, class_id)
         snapshot["classes"][str(class_id)] = {
@@ -61,6 +71,26 @@ def build_snapshot(db: Session, academic_year: str, week_start: date, class_ids:
         validate_lesson_resources(db, payload)
         snapshot["requirements"][str(row.id)] = payload.model_dump(mode="json")
         teacher = db.get(Teacher, row.teacher_id)
+        member_ids = db.scalars(
+            select(TeacherGroupMember.member_teacher_id)
+            .where(TeacherGroupMember.group_teacher_id == teacher.id)
+            .order_by(TeacherGroupMember.member_teacher_id)
+        ).all()
+        participant_ids = member_ids if teacher.is_composite else [teacher.id]
+        if teacher.is_composite and len(participant_ids) < 2:
+            raise HTTPException(status_code=409, detail="Teacher group needs at least two members before timetable planning")
+        for participant_id in participant_ids:
+            participant = db.get(Teacher, participant_id)
+            if participant is None or not participant.is_active or participant.is_composite:
+                raise HTTPException(status_code=409, detail="Teacher group contains an inactive or invalid member")
+            if teacher.is_composite:
+                snapshot["teachers"][str(participant.id)] = {
+                    "id": participant.id,
+                    "short_code": participant.short_code,
+                    "full_name": participant.full_name,
+                    "is_adjunct": participant.is_adjunct,
+                    "availability": json.loads(participant.availability_json),
+                }
         subject = db.get(Subject, row.subject_id)
         snapshot["teachers"][str(teacher.id)] = {
             "id": teacher.id,
@@ -69,23 +99,81 @@ def build_snapshot(db: Session, academic_year: str, week_start: date, class_ids:
             "is_adjunct": teacher.is_adjunct,
             "availability": json.loads(teacher.availability_json),
         }
+        if teacher.is_composite:
+            snapshot["teachers"][str(teacher.id)].update(
+                {"is_composite": True, "member_ids": participant_ids, "participant_ids": participant_ids}
+            )
         snapshot["subjects"][str(subject.id)] = {
             "id": subject.id,
             "code": subject.code,
             "name": subject.name,
             "description": subject.description,
         }
+    events = db.scalars(
+        select(TimetableFixedEvent)
+        .where(
+            TimetableFixedEvent.is_active.is_(True),
+            func.upper(func.trim(TimetableFixedEvent.academic_year)) == academic_year.strip().upper(),
+        )
+        .order_by(TimetableFixedEvent.id)
+    ).all()
+    for event in events:
+        selected_targets = json.loads(event.target_ids_json)
+        if event.target_mode == "ALL":
+            if event.audience_type == "CLASS":
+                target_ids = sorted(class_ids)
+            else:
+                target_ids = db.scalars(select(Teacher.id).where(Teacher.is_active.is_(True)).order_by(Teacher.id)).all()
+        else:
+            target_ids = selected_targets
+        relevant_ids = set(class_ids) if event.audience_type == "CLASS" else set(target_ids)
+        applicable_targets = sorted(set(target_ids).intersection(relevant_ids))
+        if not applicable_targets:
+            continue
+        if event.audience_type == "TEACHER":
+            for teacher_id in applicable_targets:
+                teacher = db.get(Teacher, teacher_id)
+                if teacher is None or not teacher.is_active:
+                    continue
+                snapshot["teachers"][str(teacher.id)] = {
+                    "id": teacher.id,
+                    "short_code": teacher.short_code,
+                    "full_name": teacher.full_name,
+                    "is_adjunct": teacher.is_adjunct,
+                    "availability": json.loads(teacher.availability_json),
+                }
+        snapshot["fixed_events"].append(
+            {
+                "id": event.id,
+                "academic_year": event.academic_year,
+                "label": event.label,
+                "audience_type": event.audience_type,
+                "target_mode": event.target_mode,
+                "target_ids": applicable_targets,
+                "slots": json.loads(event.slots_json),
+                "version": event.version,
+            }
+        )
     return snapshot
 
 
 def assert_current_snapshot(db: Session, version: TimetableVersion) -> dict:
     snapshot = json.loads(version.snapshot_json)
     current = build_snapshot(db, version.academic_year, version.week_start, [int(key) for key in snapshot["classes"]])
-    if current != snapshot:
+    if not snapshots_match_current(snapshot, current):
         raise HTTPException(
             status_code=409, detail="Timetable configuration changed; create a replacement draft using the current configuration"
         )
     return snapshot
+
+
+def snapshots_match_current(snapshot: dict, current: dict) -> bool:
+    """Keep pre-fixed-event drafts editable when no new event affects them."""
+    comparable = current.copy()
+    if snapshot.get("schema_version") == 1 and "fixed_events" not in snapshot and not comparable.get("fixed_events"):
+        comparable.pop("fixed_events", None)
+        comparable["schema_version"] = 1
+    return comparable == snapshot
 
 
 def placement_values(row: TimetablePlacement) -> dict:
@@ -176,15 +264,39 @@ def validate_plan(snapshot: dict, blocks: list[dict], *, require_complete: bool 
         daily_counts[(class_id, weekday)] += len(selection)
         if daily_counts[(class_id, weekday)] > rule["max_lessons_per_day"]:
             raise HTTPException(status_code=409, detail="Scheduling rule daily lesson limit would be exceeded")
-        availability = snapshot["teachers"][str(teacher_id)]["availability"][weekday]
+        teacher_snapshot = snapshot["teachers"][str(teacher_id)]
+        participant_ids = teacher_snapshot.get("participant_ids", [teacher_id])
         slots = []
         for period in selection:
             if period["slot_code"] not in rule["allowed_periods"]:
                 raise HTTPException(status_code=409, detail="Scheduling rule does not allow this teaching period")
-            if period["slot_code"] not in availability:
-                raise HTTPException(status_code=409, detail="Teacher is unavailable in this teaching period")
+            unavailable = [
+                participant_id
+                for participant_id in participant_ids
+                if period["slot_code"] not in snapshot["teachers"][str(participant_id)]["availability"][weekday]
+            ]
+            if unavailable:
+                raise HTTPException(status_code=409, detail="A teacher group member is unavailable in this teaching period")
+            fixed_event = next(
+                (
+                    event
+                    for event in snapshot.get("fixed_events", [])
+                    if any(slot["weekday"] == weekday and slot["slot_code"] == period["slot_code"] for slot in event["slots"])
+                    and (
+                        (event["audience_type"] == "CLASS" and class_id in event["target_ids"])
+                        or (
+                            event["audience_type"] == "TEACHER"
+                            and any(target_id in event["target_ids"] for target_id in [teacher_id, *participant_ids])
+                        )
+                    )
+                ),
+                None,
+            )
+            if fixed_event is not None:
+                raise HTTPException(status_code=409, detail=f"Fixed event {fixed_event['label']} occupies this timetable slot")
             start, end = time.fromisoformat(period["starts_at"]), time.fromisoformat(period["ends_at"])
-            for resource_type, resource_id in (("class", class_id), ("teacher", teacher_id)):
+            resources = [("class", class_id), *(("teacher", participant_id) for participant_id in participant_ids)]
+            for resource_type, resource_id in resources:
                 key = (resource_type, resource_id, weekday)
                 if any(start < other_end and other_start < end for other_start, other_end in occupied[key]):
                     raise HTTPException(status_code=409, detail=f"Timetable {resource_type} conflict at the configured time interval")

@@ -13,6 +13,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let detailSequence = 0;
   let swapSelectionMode = false;
   let selectedPlacementIds = [];
+  let fixedTeachers = [];
+  let fixedClasses = [];
+  let draggedPlacementId = null;
+  let dragStartPosition = null;
+  let dragThresholdReached = false;
+  let suppressNextCellClick = false;
   const currentRole = () => typeof role === "function" ? role() : role;
   const canEdit = () => ["Superuser", "Operator", "IT Administrator"].includes(currentRole());
   const canApprove = () => ["Superuser", "IT Administrator"].includes(currentRole());
@@ -32,6 +38,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("new-timetable").hidden = true;
     placementForm.reset();
     placementForm.hidden = true;
+    $("timetable-rename-form").reset();
+    $("timetable-rename-form").hidden = true;
     $("timetable-generation-summary").textContent = "";
     viewBy = "class";
     $("timetable-amend-tools").hidden = true;
@@ -44,7 +52,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-by-teacher").classList.remove("is-selected");
     $("timetable-class-filter-wrap").hidden = false;
     $("timetable-teacher-filter-wrap").hidden = true;
-    for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows", "student-class-mapping-rows", "attendance-class-mapping-rows"]) {
+    for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows", "fixed-event-rows", "student-class-mapping-rows", "attendance-class-mapping-rows"]) {
       const element = $(id);
       if (element) element.replaceChildren();
     }
@@ -62,9 +70,38 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     for (const id of ["timetable-remove", "timetable-lock"]) $(id).disabled = draftMutationPending || !editable;
     $("timetable-swap-mode").disabled = draftMutationPending || !editable;
     $("timetable-swap-confirm").disabled = draftMutationPending || !editable || selectedPlacementIds.length !== 2;
+    $("timetable-rename-open").disabled = draftMutationPending || !editable;
+    $("timetable-rename-save").disabled = draftMutationPending || !editable;
     for (const button of placementForm.querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
     for (const button of $("timetable-grid").querySelectorAll("button")) button.disabled = draftMutationPending || !editable;
   }
+
+  function clearDragState() {
+    draggedPlacementId = null;
+    dragStartPosition = null;
+    dragThresholdReached = false;
+    document.querySelectorAll(".dragging-lesson").forEach((element) => element.classList.remove("dragging-lesson"));
+    document.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+  }
+
+  document.addEventListener("pointermove", (event) => {
+    if (!dragStartPosition || draggedPlacementId === null) return;
+    if (Math.hypot(event.clientX - dragStartPosition.x, event.clientY - dragStartPosition.y) < 6) return;
+    dragThresholdReached = true;
+    document.querySelector(`.lesson-cell[data-placement-id="${draggedPlacementId}"]`)?.classList.add("dragging-lesson");
+    document.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".empty-cell, .lesson-cell");
+    const source = current?.placements.find((block) => block.id === draggedPlacementId);
+    const occupiedTarget = target?.dataset.placementId
+      ? current?.placements.find((block) => block.id === Number(target.dataset.placementId))
+      : null;
+    if (target && target.dataset.placementId !== String(draggedPlacementId) && source
+      && !occupiedTarget?.is_locked
+      && String(source.slots[0]?.instructional_class_id) === target.dataset.classId) target.classList.add("drop-target");
+  }, true);
+  document.addEventListener("pointerup", () => {
+    if (draggedPlacementId !== null) clearDragState();
+  });
 
   async function runDraftMutation(control, action) {
     if (draftMutationPending) return;
@@ -164,8 +201,10 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   async function refreshSetup() {
     const canConfigure = ["IT Administrator", "Superuser"].includes(currentRole());
-    const [teacherRows, subjects, instructionalClasses, clusters, periodRows, classMappings, attendanceMappings] = await Promise.all([
+    $("timetable-teacher-group-form").hidden = !canConfigure;
+    const [teacherRows, subjects, instructionalClasses, clusters, periodRows, fixedEvents, classMappings, attendanceMappings] = await Promise.all([
       api("/timetable/teachers"), api("/timetable/subjects"), api("/timetable/classes"), api("/timetable/clusters"), api("/timetable/periods"),
+      api("/timetable/fixed-events"),
       ["Operator", "IT Administrator", "Superuser"].includes(currentRole()) ? api("/student-reference/class-mappings") : Promise.resolve([]),
       ["Operator", "IT Administrator", "Superuser"].includes(currentRole()) ? api("/student-reference/attendance-class-mappings") : Promise.resolve([]),
     ]);
@@ -176,6 +215,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     lastClusters = activeClusters;
     fillSelect($("timetable-lesson-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-lesson-form").elements.teacher_id, activeTeachers, (row) => `${row.short_code} · ${row.full_name}`);
+    fillSelect($("timetable-teacher-group-form").elements.member_ids, activeTeachers.filter((row) => !row.is_composite), (row) => `${row.short_code} · ${row.full_name}`);
     fillSelect($("timetable-lesson-form").elements.subject_id, activeSubjects, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-cluster-member-form").elements.cluster_id, activeClusters, (row) => `${row.code} · ${row.name}`);
     fillSelect($("timetable-cluster-member-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
@@ -191,10 +231,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       for (const item of values) {
         const row = document.createElement("tr");
         const code = item.short_code || item.code;
-        for (const value of [code, item.full_name || item.name, item.is_active ? "Active" : "Inactive"]) cell(row, value);
+        for (const value of [code, item.full_name || item.name, `${item.is_active ? "Active" : "Inactive"}${item.is_composite ? " · Group" : " · Individual"}`]) cell(row, value);
         if (id === "timetable-teacher-rows") {
           const periodsPerWeek = Object.values(item.availability || {}).reduce((sum, day) => sum + (Array.isArray(day) ? day.length : 0), 0);
           cell(row, periodsPerWeek);
+          cell(row, item.member_ids?.map((memberId) => teacherRows.find((member) => member.id === memberId)?.short_code || memberId).join(", ") || "—");
         }
         body.append(row);
       }
@@ -202,6 +243,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     const summary = $("timetable-resource-summary");
     if (summary) summary.textContent = `${teacherRows.length} teacher profiles · ${subjects.length} subjects · ${instructionalClasses.length} classes · ${clusters.length} clusters`;
     renderAvailability();
+    renderFixedEvents(fixedEvents, instructionalClasses, teacherRows, canConfigure);
     const periodTable = $("timetable-period-rows");
     periodTable?.replaceChildren();
     if (periodTable) for (const period of periodRows) {
@@ -296,6 +338,115 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     for (const button of document.querySelectorAll('[data-open-resource-form]')) button.hidden = !canConfigure;
   }
 
+  function setupFixedEventSlotControls() {
+    const fieldset = $("fixed-event-slots");
+    if (fieldset.childElementCount > 1) return;
+    for (const day of weekdays) {
+      const row = document.createElement("div");
+      row.className = "availability-row";
+      const title = document.createElement("strong");
+      title.textContent = day;
+      row.append(title);
+      for (const period of ["P1", "P2", "P3", "P4"]) {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = period;
+        input.dataset.day = day;
+        input.setAttribute("aria-label", `${day} ${periodLabels[period]} fixed event`);
+        label.append(input, document.createTextNode(periodLabels[period]));
+        row.append(label);
+      }
+      fieldset.append(row);
+    }
+  }
+
+  function updateFixedEventTargets(teachers, instructionalClasses) {
+    const form = $("timetable-fixed-event-form");
+    const audience = form.elements.audience_type.value;
+    const mode = form.elements.target_mode.value;
+    const choices = audience === "TEACHER" ? teachers : instructionalClasses;
+    fillSelect(form.elements.target_ids, choices, (row) => audience === "TEACHER"
+      ? `${row.short_code} · ${row.full_name}`
+      : `${row.code} · ${row.name}`);
+    form.elements.target_ids.disabled = mode === "ALL";
+    form.elements.target_ids.required = mode === "SELECTED";
+  }
+
+  function renderFixedEvents(events, instructionalClasses, teacherRows, canConfigure) {
+    const form = $("timetable-fixed-event-form");
+    setupFixedEventSlotControls();
+    fixedTeachers = teacherRows.filter((row) => row.is_active);
+    fixedClasses = instructionalClasses.filter((row) => row.is_active);
+    updateFixedEventTargets(fixedTeachers, fixedClasses);
+    $("fixed-event-new").hidden = !canConfigure;
+    const rows = $("fixed-event-rows");
+    rows.replaceChildren();
+    for (const event of events) {
+      const row = document.createElement("tr");
+      const targetRows = event.audience_type === "TEACHER" ? teacherRows : instructionalClasses;
+      const targetLabels = event.target_mode === "ALL" ? `All active ${event.audience_type.toLowerCase()}s`
+        : event.target_ids.map((id) => {
+          const target = targetRows.find((item) => item.id === id);
+          return target ? (event.audience_type === "TEACHER" ? target.short_code : target.code) : `#${id}`;
+        }).join(", ");
+      const schedule = event.slots.map((slot) => `${slot.weekday} ${periodLabels[slot.slot_code] || slot.slot_code}`).join(", ");
+      for (const value of [event.academic_year, event.label, event.audience_type, targetLabels, schedule, event.is_active ? "Active" : "Inactive"]) cell(row, value);
+      const actions = cell(row, "");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.hidden = !canConfigure;
+      edit.addEventListener("click", () => {
+        form.reset();
+        form.dataset.eventId = String(event.id);
+        form.elements.expected_version.value = event.version;
+        form.dataset.isActive = String(event.is_active);
+        form.elements.academic_year.value = event.academic_year;
+        form.elements.label.value = event.label;
+        form.elements.audience_type.value = event.audience_type;
+        form.elements.target_mode.value = event.target_mode;
+        updateFixedEventTargets(fixedTeachers, fixedClasses);
+        for (const option of form.elements.target_ids.options) option.selected = event.target_ids.includes(Number(option.value));
+        for (const input of $("fixed-event-slots").querySelectorAll('input[type="checkbox"]')) {
+          input.checked = event.slots.some((slot) => slot.weekday === input.dataset.day && slot.slot_code === input.value);
+        }
+        form.hidden = false;
+        $("fixed-event-cancel").hidden = false;
+        form.elements.label.focus();
+      });
+      actions.append(edit);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "secondary";
+      toggle.textContent = event.is_active ? "Deactivate" : "Activate";
+      toggle.hidden = !canConfigure;
+      toggle.addEventListener("click", () => run(toggle, async () => {
+        await api(`/timetable/fixed-events/${event.id}`, "PUT", {
+          academic_year: event.academic_year,
+          label: event.label,
+          audience_type: event.audience_type,
+          target_mode: event.target_mode,
+          target_ids: event.target_ids,
+          slots: event.slots,
+          is_active: !event.is_active,
+          expected_version: event.version,
+        });
+        await refreshSetup();
+        notice(`Fixed event ${event.is_active ? "deactivated" : "activated"}.`);
+      }));
+      actions.append(toggle);
+      rows.append(row);
+    }
+    if (!events.length) {
+      const row = document.createElement("tr");
+      cell(row, "No recurring fixed events are configured.").colSpan = 7;
+      rows.append(row);
+    }
+    form.hidden = !canConfigure || form.hidden;
+  }
+
   function updatePeriodTargets() {
     const form = $("timetable-period-form");
     const scope = form.elements.scope.value;
@@ -341,6 +492,20 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     is_adjunct: form.elements.is_adjunct.checked,
     availability: availabilityPayload(),
   }), "Teacher profile created.");
+  $("timetable-teacher-group-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(event.currentTarget, async () => {
+      const form = event.currentTarget;
+      await api("/timetable/teacher-groups", "POST", {
+        short_code: form.elements.short_code.value,
+        full_name: form.elements.full_name.value,
+        member_ids: [...form.elements.member_ids.selectedOptions].map((option) => Number(option.value)),
+      });
+      form.reset();
+      await refresh();
+      notice("Composite teacher group created. Member availability and clashes will be checked individually.");
+    });
+  });
   submitJSON("timetable-subject-form", "/timetable/subjects", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Subject created.");
   submitJSON("timetable-class-form", "/timetable/classes", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Instructional class created.");
   $("student-class-mapping-form").addEventListener("submit", (event) => {
@@ -460,6 +625,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     return `${subject.code} · ${teacher.short_code}${block.is_locked ? " · locked" : ""}`;
   }
 
+  function teacherMatchesRequirement(requirement, teacherId) {
+    if (!requirement) return false;
+    const assigned = current.snapshot.teachers[String(requirement.teacher_id)];
+    return requirement.teacher_id === teacherId || (assigned?.participant_ids || []).includes(teacherId);
+  }
+
   function requirementLabel(id) {
     const requirement = current.snapshot.requirements[String(id)];
     const teacher = current.snapshot.teachers[String(requirement.teacher_id)];
@@ -470,6 +641,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
 
   function classRows() {
     return Object.values(current.snapshot.classes).sort((a, b) => a.reporting_order - b.reporting_order || a.code.localeCompare(b.code));
+  }
+
+  function fixedEventFor(audienceType, targetId, weekday, slotCode) {
+    return (current?.snapshot.fixed_events ?? []).find((event) =>
+      event.audience_type === audienceType && event.target_ids.includes(targetId) &&
+      event.slots.some((slot) => slot.weekday === weekday && slot.slot_code === slotCode));
   }
 
   function renderGrid() {
@@ -492,13 +669,16 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       ? selectedPlacementIds.length === 2
         ? "Two blocks selected. Swap them, or click a selected block to change the selection."
         : `Select two unlocked lesson blocks (${selectedPlacementIds.length}/2 selected). Click a selected block again to deselect it.`
-      : "Select two unlocked lesson blocks to exchange their day and period.";
+      : "Select two unlocked lesson blocks to swap, or drag an unlocked block to an empty slot in the same class.";
     $("timetable-editor").classList.toggle("amend-mode", amendMode);
     document.querySelector(".timetable-board-layout").classList.toggle("amend-mode", amendMode);
     $("timetable-density").parentElement.hidden = !amendMode;
     $("timetable-previous").hidden = !amendMode;
     $("timetable-next").hidden = !amendMode;
     if (current && !amendMode) {
+      host.style.removeProperty("--amend-columns");
+      host.style.overflowX = "";
+      host.classList.remove("compact-amend");
       renderWeeklyBoard(host);
       if (draftMutationPending) {
         for (const button of host.querySelectorAll("button")) button.disabled = true;
@@ -508,6 +688,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-summary").hidden = true;
     const all = classRows();
     const density = Number($("timetable-density").value) || 4;
+    const columns = ({2: 2, 4: 2, 6: 3, 8: 4, 12: 4, 16: 4, 24: 6, 32: 8})[density] || 2;
+    host.dataset.density = String(density);
+    host.dataset.columns = String(columns);
+    host.classList.toggle("compact-amend", density >= 12);
+    host.style.setProperty("--amend-columns", String(columns));
     const visible = all.slice(pageOffset, pageOffset + density);
     $("timetable-previous").disabled = pageOffset === 0;
     $("timetable-next").disabled = pageOffset + density >= all.length;
@@ -540,27 +725,82 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           }
           const placement = current.placements.find((block) => block.slots.some((slot) =>
             slot.instructional_class_id === classItem.id && slot.weekday === day && slot.slot_code === period));
+          const fixedEvent = !placement && fixedEventFor("CLASS", classItem.id, day, period);
           const button = document.createElement("button");
-          button.className = placement ? "lesson-cell" : "empty-cell";
+          button.className = placement ? "lesson-cell" : fixedEvent ? "fixed-event-cell" : "empty-cell";
+          button.dataset.classId = String(classItem.id);
+          button.dataset.weekday = day;
+          button.dataset.startPeriod = period;
           if (placement) {
             button.dataset.placementId = String(placement.id);
+            button.dataset.movable = String(amendMode && editableDraft() && !placement.is_locked && !swapSelectionMode);
             if (swapSelectionMode) {
               const selected = selectedPlacementIds.includes(placement.id);
               button.setAttribute("aria-pressed", String(selected));
               if (selected) button.classList.add("selected-for-swap");
             }
           }
-          button.disabled = !editableDraft() || draftMutationPending;
-          button.textContent = placement ? labelFor(placement) : (editableDraft() ? "+ Add lesson" : "—");
+          button.disabled = Boolean(fixedEvent) || !editableDraft() || draftMutationPending;
+          button.textContent = placement ? labelFor(placement) : fixedEvent
+            ? fixedEvent.label
+            : (editableDraft() ? "+ Add lesson" : "—");
+          if (fixedEvent) button.title = `${fixedEvent.label} · recurring school event`;
           button.setAttribute("aria-label", placement
             ? `${classItem.code} ${day} ${periodLabels[period]} ${labelFor(placement)}`
-            : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
+            : fixedEvent
+              ? `${classItem.code} ${day} ${periodLabels[period]} fixed event ${fixedEvent.label}`
+              : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
           if (placement) button.addEventListener("click", () => {
+            if (suppressNextCellClick) {
+              suppressNextCellClick = false;
+              return;
+            }
             if (swapSelectionMode) selectPlacementForSwap(placement);
             else editPlacement(placement, day, period);
           });
-          else if (swapSelectionMode) button.addEventListener("click", () => notice("Select populated lesson blocks; empty cells cannot be selected for a swap."));
-          else if (editableDraft()) button.addEventListener("click", () => run(button, () => addPlacement(classItem, day, period)));
+          else if (swapSelectionMode) button.addEventListener("click", () => {
+            if (suppressNextCellClick) {
+              suppressNextCellClick = false;
+              return;
+            }
+            notice("Select populated lesson blocks; empty cells cannot be selected for a swap.");
+          });
+          else if (editableDraft()) button.addEventListener("click", () => {
+            if (suppressNextCellClick) {
+              suppressNextCellClick = false;
+              return;
+            }
+            run(button, () => addPlacement(classItem, day, period));
+          });
+          button.addEventListener("pointerdown", (event) => {
+            if (!placement || button.dataset.movable !== "true" || swapSelectionMode || event.button !== 0) return;
+            draggedPlacementId = placement.id;
+            dragStartPosition = {x: event.clientX, y: event.clientY};
+            dragThresholdReached = false;
+          });
+          button.addEventListener("pointerup", (event) => {
+            if (draggedPlacementId === null || !dragThresholdReached) return;
+            const id = draggedPlacementId;
+            const source = current.placements.find((block) => block.id === id);
+            clearDragState();
+            event.preventDefault();
+            event.stopPropagation();
+            suppressNextCellClick = true;
+            window.setTimeout(() => { suppressNextCellClick = false; }, 0);
+            if (!source || String(source.slots[0]?.instructional_class_id) !== button.dataset.classId) {
+              notice("Drop lesson blocks within the same class timetable.");
+              return;
+            }
+            if (placement) {
+              if (placement.is_locked) {
+                notice("Locked lesson blocks cannot be swapped. Unlock the block first.");
+                return;
+              }
+              runDraftMutation(button, () => swapPlacements(id, placement.id));
+              return;
+            }
+            runDraftMutation(button, () => movePlacement(id, button.dataset.weekday, button.dataset.startPeriod));
+          });
           td.append(button);
         }
         body.append(row);
@@ -589,6 +829,11 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   async function swapSelectedPlacements() {
     if (!current || selectedPlacementIds.length !== 2) return;
     const [firstPlacementId, secondPlacementId] = selectedPlacementIds;
+    await swapPlacements(firstPlacementId, secondPlacementId);
+  }
+
+  async function swapPlacements(firstPlacementId, secondPlacementId) {
+    if (!current || firstPlacementId === secondPlacementId) return;
     current = await api(`/timetable/versions/${current.id}/swap`, "POST", {
       expected_revision: current.revision,
       first_placement_id: firstPlacementId,
@@ -599,6 +844,32 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     placementForm.hidden = true;
     render();
     notice("Lesson blocks swapped. The full draft was revalidated and saved.");
+  }
+
+  async function movePlacement(placementId, weekday, startPeriod) {
+    const placement = current.placements.find((block) => block.id === placementId);
+    if (!placement || (placement.weekday === weekday && placement.start_period === startPeriod)) return;
+    current = await api(`/timetable/versions/${current.id}/placements/${placementId}/move`, "PATCH", {
+      expected_revision: current.revision,
+      weekday,
+      start_period: startPeriod,
+    });
+    placementForm.hidden = true;
+    render();
+    notice("Lesson moved. The full draft was revalidated and saved.");
+  }
+
+  async function renameDraft(event) {
+    event.preventDefault();
+    const name = $("timetable-rename-input").value.trim();
+    if (!current || !name) return;
+    current = await api(`/timetable/versions/${current.id}/name`, "PATCH", {
+      expected_revision: current.revision,
+      name,
+    });
+    $("timetable-rename-form").hidden = true;
+    render();
+    notice("Draft renamed and saved.");
   }
 
   function renderWeeklyBoard(host) {
@@ -644,15 +915,21 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
           const matchesEntity = viewBy === "class"
             ? req?.instructional_class_id === entity.id
-            : req?.teacher_id === entity.id;
+              : teacherMatchesRequirement(req, entity.id);
           return matchesEntity && candidate.slots.some((slot) => slot.weekday === day && slot.slot_code === period);
         });
+        const fixedEvent = !block && fixedEventFor(viewBy === "class" ? "CLASS" : "TEACHER", entity.id, day, period);
         const button = document.createElement("button");
         if (block) {
           button.className = "lesson-cell weekly-lesson";
           button.textContent = labelFor(block);
           button.setAttribute("aria-label", `${title.textContent} ${day} ${periodLabels[period]} ${labelFor(block)}`);
           button.addEventListener("click", () => editPlacement(block, block.weekday, block.start_period));
+        } else if (fixedEvent) {
+          button.className = "fixed-event-cell";
+          button.textContent = fixedEvent.label;
+          button.disabled = true;
+          button.setAttribute("aria-label", `${title.textContent} ${day} ${periodLabels[period]} fixed event ${fixedEvent.label}`);
         } else if (viewBy === "teacher") {
           button.className = "free-cell";
           button.textContent = "Free";
@@ -675,7 +952,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   function addTeacherPlacement(teacher, weekday, startPeriod) {
-    const pending = current.pending.filter((item) => current.snapshot.requirements[String(item.lesson_requirement_id)]?.teacher_id === teacher.id);
+    const pending = current.pending.filter((item) => teacherMatchesRequirement(current.snapshot.requirements[String(item.lesson_requirement_id)], teacher.id));
     if (!pending.length) {
       notice(`No unplaced lesson requirements remain for ${teacher.full_name}.`);
       return;
@@ -688,15 +965,20 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   }
 
   function renderTeacherSummary(teacher) {
-    const placements = current.placements.filter((block) => current.snapshot.requirements[String(block.lesson_requirement_id)]?.teacher_id === teacher.id);
+    const placements = current.placements.filter((block) => teacherMatchesRequirement(current.snapshot.requirements[String(block.lesson_requirement_id)], teacher.id));
     const taught = placements.reduce((sum, block) => sum + block.period_count, 0);
     const scheduledSlots = weekdays.length * periods.filter((p) => p !== "LUNCH").length;
-    const free = Math.max(0, scheduledSlots - taught);
+    const duty = [...new Set((current.snapshot.fixed_events ?? []).flatMap((event) =>
+      event.audience_type === "TEACHER" && event.target_ids.includes(teacher.id)
+        ? event.slots.filter((slot) => !placements.some((block) => block.slots.some((cell) => cell.weekday === slot.weekday && cell.slot_code === slot.slot_code)))
+          .map((slot) => `${slot.weekday}:${slot.slot_code}`)
+        : []))].length;
+    const free = Math.max(0, scheduledSlots - taught - duty);
     const classNames = [...new Set(placements.map((block) => {
       const req = current.snapshot.requirements[String(block.lesson_requirement_id)];
       return current.snapshot.classes[String(req.instructional_class_id)]?.code;
     }).filter(Boolean))];
-    for (const [label, value] of [["Periods taught", taught], ["Free periods", free], ["Duty periods", 0], ["Classes", classNames.length]]) {
+    for (const [label, value] of [["Periods taught", taught], ["Free periods", free], ["Duty periods", duty], ["Classes", classNames.length]]) {
       const card = document.createElement("div");
       card.className = "teacher-stat";
       const strong = document.createElement("strong");
@@ -758,7 +1040,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
         if (includeAllPeriods || period === "LUNCH") return true;
         return current.placements.some((candidate) => {
           const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
-          const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+          const matches = itemKind === "class" ? req?.instructional_class_id === item.id : teacherMatchesRequirement(req, item.id);
           return matches && candidate.slots.some((slot) => slot.slot_code === period);
         });
       });
@@ -778,7 +1060,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           if (period === "LUNCH") return '<td class="lunch-cell" data-period="LUNCH">Lunch / Muster</td>';
           const entries = current.placements.flatMap((candidate) => {
             const req = current.snapshot.requirements[String(candidate.lesson_requirement_id)];
-            const matches = itemKind === "class" ? req?.instructional_class_id === item.id : req?.teacher_id === item.id;
+              const matches = itemKind === "class" ? req?.instructional_class_id === item.id : teacherMatchesRequirement(req, item.id);
             if (!matches) return [];
             return candidate.slots.filter((slot) => slot.weekday === day && slot.slot_code === period).map((slot) => ({req, slot}));
           });
@@ -794,7 +1076,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             const time = timeVaries ? `<small class="entry-time">${formatTime(slot.starts_at)} – ${formatTime(slot.ends_at)}</small>` : "";
             return `<span class="lesson-entry"><strong>${escapeHTML(subject.name)}</strong><small class="entry-resource">${escapeHTML(resource)}</small>${time}</span>`;
           }).join("");
-          return `<td data-period="${period}">${content}</td>`;
+          const fixedEvent = !entries.length && fixedEventFor(itemKind === "class" ? "CLASS" : "TEACHER", item.id, day, period);
+          const eventContent = fixedEvent ? `<span class="fixed-event-entry"><strong>${escapeHTML(fixedEvent.label)}</strong><small>Recurring event</small></span>` : "";
+          return `<td data-period="${period}">${content || eventContent}</td>`;
         }).join("");
         return `<tr data-weekday="${day}"><th scope="row">${dayLabels[day]}</th>${cells}</tr>`;
       }).join("");
@@ -837,6 +1121,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     fillSelect($("timetable-teacher-filter"), Object.values(current.snapshot.teachers).sort((a, b) => a.short_code.localeCompare(b.short_code)), (row) => `${row.short_code} · ${row.full_name}`);
     $("timetable-editor").hidden = false;
     $("timetable-editor-title").textContent = current.name;
+    $("timetable-rename-open").hidden = !editableDraft();
     $("timetable-version-detail").textContent = `${current.academic_year} · week of ${current.week_start} · ${current.status} · revision ${current.revision}`;
     if (current.is_published) $("timetable-version-detail").textContent += " · PUBLISHED";
     $("timetable-generate").hidden = !editableDraft();
@@ -856,6 +1141,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     if (sequence !== detailSequence) return;
     current = result;
     placementForm.hidden = true;
+    $("timetable-rename-form").hidden = true;
     $("timetable-generation-summary").textContent = "";
     pageOffset = 0;
     render();
@@ -1038,6 +1324,17 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     renderGrid();
   });
   $("timetable-swap-confirm").addEventListener("click", () => runDraftMutation($("timetable-swap-confirm"), swapSelectedPlacements));
+  $("timetable-rename-open").addEventListener("click", () => {
+    const form = $("timetable-rename-form");
+    form.hidden = false;
+    $("timetable-rename-input").value = current?.name || "";
+    $("timetable-rename-input").focus();
+  });
+  $("timetable-rename-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    runDraftMutation($("timetable-rename-save"), () => renameDraft(event));
+  });
+  $("timetable-rename-cancel").addEventListener("click", () => { $("timetable-rename-form").hidden = true; });
   $("timetable-cancel-placement").addEventListener("click", () => { placementForm.hidden = true; });
   $("timetable-generate").addEventListener("click", () => runDraftMutation($("timetable-generate"), generate));
   $("timetable-approve").addEventListener("click", () => runDraftMutation($("timetable-approve"), approve));
@@ -1061,6 +1358,56 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     label.disabled = isLunch;
   });
   $("timetable-rule-form").elements.target_type.addEventListener("change", updateRuleTargets);
+  $("timetable-fixed-event-form").elements.audience_type.addEventListener("change", () => updateFixedEventTargets(fixedTeachers, fixedClasses));
+  $("timetable-fixed-event-form").elements.target_mode.addEventListener("change", () => updateFixedEventTargets(fixedTeachers, fixedClasses));
+  $("fixed-event-new").addEventListener("click", () => {
+    const form = $("timetable-fixed-event-form");
+    form.reset();
+    delete form.dataset.eventId;
+    form.dataset.isActive = "true";
+    form.elements.expected_version.value = "";
+    updateFixedEventTargets(fixedTeachers, fixedClasses);
+    form.hidden = false;
+    $("fixed-event-cancel").hidden = false;
+    form.scrollIntoView({behavior: "smooth", block: "center"});
+    form.elements.academic_year.focus();
+  });
+  $("fixed-event-cancel").addEventListener("click", () => {
+    const form = $("timetable-fixed-event-form");
+    form.reset();
+    delete form.dataset.eventId;
+    form.hidden = true;
+    $("fixed-event-cancel").hidden = true;
+  });
+  $("timetable-fixed-event-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    run(form, async () => {
+      const slots = [...$("fixed-event-slots").querySelectorAll('input[type="checkbox"]:checked')]
+        .map((input) => ({weekday: input.dataset.day, slot_code: input.value}));
+      const payload = {
+        academic_year: form.elements.academic_year.value,
+        label: form.elements.label.value,
+        audience_type: form.elements.audience_type.value,
+        target_mode: form.elements.target_mode.value,
+        target_ids: form.elements.target_mode.value === "ALL"
+          ? []
+          : [...form.elements.target_ids.selectedOptions].map((option) => Number(option.value)),
+        slots,
+        is_active: form.dataset.isActive !== "false",
+      };
+      const eventId = form.dataset.eventId;
+      if (eventId) payload.expected_version = Number(form.elements.expected_version.value);
+      await api(eventId ? `/timetable/fixed-events/${eventId}` : "/timetable/fixed-events", eventId ? "PUT" : "POST", payload);
+      form.reset();
+      delete form.dataset.eventId;
+      delete form.dataset.isActive;
+      form.hidden = true;
+      $("fixed-event-cancel").hidden = true;
+      await refreshSetup();
+      notice(eventId ? "Fixed event updated." : "Fixed event created.");
+    });
+  });
   $("timetable-previous").addEventListener("click", () => { pageOffset = Math.max(0, pageOffset - Number($("timetable-density").value)); renderGrid(); });
   $("timetable-next").addEventListener("click", () => { pageOffset += Number($("timetable-density").value); renderGrid(); });
 

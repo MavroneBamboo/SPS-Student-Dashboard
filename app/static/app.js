@@ -23,7 +23,7 @@ function clearData() {
   timetable.clear();
   students.clear();
   referenceData?.clear();
-  for (const id of ["user-rows", "audit-rows", "metrics", "class-counts", "category-counts", "institution-counts", "attendance-trend"]) $(id).replaceChildren();
+  for (const id of ["user-rows", "audit-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
@@ -212,7 +212,8 @@ function showPanel(name) {
   $("timetable-panel").hidden = name !== "timetable";
   $("legacy-pri-panel").hidden = name !== "legacy-pri";
   $("reference-data-panel").hidden = name !== "reference-data";
-  const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav"};
+  $("sessions-panel").hidden = name !== "sessions";
+  const navIds = {users: "users-nav", audit: "audit-nav", dashboard: "dashboard-nav", profiles: "profiles-nav", attendance: "attendance-nav", timetable: "timetable-nav", sessions: "sessions-nav"};
   navIds["reference-data"] = "reference-data-nav";
   navIds["legacy-pri"] = "legacy-pri-nav";
   for (const [panel, id] of Object.entries(navIds)) {
@@ -222,7 +223,7 @@ function showPanel(name) {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", "reference-data": "Reference data", "legacy-pri": "Legacy timetable preflight"}[name];
+  $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", sessions: "Account sessions", "reference-data": "Reference data", "legacy-pri": "Legacy timetable preflight"}[name];
 }
 
 async function validateLegacyPri(file) {
@@ -281,7 +282,7 @@ function breakdown(id, values) {
     value.textContent = String(count);
     list.append(term, value);
   }
-  if (!list.children.length) list.textContent = "No active students match the filter.";
+  if (!list.children.length) list.textContent = "No students match the filter.";
   $(id).replaceChildren(list);
 }
 async function showDashboard() {
@@ -294,8 +295,10 @@ async function showDashboard() {
   const data = await api(`/reports/dashboard?${query}`);
   if (requestId !== dashboardRequest) return;
   $("metrics").replaceChildren();
+  const profileStatus = fields.status || "ACTIVE";
+  const profileLabel = profileStatus === "ALL" ? "Matching profiles" : `${profileStatus[0]}${profileStatus.slice(1).toLowerCase()} students`;
   for (const [label, value] of [
-    ["Active students", data.students.active],
+    [profileLabel, data.students.matching],
     ["Attendance", data.attendance.rate === null ? "No sessions" : `${data.attendance.rate}%`],
     ["Missing attendance records", data.attendance.missing],
     ["Sessions", data.attendance.sessions],
@@ -312,6 +315,7 @@ async function showDashboard() {
   breakdown("class-counts", data.students.by_class);
   breakdown("category-counts", data.students.by_category);
   breakdown("institution-counts", data.students.by_institution);
+  breakdown("age-counts", data.students.by_age_band);
   $("attendance-trend").replaceChildren();
   for (const entry of data.attendance.trend) {
     const row = document.createElement("tr");
@@ -323,8 +327,45 @@ async function showDashboard() {
     cell(row, "No attendance sessions match the filters.").colSpan = 7;
     $("attendance-trend").append(row);
   }
-  $("dashboard-freshness").textContent = `Committed data refreshed ${new Date(data.refreshed_at).toLocaleString()}`;
+  const dataThrough = data.data_through_at ? new Date(data.data_through_at).toLocaleString() : "no matching source records";
+  $("dashboard-freshness").textContent = `Query completed ${new Date(data.refreshed_at).toLocaleString()} · data through ${dataThrough} · requested by ${data.requested_by}`;
 }
+$("dashboard-export").addEventListener("click", () => run($("dashboard-export"), async () => {
+  const started = epoch;
+  const activeToken = token;
+  const fields = Object.fromEntries(new FormData($("dashboard-filter")));
+  if (fields.date_from && fields.date_to && fields.date_from > fields.date_to) throw new Error("Attendance from must be on or before attendance to.");
+  const query = new URLSearchParams(Object.entries(fields).filter(([, value]) => value));
+  const response = await fetch(`/api/v1/reports/dashboard.xlsx?${query}`, {
+    headers: {Authorization: `Bearer ${activeToken}`},
+    cache: "no-store",
+    credentials: "omit",
+    signal: requests.signal,
+  });
+  if (started !== epoch) throw new DOMException("Session changed", "AbortError");
+  if (response.status === 401 && token) {
+    signedOut("Your session ended. Sign in again.");
+    throw new DOMException("Session ended", "AbortError");
+  }
+  if (response.status === 403 && token) {
+    signedOut("Your access changed. Sign in again.");
+    throw new DOMException("Access changed", "AbortError");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Could not generate the filtered dashboard report.");
+  }
+  const blob = await response.blob();
+  if (started !== epoch || activeToken !== token) throw new DOMException("Session changed", "AbortError");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}));
 const monthlyReportForm = $("monthly-attendance-report");
 monthlyReportForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -467,6 +508,42 @@ async function showAudit() {
   $("audit-next").disabled = events.length <= pageSize;
 }
 
+async function showSessions() {
+  showPanel("sessions");
+  const sessions = await api("/auth/sessions");
+  const rows = $("session-rows");
+  rows.replaceChildren();
+  for (const session of sessions) {
+    const row = document.createElement("tr");
+    cell(row, session.created_at ? new Date(session.created_at).toLocaleString() : "Unknown");
+    cell(row, new Date(session.expires_at).toLocaleString());
+    cell(row, session.is_current ? "Current session" : "Other session");
+    const action = document.createElement("td");
+    if (session.is_current) {
+      action.textContent = "This session";
+    } else {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "secondary";
+      revoke.textContent = "Revoke session";
+      revoke.addEventListener("click", () => run(revoke, async () => {
+        await api(`/auth/sessions/${session.id}`, "DELETE");
+        await showSessions();
+        notice("Session revoked.");
+      }));
+      action.append(revoke);
+    }
+    row.append(action);
+    rows.append(row);
+  }
+  if (!sessions.length) {
+    const row = document.createElement("tr");
+    cell(row, "No active sessions were found.").colSpan = 4;
+    rows.append(row);
+  }
+  $("revoke-other-sessions").disabled = sessions.filter((session) => !session.is_current).length === 0;
+}
+
 const students = createStudentWorkspace({$, api, run, notice, cell, showPanel});
 const attendance = createAttendanceWorkspace({$, api, run, notice, cell, showPanel});
 const timetable = createTimetableWorkspace({$, api, run, notice, cell, showPanel, role: () => identity?.role, downloadXlsx});
@@ -581,6 +658,16 @@ for (const id of ["dashboard-nav", "refresh-dashboard"]) $(id).addEventListener(
 for (const id of ["users-nav", "refresh-users"]) $(id).addEventListener("click", () => run($(id), showUsers));
 $("audit-nav").addEventListener("click", () => run($("audit-nav"), showAudit));
 $("refresh-audit").addEventListener("click", () => run($("refresh-audit"), showAudit));
+$("sessions-nav").addEventListener("click", () => run($("sessions-nav"), showSessions));
+$("refresh-sessions").addEventListener("click", () => run($("refresh-sessions"), showSessions));
+$("revoke-other-sessions").addEventListener("click", async () => {
+  await run($("revoke-other-sessions"), async () => {
+    await api("/auth/sessions/revoke-others", "POST");
+    await showSessions();
+    notice("Other account sessions revoked. This session remains active.");
+  });
+  $("revoke-other-sessions").disabled = $("session-rows").querySelectorAll("button").length === 0;
+});
 $("audit-filter").addEventListener("submit", (event) => {
   event.preventDefault();
   auditOffset = 0;
