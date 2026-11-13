@@ -296,7 +296,12 @@ jobs:
           APP_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA= #gitleaks:allow
           TDE_VAULT_URL: https://vault.example.invalid
           TDE_VAULT_TOKEN_HOST_FILE: /tmp/ci-pg-tde-token
-        run: docker compose --file docker-compose.yml --file docker-compose.tde-production.yml config --quiet
+        run: |
+          docker compose --file docker-compose.yml --file docker-compose.tde-production.yml config --format json | jq -e '
+            (.services["tde-setup"].environment.APP_ENV == "production") and
+            (.services["tde-setup"].environment.TDE_PROVIDER == "vault") and
+            (.services["tde-setup"].environment.TDE_VAULT_URL | startswith("https://")) and
+            (.services.db.volumes | any(.target == "/run/secrets/pg-tde-vault-token" and .read_only == true))'
 
   deploy-staging:
     name: Deploy staging on WSL laptop
