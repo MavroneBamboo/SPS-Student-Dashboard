@@ -1,0 +1,7 @@
+# CI-only override for the disposable HTTPS proxy smoke-test stack.
+# Production Vault settings are validated separately by the CI Compose check.
+services:
+  tde-setup:
+    environment:
+      APP_ENV: development
+      TDE_PROVIDER: file

@@ -7,10 +7,10 @@ This repository contains the production system under construction and the approv
 Copy `.env.example` to `.env` and replace the sample secrets. Set `DATABASE_RUNTIME_PASSWORD` to a generated URL-safe secret (`python -c "import secrets; print(secrets.token_urlsafe(32))"`) and use the same value in the password component of `DATABASE_URL`. `DATABASE_ADMIN_URL` and `POSTGRES_PASSWORD` must use the same migration-account password. Then run:
 
 ```powershell
-docker compose up --build
+bash scripts/compose-up.sh
 ```
 
-Compose waits for PostgreSQL, applies the versioned schema migration, and provisions a SCRAM-authenticated `sps_runtime` role before starting the API. The API role has data read/write and sequence use privileges only; schema changes run through the separate migration account. The migration account is not passed to the API container. To apply migrations manually during development, run `docker compose run --rm migrate`. The initial migration intentionally refuses downgrade because dropping its tables could destroy operational data; recover through a verified backup or a forward migration.
+The startup helper brings up PostgreSQL, provisions the TDE keys, migrates existing application tables to encrypted storage, enables WAL encryption and restarts PostgreSQL before allowing schema migrations or the API to start. It then applies the versioned schema migration and provisions a SCRAM-authenticated `sps_runtime` role. The API role has data read/write and sequence use privileges only; schema changes run through the separate migration account. The migration account is not passed to the API container. To apply migrations manually during development, first start with `bash scripts/compose-up.sh`, then run `docker compose run --rm migrate`. The initial migration intentionally refuses downgrade because dropping its tables could destroy operational data; recover through a verified backup or a forward migration.
 
 Open `http://localhost:8080/` for the actual sign-in, account administration and committed-data dashboard. See [BROWSER_WORKSPACE.md](BROWSER_WORKSPACE.md) for the delivered workflow and limitations. The synthetic prototype remains at `http://localhost:8080/prototype/index.html`, and API documentation is at `http://localhost:8080/docs`.
 
@@ -31,6 +31,7 @@ Set `APP_ENV=production` for a production deployment. In this mode the applicati
 
 - Docker Compose services for NGINX, FastAPI and PostgreSQL.
 - Separate PostgreSQL credentials for the migration service and API runtime; the API role cannot create schemas/objects or administer roles/databases. CI verifies its PostgreSQL privileges and SCRAM password storage.
+- PostgreSQL TDE for table data, TOAST data, indexes and WAL, with a production Vault key provider and CI storage-level checks. Host/storage encryption remains required for PostgreSQL catalogs and temporary spill files. See [POSTGRES_TDE.md](POSTGRES_TDE.md).
 - One-shot encrypted PostgreSQL backup, empty-database restore and bounded retention commands in the Compose `maintenance` profile. See [DATABASE_BACKUPS.md](DATABASE_BACKUPS.md).
 - Live/readiness health endpoints.
 - Bootstrap Superuser login with short-lived signed JWT access tokens.

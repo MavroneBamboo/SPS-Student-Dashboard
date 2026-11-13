@@ -1,6 +1,6 @@
 # Encrypted PostgreSQL backup and restore
 
-The `maintenance` Compose profile provides a one-shot `pg_dump` backup encrypted with age and a restore command that only targets a fresh, empty database. PostgreSQL is accessed on the private Compose network; the database port remains unpublished. The API/runtime account reads the backup, while restore uses the PostgreSQL administrator account.
+The `maintenance` Compose profile provides a one-shot `pg_dump` backup encrypted with age and a restore command that only targets a fresh, empty database. PostgreSQL is accessed on the private Compose network; the database port remains unpublished. The API/runtime account reads the backup, while restore uses the PostgreSQL administrator account. PostgreSQL relation/WAL encryption and its recovery requirements are documented in [POSTGRES_TDE.md](POSTGRES_TDE.md).
 
 ## Configure the encryption key and destination
 
@@ -73,12 +73,12 @@ RESTORE_TARGET_DATABASE=sps_restore_drill
 RESTORE_TARGET_ACK=db/sps_restore_drill
 ```
 
-Run the restore and verify the recovered records and application behavior before promoting the restored database:
+Run the restore and verify the recovered records and application behavior before promoting the restored database. The restore service first prepares the empty target with the configured TDE provider and database default access method; the provider keys must be available to the database server:
 
 ```bash
 docker compose --profile maintenance run --rm --build database-restore
 ```
 
-Restore decrypts the archive directly into `pg_restore` using one database transaction. A failed decryption or restore rolls back the transaction. Restore access is checked against the exact target host/database acknowledgement and the target must have no user relations. The CI integration test exercises backup, restore, refusal to overwrite, and tampered-ciphertext rejection with PostgreSQL 17 and age.
+Restore decrypts the archive directly into `pg_restore` using one database transaction. A failed decryption or restore rolls back the transaction. Restore access is checked against the exact target host/database acknowledgement and the target must have no user relations. The CI integration test exercises backup, restore, refusal to overwrite, and tampered-ciphertext rejection with PostgreSQL 17 and age. The TDE integration test separately verifies encrypted relation creation and key persistence; production recovery also requires access to the external TDE provider.
 
 This provides encrypted logical backups and a restore mechanism. Production approval still requires an isolated backup destination, a scheduled job with monitored success/failure, a tested off-host restore, key recovery custody, retention approval, and agreed recovery-time/recovery-point objectives.
