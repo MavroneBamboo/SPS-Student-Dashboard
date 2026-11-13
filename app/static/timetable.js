@@ -13,6 +13,8 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   let detailSequence = 0;
   let swapSelectionMode = false;
   let selectedPlacementIds = [];
+  let fixedTeachers = [];
+  let fixedClasses = [];
   let draggedPlacementId = null;
   let dragStartPosition = null;
   let dragThresholdReached = false;
@@ -50,7 +52,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("timetable-by-teacher").classList.remove("is-selected");
     $("timetable-class-filter-wrap").hidden = false;
     $("timetable-teacher-filter-wrap").hidden = true;
-    for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows", "student-class-mapping-rows", "attendance-class-mapping-rows"]) {
+    for (const id of ["teacher-availability", "timetable-teacher-rows", "timetable-subject-rows", "timetable-class-rows", "timetable-period-rows", "fixed-event-rows", "student-class-mapping-rows", "attendance-class-mapping-rows"]) {
       const element = $(id);
       if (element) element.replaceChildren();
     }
@@ -200,8 +202,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   async function refreshSetup() {
     const canConfigure = ["IT Administrator", "Superuser"].includes(currentRole());
     $("timetable-teacher-group-form").hidden = !canConfigure;
-    const [teacherRows, subjects, instructionalClasses, clusters, periodRows, classMappings, attendanceMappings] = await Promise.all([
+    const [teacherRows, subjects, instructionalClasses, clusters, periodRows, fixedEvents, classMappings, attendanceMappings] = await Promise.all([
       api("/timetable/teachers"), api("/timetable/subjects"), api("/timetable/classes"), api("/timetable/clusters"), api("/timetable/periods"),
+      api("/timetable/fixed-events"),
       ["Operator", "IT Administrator", "Superuser"].includes(currentRole()) ? api("/student-reference/class-mappings") : Promise.resolve([]),
       ["Operator", "IT Administrator", "Superuser"].includes(currentRole()) ? api("/student-reference/attendance-class-mappings") : Promise.resolve([]),
     ]);
@@ -240,6 +243,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     const summary = $("timetable-resource-summary");
     if (summary) summary.textContent = `${teacherRows.length} teacher profiles · ${subjects.length} subjects · ${instructionalClasses.length} classes · ${clusters.length} clusters`;
     renderAvailability();
+    renderFixedEvents(fixedEvents, instructionalClasses, teacherRows, canConfigure);
     const periodTable = $("timetable-period-rows");
     periodTable?.replaceChildren();
     if (periodTable) for (const period of periodRows) {
@@ -332,6 +336,115 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     updateRuleTargets();
     for (const id of ["timetable-class-form", "timetable-cluster-form", "timetable-cluster-member-form", "timetable-subject-form", "timetable-period-form", "timetable-rule-form"]) $(id).hidden = !canConfigure;
     for (const button of document.querySelectorAll('[data-open-resource-form]')) button.hidden = !canConfigure;
+  }
+
+  function setupFixedEventSlotControls() {
+    const fieldset = $("fixed-event-slots");
+    if (fieldset.childElementCount > 1) return;
+    for (const day of weekdays) {
+      const row = document.createElement("div");
+      row.className = "availability-row";
+      const title = document.createElement("strong");
+      title.textContent = day;
+      row.append(title);
+      for (const period of ["P1", "P2", "P3", "P4"]) {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = period;
+        input.dataset.day = day;
+        input.setAttribute("aria-label", `${day} ${periodLabels[period]} fixed event`);
+        label.append(input, document.createTextNode(periodLabels[period]));
+        row.append(label);
+      }
+      fieldset.append(row);
+    }
+  }
+
+  function updateFixedEventTargets(teachers, instructionalClasses) {
+    const form = $("timetable-fixed-event-form");
+    const audience = form.elements.audience_type.value;
+    const mode = form.elements.target_mode.value;
+    const choices = audience === "TEACHER" ? teachers : instructionalClasses;
+    fillSelect(form.elements.target_ids, choices, (row) => audience === "TEACHER"
+      ? `${row.short_code} · ${row.full_name}`
+      : `${row.code} · ${row.name}`);
+    form.elements.target_ids.disabled = mode === "ALL";
+    form.elements.target_ids.required = mode === "SELECTED";
+  }
+
+  function renderFixedEvents(events, instructionalClasses, teacherRows, canConfigure) {
+    const form = $("timetable-fixed-event-form");
+    setupFixedEventSlotControls();
+    fixedTeachers = teacherRows.filter((row) => row.is_active);
+    fixedClasses = instructionalClasses.filter((row) => row.is_active);
+    updateFixedEventTargets(fixedTeachers, fixedClasses);
+    $("fixed-event-new").hidden = !canConfigure;
+    const rows = $("fixed-event-rows");
+    rows.replaceChildren();
+    for (const event of events) {
+      const row = document.createElement("tr");
+      const targetRows = event.audience_type === "TEACHER" ? teacherRows : instructionalClasses;
+      const targetLabels = event.target_mode === "ALL" ? `All active ${event.audience_type.toLowerCase()}s`
+        : event.target_ids.map((id) => {
+          const target = targetRows.find((item) => item.id === id);
+          return target ? (event.audience_type === "TEACHER" ? target.short_code : target.code) : `#${id}`;
+        }).join(", ");
+      const schedule = event.slots.map((slot) => `${slot.weekday} ${periodLabels[slot.slot_code] || slot.slot_code}`).join(", ");
+      for (const value of [event.academic_year, event.label, event.audience_type, targetLabels, schedule, event.is_active ? "Active" : "Inactive"]) cell(row, value);
+      const actions = cell(row, "");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.hidden = !canConfigure;
+      edit.addEventListener("click", () => {
+        form.reset();
+        form.dataset.eventId = String(event.id);
+        form.elements.expected_version.value = event.version;
+        form.dataset.isActive = String(event.is_active);
+        form.elements.academic_year.value = event.academic_year;
+        form.elements.label.value = event.label;
+        form.elements.audience_type.value = event.audience_type;
+        form.elements.target_mode.value = event.target_mode;
+        updateFixedEventTargets(fixedTeachers, fixedClasses);
+        for (const option of form.elements.target_ids.options) option.selected = event.target_ids.includes(Number(option.value));
+        for (const input of $("fixed-event-slots").querySelectorAll('input[type="checkbox"]')) {
+          input.checked = event.slots.some((slot) => slot.weekday === input.dataset.day && slot.slot_code === input.value);
+        }
+        form.hidden = false;
+        $("fixed-event-cancel").hidden = false;
+        form.elements.label.focus();
+      });
+      actions.append(edit);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "secondary";
+      toggle.textContent = event.is_active ? "Deactivate" : "Activate";
+      toggle.hidden = !canConfigure;
+      toggle.addEventListener("click", () => run(toggle, async () => {
+        await api(`/timetable/fixed-events/${event.id}`, "PUT", {
+          academic_year: event.academic_year,
+          label: event.label,
+          audience_type: event.audience_type,
+          target_mode: event.target_mode,
+          target_ids: event.target_ids,
+          slots: event.slots,
+          is_active: !event.is_active,
+          expected_version: event.version,
+        });
+        await refreshSetup();
+        notice(`Fixed event ${event.is_active ? "deactivated" : "activated"}.`);
+      }));
+      actions.append(toggle);
+      rows.append(row);
+    }
+    if (!events.length) {
+      const row = document.createElement("tr");
+      cell(row, "No recurring fixed events are configured.").colSpan = 7;
+      rows.append(row);
+    }
+    form.hidden = !canConfigure || form.hidden;
   }
 
   function updatePeriodTargets() {
@@ -530,6 +643,12 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     return Object.values(current.snapshot.classes).sort((a, b) => a.reporting_order - b.reporting_order || a.code.localeCompare(b.code));
   }
 
+  function fixedEventFor(audienceType, targetId, weekday, slotCode) {
+    return (current?.snapshot.fixed_events ?? []).find((event) =>
+      event.audience_type === audienceType && event.target_ids.includes(targetId) &&
+      event.slots.some((slot) => slot.weekday === weekday && slot.slot_code === slotCode));
+  }
+
   function renderGrid() {
     const host = $("timetable-grid");
     host.replaceChildren();
@@ -606,8 +725,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           }
           const placement = current.placements.find((block) => block.slots.some((slot) =>
             slot.instructional_class_id === classItem.id && slot.weekday === day && slot.slot_code === period));
+          const fixedEvent = !placement && fixedEventFor("CLASS", classItem.id, day, period);
           const button = document.createElement("button");
-          button.className = placement ? "lesson-cell" : "empty-cell";
+          button.className = placement ? "lesson-cell" : fixedEvent ? "fixed-event-cell" : "empty-cell";
           button.dataset.classId = String(classItem.id);
           button.dataset.weekday = day;
           button.dataset.startPeriod = period;
@@ -620,11 +740,16 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
               if (selected) button.classList.add("selected-for-swap");
             }
           }
-          button.disabled = !editableDraft() || draftMutationPending;
-          button.textContent = placement ? labelFor(placement) : (editableDraft() ? "+ Add lesson" : "—");
+          button.disabled = Boolean(fixedEvent) || !editableDraft() || draftMutationPending;
+          button.textContent = placement ? labelFor(placement) : fixedEvent
+            ? fixedEvent.label
+            : (editableDraft() ? "+ Add lesson" : "—");
+          if (fixedEvent) button.title = `${fixedEvent.label} · recurring school event`;
           button.setAttribute("aria-label", placement
             ? `${classItem.code} ${day} ${periodLabels[period]} ${labelFor(placement)}`
-            : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
+            : fixedEvent
+              ? `${classItem.code} ${day} ${periodLabels[period]} fixed event ${fixedEvent.label}`
+              : `Add lesson to ${classItem.code} ${day} ${periodLabels[period]}`);
           if (placement) button.addEventListener("click", () => {
             if (suppressNextCellClick) {
               suppressNextCellClick = false;
@@ -793,12 +918,18 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
               : teacherMatchesRequirement(req, entity.id);
           return matchesEntity && candidate.slots.some((slot) => slot.weekday === day && slot.slot_code === period);
         });
+        const fixedEvent = !block && fixedEventFor(viewBy === "class" ? "CLASS" : "TEACHER", entity.id, day, period);
         const button = document.createElement("button");
         if (block) {
           button.className = "lesson-cell weekly-lesson";
           button.textContent = labelFor(block);
           button.setAttribute("aria-label", `${title.textContent} ${day} ${periodLabels[period]} ${labelFor(block)}`);
           button.addEventListener("click", () => editPlacement(block, block.weekday, block.start_period));
+        } else if (fixedEvent) {
+          button.className = "fixed-event-cell";
+          button.textContent = fixedEvent.label;
+          button.disabled = true;
+          button.setAttribute("aria-label", `${title.textContent} ${day} ${periodLabels[period]} fixed event ${fixedEvent.label}`);
         } else if (viewBy === "teacher") {
           button.className = "free-cell";
           button.textContent = "Free";
@@ -837,12 +968,17 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     const placements = current.placements.filter((block) => teacherMatchesRequirement(current.snapshot.requirements[String(block.lesson_requirement_id)], teacher.id));
     const taught = placements.reduce((sum, block) => sum + block.period_count, 0);
     const scheduledSlots = weekdays.length * periods.filter((p) => p !== "LUNCH").length;
-    const free = Math.max(0, scheduledSlots - taught);
+    const duty = [...new Set((current.snapshot.fixed_events ?? []).flatMap((event) =>
+      event.audience_type === "TEACHER" && event.target_ids.includes(teacher.id)
+        ? event.slots.filter((slot) => !placements.some((block) => block.slots.some((cell) => cell.weekday === slot.weekday && cell.slot_code === slot.slot_code)))
+          .map((slot) => `${slot.weekday}:${slot.slot_code}`)
+        : []))].length;
+    const free = Math.max(0, scheduledSlots - taught - duty);
     const classNames = [...new Set(placements.map((block) => {
       const req = current.snapshot.requirements[String(block.lesson_requirement_id)];
       return current.snapshot.classes[String(req.instructional_class_id)]?.code;
     }).filter(Boolean))];
-    for (const [label, value] of [["Periods taught", taught], ["Free periods", free], ["Duty periods", 0], ["Classes", classNames.length]]) {
+    for (const [label, value] of [["Periods taught", taught], ["Free periods", free], ["Duty periods", duty], ["Classes", classNames.length]]) {
       const card = document.createElement("div");
       card.className = "teacher-stat";
       const strong = document.createElement("strong");
@@ -940,7 +1076,9 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
             const time = timeVaries ? `<small class="entry-time">${formatTime(slot.starts_at)} – ${formatTime(slot.ends_at)}</small>` : "";
             return `<span class="lesson-entry"><strong>${escapeHTML(subject.name)}</strong><small class="entry-resource">${escapeHTML(resource)}</small>${time}</span>`;
           }).join("");
-          return `<td data-period="${period}">${content}</td>`;
+          const fixedEvent = !entries.length && fixedEventFor(itemKind === "class" ? "CLASS" : "TEACHER", item.id, day, period);
+          const eventContent = fixedEvent ? `<span class="fixed-event-entry"><strong>${escapeHTML(fixedEvent.label)}</strong><small>Recurring event</small></span>` : "";
+          return `<td data-period="${period}">${content || eventContent}</td>`;
         }).join("");
         return `<tr data-weekday="${day}"><th scope="row">${dayLabels[day]}</th>${cells}</tr>`;
       }).join("");
@@ -1220,6 +1358,56 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     label.disabled = isLunch;
   });
   $("timetable-rule-form").elements.target_type.addEventListener("change", updateRuleTargets);
+  $("timetable-fixed-event-form").elements.audience_type.addEventListener("change", () => updateFixedEventTargets(fixedTeachers, fixedClasses));
+  $("timetable-fixed-event-form").elements.target_mode.addEventListener("change", () => updateFixedEventTargets(fixedTeachers, fixedClasses));
+  $("fixed-event-new").addEventListener("click", () => {
+    const form = $("timetable-fixed-event-form");
+    form.reset();
+    delete form.dataset.eventId;
+    form.dataset.isActive = "true";
+    form.elements.expected_version.value = "";
+    updateFixedEventTargets(fixedTeachers, fixedClasses);
+    form.hidden = false;
+    $("fixed-event-cancel").hidden = false;
+    form.scrollIntoView({behavior: "smooth", block: "center"});
+    form.elements.academic_year.focus();
+  });
+  $("fixed-event-cancel").addEventListener("click", () => {
+    const form = $("timetable-fixed-event-form");
+    form.reset();
+    delete form.dataset.eventId;
+    form.hidden = true;
+    $("fixed-event-cancel").hidden = true;
+  });
+  $("timetable-fixed-event-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    run(form, async () => {
+      const slots = [...$("fixed-event-slots").querySelectorAll('input[type="checkbox"]:checked')]
+        .map((input) => ({weekday: input.dataset.day, slot_code: input.value}));
+      const payload = {
+        academic_year: form.elements.academic_year.value,
+        label: form.elements.label.value,
+        audience_type: form.elements.audience_type.value,
+        target_mode: form.elements.target_mode.value,
+        target_ids: form.elements.target_mode.value === "ALL"
+          ? []
+          : [...form.elements.target_ids.selectedOptions].map((option) => Number(option.value)),
+        slots,
+        is_active: form.dataset.isActive !== "false",
+      };
+      const eventId = form.dataset.eventId;
+      if (eventId) payload.expected_version = Number(form.elements.expected_version.value);
+      await api(eventId ? `/timetable/fixed-events/${eventId}` : "/timetable/fixed-events", eventId ? "PUT" : "POST", payload);
+      form.reset();
+      delete form.dataset.eventId;
+      delete form.dataset.isActive;
+      form.hidden = true;
+      $("fixed-event-cancel").hidden = true;
+      await refreshSetup();
+      notice(eventId ? "Fixed event updated." : "Fixed event created.");
+    });
+  });
   $("timetable-previous").addEventListener("click", () => { pageOffset = Math.max(0, pageOffset - Number($("timetable-density").value)); renderGrid(); });
   $("timetable-next").addEventListener("click", () => { pageOffset += Number($("timetable-density").value); renderGrid(); });
 

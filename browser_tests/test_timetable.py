@@ -364,3 +364,65 @@ def test_it_creates_teacher_class_cluster_period_rule_and_lesson_in_workspace(pa
     expect(page.get_by_role("status")).to_contain_text("Weekly lesson requirement saved")
     expect(page.locator("#timetable-resource-summary")).to_contain_text("clusters")
     expect(page.locator("#timetable-period-rows")).to_contain_text("Early start")
+
+
+def test_it_configures_fixed_event_and_sees_it_on_board_and_print_report(page, make_account, live_url):
+    admin = make_account("IT Administrator")
+    login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
+    assert login.status == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    suffix = uuid4().hex[:8].upper()
+    class_response = page.request.post(
+        live_url + "/api/v1/timetable/classes",
+        data={"code": f"E{suffix}", "name": "Fixed Event Test Class"},
+        headers=headers,
+    )
+    assert class_response.status == 201, class_response.text()
+    class_item = class_response.json()
+    rule = page.request.post(
+        live_url + "/api/v1/timetable/rules",
+        data={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": class_item["id"],
+            "effective_from": "2026-01-01",
+            "rule": {},
+        },
+        headers=headers,
+    )
+    assert rule.status == 201, rule.text()
+
+    page.goto(live_url + "/ui/")
+    page.get_by_label("Username", exact=True).fill(admin["username"])
+    page.get_by_label("Password", exact=True).fill(admin["password"])
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    page.get_by_role("button", name="Fixed events", exact=True).click()
+    page.get_by_role("button", name="New fixed event", exact=True).click()
+    event_form = page.locator("#timetable-fixed-event-form")
+    event_form.get_by_label("Academic year", exact=True).fill("2026")
+    event_form.get_by_label("Event name", exact=True).fill("Monday Assembly")
+    event_form.locator('select[name="audience_type"]').select_option("CLASS")
+    event_form.locator('select[name="target_mode"]').select_option("SELECTED")
+    event_form.locator('select[name="target_ids"]').select_option(str(class_item["id"]))
+    page.get_by_label("MON P1 · Period 1 fixed event", exact=True).check()
+    event_form.get_by_role("button", name="Save fixed event", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Fixed event created")
+    expect(page.locator("#fixed-event-rows")).to_contain_text("Monday Assembly")
+
+    page.get_by_role("button", name="Timetable", exact=True).click()
+    page.get_by_role("button", name="Create weekly draft", exact=True).click()
+    draft_form = page.locator("#timetable-create-form")
+    draft_form.get_by_label("Draft name", exact=True).fill("Fixed Event Board")
+    draft_form.get_by_label("Academic year", exact=True).fill("2026")
+    draft_form.get_by_label("Week starting Monday", exact=True).fill("2026-10-26")
+    draft_form.locator('select[name="class_ids"]').select_option(str(class_item["id"]))
+    draft_form.get_by_role("button", name="Create draft", exact=True).click()
+    expect(page.locator(".weekly-board")).to_contain_text("Monday Assembly")
+
+    page.get_by_role("button", name="Reports & export", exact=True).click()
+    with page.expect_popup() as popup_info:
+        page.get_by_role("button", name="Open class print view", exact=True).click()
+    report = popup_info.value
+    report.wait_for_load_state("load")
+    expect(report.locator(".fixed-event-entry")).to_contain_text("Monday Assembly")

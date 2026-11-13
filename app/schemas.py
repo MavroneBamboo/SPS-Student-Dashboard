@@ -428,6 +428,47 @@ class PeriodUpdate(BaseModel):
         return self
 
 
+class FixedEventSlot(BaseModel):
+    weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
+    slot_code: Literal["P1", "P2", "P3", "P4"]
+
+
+class TimetableFixedEventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    academic_year: str = Field(min_length=1, max_length=20)
+    label: str = Field(min_length=1, max_length=120)
+    audience_type: Literal["CLASS", "TEACHER"]
+    target_mode: Literal["ALL", "SELECTED"]
+    target_ids: list[int] = Field(default_factory=list)
+    slots: list[FixedEventSlot] = Field(min_length=1, max_length=20)
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_event(self):
+        if self.target_mode == "ALL" and self.target_ids:
+            raise ValueError("ALL fixed events must not include target_ids")
+        if self.target_mode == "SELECTED" and not self.target_ids:
+            raise ValueError("SELECTED fixed events require at least one target_id")
+        if len(self.target_ids) != len(set(self.target_ids)) or any(target_id < 1 for target_id in self.target_ids):
+            raise ValueError("target_ids must be unique positive IDs")
+        keys = [(slot.weekday, slot.slot_code) for slot in self.slots]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Fixed event slots must be unique")
+        if not self.academic_year.strip() or not self.label.strip():
+            raise ValueError("Academic year and event label are required")
+        return self
+
+
+class TimetableFixedEventUpdate(TimetableFixedEventCreate):
+    expected_version: int = Field(ge=1)
+
+
+class TimetableFixedEventResponse(TimetableFixedEventCreate):
+    id: int
+    version: int
+
+
 class StudentCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     pris_no: str = Field(min_length=1, max_length=40)
