@@ -84,6 +84,9 @@ done
 
 psql=("${compose[@]}" exec --no-TTY db psql -v ON_ERROR_STOP=1 -U sps_app -d sps_dashboard)
 
+server_encoding="$("${psql[@]}" --tuples-only --no-align --command 'SHOW server_encoding')"
+[[ "$server_encoding" == "UTF8" ]]
+
 preserved="$("${psql[@]}" --tuples-only --no-align --command "SELECT secret FROM public.tde_preserved_probe WHERE id = 1")"
 [[ "$preserved" == "SPS_TDE_EXISTING_DATA_SENTINEL_7f4cdb1a" ]]
 

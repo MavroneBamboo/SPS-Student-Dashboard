@@ -16,6 +16,8 @@ The Compose database derives from Percona Distribution for PostgreSQL 17.11.1-4 
 
 The database image has `pg_tde` in `shared_preload_libraries`. `scripts/compose-up.sh` starts only the database prerequisites, runs `app.tde_setup --prepare`, restarts PostgreSQL if WAL encryption is not active, verifies the setting, then starts the migration and application services. `tde-setup --verify` is a migration dependency and fails closed if encryption is missing. The staging workflow uses the same helper. Production Vault settings are in `docker-compose.tde-production.yml`; compose that file with the approved production Compose files and protected environment file.
 
+New database clusters are initialized explicitly with UTF-8 encoding (`server_encoding=UTF8`) and the stable `C` locale. This avoids SQL_ASCII result values being returned as bytes to application drivers. Changing the init arguments does not convert an already-initialized data directory; existing clusters retain their original encoding.
+
 ## Existing database migration
 
 The setup is idempotent, but changing a populated PostgreSQL volume to Percona PostgreSQL and rewriting existing relations is an operational migration. The helper converts its configured database volume in place and is intended for local development and synthetic staging. Do not point it at the only copy of production data. For production use a side-by-side cluster and logical restore:
