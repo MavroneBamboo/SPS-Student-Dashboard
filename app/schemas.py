@@ -167,6 +167,16 @@ class TimetableRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class TimetableRenameRequest(TimetableRevisionRequest):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class TimetableMoveRequest(TimetableRevisionRequest):
+    weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
+    start_period: Literal["P1", "P2", "P3", "P4"]
+
+
 class TimetablePlacementWrite(TimetableRevisionRequest):
     lesson_requirement_id: int = Field(gt=0)
     weekday: Literal["MON", "TUE", "WED", "THU", "FRI"]
@@ -218,6 +228,20 @@ class TeacherCreate(BaseModel):
 
 class TeacherResponse(TeacherCreate):
     id: int
+    is_composite: bool = False
+    member_ids: list[int] = Field(default_factory=list)
+
+
+class TeacherGroupCreate(BaseModel):
+    short_code: str = Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    full_name: str = Field(min_length=1, max_length=160)
+    member_ids: list[int] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def validate_members(self):
+        if any(member_id <= 0 for member_id in self.member_ids) or len(set(self.member_ids)) != len(self.member_ids):
+            raise ValueError("A teacher group requires at least two distinct positive teacher IDs")
+        return self
 
 
 class LessonRequirementCreate(BaseModel):
@@ -267,7 +291,7 @@ class InstructionalClassResponse(InstructionalClassCreate):
 
 class StudentClassMappingCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-    source_workbook: Literal["STUDENT_INTAKE_2023"] = "STUDENT_INTAKE_2023"
+    source_workbook: Literal["STUDENT_INTAKE_2021", "STUDENT_INTAKE_2023"] = "STUDENT_INTAKE_2023"
     source_label: str = Field(min_length=1, max_length=120)
     instructional_class_id: int = Field(ge=1)
 
@@ -445,6 +469,8 @@ class StudentCreate(BaseModel):
     next_of_kin_address_ports: str | None = Field(default=None, max_length=1500)
     next_of_kin_address_from_student: str | None = Field(default=None, max_length=1500)
     student_contact: str | None = Field(default=None, max_length=80)
+    verification_note: str | None = Field(default=None, max_length=500)
+    elective: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode="after")
     def pair_age_with_academic_year(self):
@@ -499,6 +525,8 @@ class StudentUpdate(BaseModel):
     next_of_kin_address_ports: str | None = Field(default=None, max_length=1500)
     next_of_kin_address_from_student: str | None = Field(default=None, max_length=1500)
     student_contact: str | None = Field(default=None, max_length=80)
+    verification_note: str | None = Field(default=None, max_length=500)
+    elective: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode="after")
     def require_change(self):

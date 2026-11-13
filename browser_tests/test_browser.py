@@ -171,6 +171,51 @@ def test_it_admin_named_account_reset_and_server_logout(page, make_account, live
     )
 
 
+@pytest.mark.parametrize("role", ["Superuser", "IT Administrator", "Operator", "Executive"])
+def test_every_role_can_open_its_own_account_sessions(page, make_account, role):
+    account = make_account(role)
+    login(page, account)
+    expect(page.get_by_role("button", name="Account sessions", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Account sessions", exact=True).click()
+    expect(page.locator("#sessions-title")).to_be_visible()
+    expect(page.locator("#session-rows")).to_contain_text("Current session")
+    expect(page.locator("#revoke-other-sessions")).to_be_disabled()
+
+
+def test_account_sessions_can_revoke_one_or_all_other_sessions_without_signing_out(page, make_account, live_url):
+    account = make_account("Operator")
+    login(page, account)
+    other_tokens = []
+    for _ in range(2):
+        response = page.request.post(
+            live_url + "/api/v1/auth/login", data={"username": account["username"], "password": account["password"]}
+        )
+        assert response.status == 200
+        other_tokens.append(response.json()["access_token"])
+
+    page.get_by_role("button", name="Account sessions", exact=True).click()
+    expect(page.locator("#session-rows tr")).to_have_count(3)
+    expect(page.locator("#revoke-other-sessions")).to_be_enabled()
+
+    other_row = page.locator("#session-rows tr").filter(has_text="Other session").first
+    other_row.get_by_role("button", name="Revoke session", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("Session revoked.")
+    expect(page.locator("#session-rows tr")).to_have_count(2)
+    token_statuses = [
+        page.request.get(live_url + "/api/v1/auth/me", headers={"Authorization": f"Bearer {session_token}"}).status
+        for session_token in other_tokens
+    ]
+    assert sorted(token_statuses) == [200, 401]
+
+    page.get_by_role("button", name="Revoke other sessions", exact=True).click()
+    expect(page.get_by_role("status")).to_contain_text("This session remains active")
+    expect(page.locator("#session-rows tr")).to_have_count(1)
+    expect(page.locator("#session-rows")).to_contain_text("Current session")
+    expect(page.locator("#revoke-other-sessions")).to_be_disabled()
+    for session_token in other_tokens:
+        assert page.request.get(live_url + "/api/v1/auth/me", headers={"Authorization": f"Bearer {session_token}"}).status == 401
+
+
 @pytest.mark.parametrize("role", ["Operator", "Executive"])
 def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(page, make_account, role):
     account = make_account(role)
@@ -225,7 +270,9 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
     page.get_by_label("Attendance to", exact=True).fill("2026-10-20")
     page.get_by_role("button", name="Apply filters").click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students1")
+    expect(page.locator("#age-counts")).to_contain_text("Age not recorded1")
     expect(page.locator("#metrics .metric").nth(1)).to_have_text("Attendance100%")
+    expect(page.locator("#dashboard-freshness")).to_contain_text("requested by")
     expect(page.locator("#attendance-trend")).to_contain_text(class_name)
     assert page.locator("#class-counts img").count() == 0
     with SessionLocal() as db:
@@ -233,6 +280,10 @@ def test_live_dashboard_filters_refresh_and_safe_text_for_each_operational_role(
         db.commit()
     page.get_by_role("button", name="Refresh data").click()
     expect(page.locator("#metrics .metric").nth(0)).to_have_text("Active students0")
+    page.locator("#dashboard-filter").get_by_label("Category", exact=True).fill("OP")
+    page.locator('#dashboard-filter select[name="status"]').select_option("INACTIVE")
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Inactive students1")
     screenshot(page, role.lower().replace(" ", "-") + "-dashboard")
     page.get_by_role("button", name="Sign out", exact=True).click()
     expect(page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
@@ -310,6 +361,23 @@ def test_monthly_attendance_download_from_dashboard(page, make_account, tmp_path
     assert sheet.cell(5, 1).value == "ACTIVE"
     assert sheet.cell(5, 2).value.startswith("B-")
     assert sheet.cell(5, 3).value == "Monthly Browser Student"
+
+    with SessionLocal() as db:
+        db.get(Student, student_id).class_name = class_name
+        db.commit()
+    page.locator("#dashboard-filter input[name='class_name']").fill(class_name)
+    page.locator('#dashboard-filter select[name="status"]').select_option("ALL")
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#metrics .metric").nth(0)).to_have_text("Matching profiles1")
+    with page.expect_download() as dashboard_download_info:
+        page.get_by_role("button", name="Download filtered Excel report").click()
+    dashboard_download = dashboard_download_info.value
+    dashboard_target = tmp_path / dashboard_download.suggested_filename
+    dashboard_download.save_as(dashboard_target)
+    dashboard_workbook = load_workbook(dashboard_target, data_only=False)
+    assert dashboard_workbook.sheetnames == ["Overview", "Profile breakdowns", "Attendance sessions"]
+    assert dashboard_workbook["Profile breakdowns"]["B2"].value == class_name
+    assert dashboard_workbook["Attendance sessions"]["B2"].value == class_name
 
 
 def test_deactivated_account_is_signed_out_and_sensitive_workspace_cleared(page, make_account):

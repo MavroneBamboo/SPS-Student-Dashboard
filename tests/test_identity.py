@@ -1,17 +1,21 @@
 """Exercise revocation and delegated account administration against PostgreSQL."""
 
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from uuid import uuid4
 
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.main import app
 from app.models import AuditEvent, User
 from app.routes.users import preserve_last_admin
-from app.security import hash_password
+from app.security import decode_access_token, hash_password
 
 PASSWORD = "identity-fixture-password"
 
@@ -55,6 +59,93 @@ def test_login_audits_success_and_failures_without_storing_credentials_or_unknow
     assert unknown_username not in str(events)
 
 
+def test_repeated_account_failures_start_a_bounded_cooldown_and_success_resets_it():
+    username = f"cooldown-{uuid4().hex[:12]}"
+    with SessionLocal() as db:
+        user = User(username=username, password_hash=hash_password(PASSWORD), role="Operator", is_active=True)
+        db.add(user)
+        db.commit()
+        user_id = user.id
+
+    with TestClient(app) as client:
+        for _ in range(5):
+            failed = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+            assert failed.status_code == 401
+        blocked = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+        assert blocked.status_code == 401
+        successful = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+        assert successful.status_code == 200
+
+        for _ in range(5):
+            failed = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+            assert failed.status_code == 401
+        with SessionLocal() as db:
+            recent_failures = db.scalars(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.actor_id == user_id,
+                    AuditEvent.action == "auth.login.failed",
+                    AuditEvent.entity_type == "user",
+                )
+                .order_by(AuditEvent.id.desc())
+                .limit(5)
+            ).all()
+            assert len(recent_failures) == 5
+            expired_at = datetime.now(UTC) - timedelta(minutes=16)
+            for event in recent_failures:
+                event.created_at = expired_at
+            db.commit()
+
+        after_cooldown = client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+        assert after_cooldown.status_code == 401
+
+    with SessionLocal() as db:
+        actions = list(
+            db.scalars(
+                select(AuditEvent.action)
+                .where(AuditEvent.actor_id == user_id, AuditEvent.entity_type == "user", AuditEvent.entity_id == str(user_id))
+                .order_by(AuditEvent.id)
+            )
+        )
+    assert actions.count("auth.login.blocked") == 1
+    assert actions.count("auth.login.succeeded") == 1
+    assert actions.count("auth.login.failed") == 11
+
+
+def test_concurrent_login_failures_cannot_race_past_account_cooldown():
+    if engine.dialect.name != "postgresql":
+        pytest.skip("Concurrent account cooldown behavior depends on PostgreSQL row locks")
+    username = f"cooldown-race-{uuid4().hex[:12]}"
+    with SessionLocal() as db:
+        user = User(username=username, password_hash=hash_password(PASSWORD), role="Operator", is_active=True)
+        db.add(user)
+        db.commit()
+        user_id = user.id
+
+    barrier = Barrier(7)
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=7) as executor:
+
+        def fail_login():
+            barrier.wait(timeout=10)
+            return client.post("/api/v1/auth/login", json={"username": username, "password": "incorrect"})
+
+        responses = list(executor.map(lambda _: fail_login(), range(7)))
+
+    assert all(response.status_code == 401 for response in responses)
+    with SessionLocal() as db:
+        actions = list(
+            db.scalars(
+                select(AuditEvent.action).where(
+                    AuditEvent.actor_id == user_id,
+                    AuditEvent.entity_type == "user",
+                    AuditEvent.entity_id == str(user_id),
+                )
+            )
+        )
+    assert actions.count("auth.login.failed") == 5
+    assert actions.count("auth.login.blocked") == 2
+
+
 def account(client: TestClient, role: str, password: str = PASSWORD) -> tuple[int, dict]:
     username = f"identity-{uuid4().hex[:15]}"
     with SessionLocal() as db:
@@ -67,7 +158,7 @@ def account(client: TestClient, role: str, password: str = PASSWORD) -> tuple[in
     return user_id, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-def test_password_change_and_logout_revoke_all_existing_account_tokens():
+def test_password_change_revokes_all_sessions_but_logout_revokes_only_current_session():
     with TestClient(app) as client:
         user_id, old = account(client, "Operator")
         old_login = client.post(
@@ -84,13 +175,55 @@ def test_password_change_and_logout_revoke_all_existing_account_tokens():
         assert client.get("/api/v1/auth/me", headers=other).status_code == 401
         fresh = {"Authorization": f"Bearer {changed.json()['access_token']}"}
         assert client.get("/api/v1/auth/me", headers=fresh).json()["sub"] == str(user_id)
+        username = client.get("/api/v1/auth/me", headers=fresh).json()["username"]
+        other_login = client.post("/api/v1/auth/login", json={"username": username, "password": "identity-new-password"})
+        other_after_change = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+        active_sessions = client.get("/api/v1/auth/sessions", headers=fresh)
+        assert active_sessions.status_code == 200
+        assert {row["id"] for row in active_sessions.json()} == {
+            decode_access_token(fresh["Authorization"].removeprefix("Bearer "))["jti"],
+            decode_access_token(other_after_change["Authorization"].removeprefix("Bearer "))["jti"],
+        }
         assert client.post("/api/v1/auth/logout", headers=fresh).status_code == 204
         assert client.get("/api/v1/auth/me", headers=fresh).status_code == 401
+        assert client.get("/api/v1/auth/me", headers=other_after_change).status_code == 200
         assert client.post("/api/v1/auth/logout", headers=fresh).status_code == 401
         username = client.post("/api/v1/auth/login", json={"username": "nonexistent", "password": PASSWORD})
         assert username.status_code == 401
         with SessionLocal() as db:
-            assert db.get(User, user_id).token_version == 2
+            assert db.get(User, user_id).token_version == 1
+
+
+def test_users_can_list_and_revoke_only_their_own_active_sessions():
+    with TestClient(app) as client:
+        user_id, current = account(client, "Operator")
+        current_jti = decode_access_token(current["Authorization"].removeprefix("Bearer "))["jti"]
+        username = client.get("/api/v1/auth/me", headers=current).json()["username"]
+        second_login = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+        second = {"Authorization": f"Bearer {second_login.json()['access_token']}"}
+        second_jti = decode_access_token(second_login.json()["access_token"])["jti"]
+
+        sessions = client.get("/api/v1/auth/sessions", headers=current)
+        assert sessions.status_code == 200
+        assert {row["id"] for row in sessions.json()} == {current_jti, second_jti}
+        assert {row["id"] for row in sessions.json() if row["is_current"]} == {current_jti}
+        assert client.delete(f"/api/v1/auth/sessions/{second_jti}", headers=current).status_code == 204
+        assert client.get("/api/v1/auth/me", headers=second).status_code == 401
+        assert client.get("/api/v1/auth/me", headers=current).status_code == 200
+        assert client.delete(f"/api/v1/auth/sessions/{second_jti}", headers=current).status_code == 204
+
+        other_id, other_user = account(client, "Operator")
+        other_jti = decode_access_token(other_user["Authorization"].removeprefix("Bearer "))["jti"]
+        assert other_id != user_id
+        assert client.delete(f"/api/v1/auth/sessions/{other_jti}", headers=current).status_code == 404
+
+        third_login = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+        third = {"Authorization": f"Bearer {third_login.json()['access_token']}"}
+        assert client.post("/api/v1/auth/sessions/revoke-others", headers=current).status_code == 204
+        assert client.get("/api/v1/auth/me", headers=third).status_code == 401
+        assert client.get("/api/v1/auth/me", headers=current).status_code == 200
+        remaining = client.get("/api/v1/auth/sessions", headers=current)
+        assert [row["id"] for row in remaining.json()] == [current_jti]
 
 
 def test_it_admin_can_manage_named_users_but_never_superuser():

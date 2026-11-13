@@ -1,4 +1,4 @@
-"""Bounded, non-mutating parser for the supported Student Intake 2023 workbook."""
+"""Bounded, non-mutating parser for supported Student Intake 2021/2023 workbooks."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 from pydantic import ValidationError
 
 from app.schemas import StudentCreate
+from app.student_class_mapping import STUDENT_INTAKE_2021, STUDENT_INTAKE_2023
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_ROWS = 10_000
@@ -19,7 +20,7 @@ MAX_COLUMNS = 64
 MAX_ZIP_ENTRIES = 2_000
 MAX_ZIP_MEMBER_BYTES = 50 * 1024 * 1024
 MAX_ZIP_TOTAL_BYTES = 100 * 1024 * 1024
-SHEET_NAME = "Student Intake 2023"
+SHEET_NAMES = {STUDENT_INTAKE_2021: "Student Intake 2021", STUDENT_INTAKE_2023: "Student Intake 2023"}
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +34,7 @@ def _header_key(value: Any) -> str:
     return " ".join(str(value or "").replace("\u00a0", " ").split()).upper()
 
 
-HEADER_FIELDS = {
+HEADER_FIELDS_2023 = {
     "PRIS NO.": "pris_no",
     "CAT": "category",
     "EDR/ROS": "edr_ros",
@@ -72,7 +73,48 @@ HEADER_FIELDS = {
     "MCH / NOK ADDRESS (FROM STUDENT)": "next_of_kin_address_from_student",
     "MCH / NOK CONTACT NUMBER (FROM STUDENT)": "student_contact",
 }
-HEADER_FIELDS = {_header_key(key): value for key, value in HEADER_FIELDS.items()}
+HEADER_FIELDS_2023 = {_header_key(key): value for key, value in HEADER_FIELDS_2023.items()}
+HEADER_FIELDS_2021 = {
+    "PRIS NO": "pris_no",
+    "CAT": "category",
+    "EDR/ROS": "edr_ros",
+    "VERIFY": "verification_note",
+    "IC": "ic_number",
+    "NAME": "name",
+    "CLASS": "class_name",
+    "STATUS": "status",
+    "STATUS EFFECTIVE": "status_effective",
+    "ADM TYPE": "admission_type",
+    "EXAM LEVEL": "exam_level",
+    "DOB": "date_of_birth",
+    "AGE IN AY'21": "age_in_academic_year",
+    "GENDER": "gender",
+    "LANG 1": "language_1",
+    "LANG 2": "language_2",
+    "MATH 1": "math_1",
+    "MATH 2": "math_2",
+    "SCI": "science",
+    "HUM": "humanities",
+    "COM 1": "commerce_1",
+    "COM 2": "commerce_2",
+    "COM 3": "commerce_3",
+    "ELECTIVE": "elective",
+    "AA": "aa",
+    "NATIONALITY": "nationality",
+    "BIRTHPLACE": "birthplace",
+    "RELIGION": "religion",
+    "RACE": "race",
+    "MARITAL STATUS": "marital_status",
+    "MCH / NOK NAME": "next_of_kin_name",
+    "MCH / NOK NRIC": "next_of_kin_nric",
+    "MCH / NOK RELATIONSHIP": "next_of_kin_relationship",
+    "MCH / NOK CONTACT NUMBER": "next_of_kin_contact",
+    "MCH / NOK ADDRESS (PORTS)": "next_of_kin_address_ports",
+    "MCH / NOK ADDRESS (FROM STUDENT)": "next_of_kin_address_from_student",
+}
+HEADER_FIELDS_2021 = {_header_key(key): value for key, value in HEADER_FIELDS_2021.items()}
+HEADER_FIELDS_BY_SOURCE = {STUDENT_INTAKE_2021: HEADER_FIELDS_2021, STUDENT_INTAKE_2023: HEADER_FIELDS_2023}
+ACADEMIC_YEAR_BY_SOURCE = {STUDENT_INTAKE_2021: "2021", STUDENT_INTAKE_2023: "2023"}
 REQUIRED_HEADERS = {"pris_no", "name", "class_name", "category", "status"}
 ROW_IDENTIFIER_FIELDS = {"pris_no"}
 CREATE_REQUIRED_FIELDS = ("name", "class_name", "category", "status")
@@ -167,7 +209,7 @@ def _age(value: Any) -> int | None:
     return number
 
 
-def _row_fields(values: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, str]], list[dict[str, str]]]:
+def _row_fields(values: dict[str, Any], academic_year: str) -> tuple[dict[str, Any], list[dict[str, str]], list[dict[str, str]]]:
     fields: dict[str, Any] = {}
     errors: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
@@ -182,7 +224,7 @@ def _row_fields(values: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, 
         except ValueError as exc:
             errors.append({"field": field, "code": str(exc)})
     if fields.get("age_in_academic_year") is not None:
-        fields["academic_year"] = "2023"
+        fields["academic_year"] = academic_year
     for required in ROW_IDENTIFIER_FIELDS:
         if fields.get(required) is None:
             errors.append({"field": required, "code": "required"})
@@ -210,19 +252,22 @@ def _row_fields(values: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, 
     return normalized, [], warnings
 
 
-def parse_student_workbook(data: bytes) -> list[dict[str, Any]]:
+def parse_student_workbook(data: bytes, source_workbook: str = STUDENT_INTAKE_2023) -> list[dict[str, Any]]:
     _validate_archive(data)
+    if source_workbook not in SHEET_NAMES:
+        raise ImportFileError("unsupported_workbook")
     workbook = None
     cached_workbook = None
     try:
         workbook = load_workbook(BytesIO(data), read_only=True, data_only=False, keep_links=False)
         cached_workbook = load_workbook(BytesIO(data), read_only=True, data_only=True, keep_links=False)
-        if SHEET_NAME not in workbook.sheetnames:
+        sheet_name = SHEET_NAMES[source_workbook]
+        if sheet_name not in workbook.sheetnames:
             raise ImportFileError("required_worksheet_missing")
-        sheet = workbook[SHEET_NAME]
-        if sheet.sheet_state != "visible":
-            raise ImportFileError("required_worksheet_hidden")
-        cached_sheet = cached_workbook[SHEET_NAME]
+        sheet = workbook[sheet_name]
+        # The supported 2021 worksheet is hidden in the supplied source workbook.
+        # Import only the exact sheet selected by the Operator and this version's map.
+        cached_sheet = cached_workbook[sheet_name]
         if not sheet.max_row or sheet.max_row < 2 or sheet.max_row > MAX_ROWS + 1:
             raise ImportFileError("row_limit_or_empty")
         if not sheet.max_column or sheet.max_column > MAX_COLUMNS:
@@ -237,7 +282,7 @@ def parse_student_workbook(data: bytes) -> list[dict[str, Any]]:
                 continue
             if key == "S/N":
                 continue
-            field = HEADER_FIELDS.get(key)
+            field = HEADER_FIELDS_BY_SOURCE[source_workbook].get(key)
             if field is None:
                 unknown.append("unknown")
                 continue
@@ -275,7 +320,7 @@ def parse_student_workbook(data: bytes) -> list[dict[str, Any]]:
                         values[field] = cached_value
                 else:
                     formula_errors.append({"field": field or "row", "code": "formula_not_allowed"})
-            fields, errors, warnings = _row_fields(values)
+            fields, errors, warnings = _row_fields(values, ACADEMIC_YEAR_BY_SOURCE[source_workbook])
             errors.extend(formula_errors)
             records.append({"row_number": row_number, "fields": fields, "errors": errors, "warnings": warnings})
         if not records:

@@ -49,9 +49,14 @@ services:
         INSTALL_TEST_DEPENDENCIES: ${INSTALL_TEST_DEPENDENCIES:-false}
     command: ["sh", "-c", "alembic upgrade head && python -m app.db_permissions"]
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: ${DATABASE_ADMIN_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
       DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL:-postgresql+psycopg://sps_app:${POSTGRES_PASSWORD}@db:5432/sps_dashboard}
       DATABASE_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set DATABASE_RUNTIME_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:?set BOOTSTRAP_PASSWORD in .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
+      APP_ENCRYPTION_PREVIOUS_KEYS: ${APP_ENCRYPTION_PREVIOUS_KEYS:-}
     depends_on:
       tde-setup:
         condition: service_completed_successfully

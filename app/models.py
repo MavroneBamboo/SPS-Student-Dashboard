@@ -103,11 +103,25 @@ class Teacher(Base):
     short_code: Mapped[str] = mapped_column(String(24), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(160), index=True)
     is_adjunct: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_composite: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     availability_json: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class TeacherGroupMember(Base):
+    __tablename__ = "teacher_group_members"
+    __table_args__ = (
+        UniqueConstraint("group_teacher_id", "member_teacher_id", name="uq_teacher_group_member"),
+        CheckConstraint("group_teacher_id <> member_teacher_id", name="ck_teacher_group_not_self"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id", ondelete="CASCADE"), index=True)
+    member_teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id", ondelete="RESTRICT"), index=True)
+    created_by: Mapped[int] = mapped_column(Integer)
 
 
 class Subject(Base):
@@ -139,7 +153,7 @@ class StudentClassMapping(Base):
     __tablename__ = "student_class_mappings"
     __table_args__ = (
         UniqueConstraint("source_workbook", "source_key", name="uq_student_class_mapping_source"),
-        CheckConstraint("source_workbook IN ('STUDENT_INTAKE_2023')", name="ck_student_class_mapping_source"),
+        CheckConstraint("source_workbook IN ('STUDENT_INTAKE_2021', 'STUDENT_INTAKE_2023')", name="ck_student_class_mapping_source"),
         CheckConstraint("version >= 1", name="ck_student_class_mapping_version"),
     )
 
@@ -410,6 +424,8 @@ class Student(Base):
     next_of_kin_address_ports_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_of_kin_address_from_student_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     student_contact_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_note_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    elective: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -461,9 +477,13 @@ class StudentImportBatch(Base):
     __table_args__ = (
         CheckConstraint("status IN ('PREVIEW', 'COMMITTED', 'EXPIRED')", name="ck_student_import_status"),
         CheckConstraint("row_count >= 0 AND valid_count >= 0 AND invalid_count >= 0", name="ck_student_import_counts"),
+        CheckConstraint("source_workbook IN ('STUDENT_INTAKE_2021', 'STUDENT_INTAKE_2023')", name="ck_student_import_source_workbook"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_workbook: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="STUDENT_INTAKE_2023", server_default="STUDENT_INTAKE_2023"
+    )
     status: Mapped[str] = mapped_column(String(20), default="PREVIEW", server_default="PREVIEW", index=True)
     source_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     rows_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)

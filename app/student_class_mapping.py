@@ -1,6 +1,8 @@
 import unicodedata
 
 STUDENT_INTAKE_2023 = "STUDENT_INTAKE_2023"
+STUDENT_INTAKE_2021 = "STUDENT_INTAKE_2021"
+STUDENT_INTAKE_WORKBOOKS = (STUDENT_INTAKE_2021, STUDENT_INTAKE_2023)
 
 
 def normalize_source_class_label(value: str) -> tuple[str, str]:

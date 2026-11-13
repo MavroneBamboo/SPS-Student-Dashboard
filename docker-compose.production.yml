@@ -1,0 +1,25 @@
+services:
+  proxy:
+    environment:
+      PROXY_TLS_ENABLED: "1"
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME in the production environment file}
+    ports: !override
+      - "${PRODUCTION_HTTP_BIND_ADDRESS:?set PRODUCTION_HTTP_BIND_ADDRESS}:${PRODUCTION_HTTP_PORT:-80}:80"
+      - "${PRODUCTION_HTTPS_BIND_ADDRESS:?set PRODUCTION_HTTPS_BIND_ADDRESS}:${PRODUCTION_HTTPS_PORT:-443}:443"
+    secrets:
+      - tls_certificate
+      - tls_private_key
+
+  app:
+    environment:
+      APP_ENV: production
+
+  migrate:
+    environment:
+      APP_ENV: production
+
+secrets:
+  tls_certificate:
+    file: ${TLS_CERTIFICATE_HOST_PATH:?set TLS_CERTIFICATE_HOST_PATH in the production environment file}
+  tls_private_key:
+    file: ${TLS_PRIVATE_KEY_HOST_PATH:?set TLS_PRIVATE_KEY_HOST_PATH in the production environment file}

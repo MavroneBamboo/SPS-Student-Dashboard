@@ -94,6 +94,83 @@ PROFILE_FIELDS = [
     "next_of_kin_address_from_student",
     "student_contact",
 ]
+HEADERS_2021 = [
+    "S/N",
+    "PRIS NO",
+    "CAT",
+    "EDR/ROS",
+    "VERIFY",
+    "IC",
+    "NAME",
+    "CLASS",
+    "STATUS",
+    "STATUS EFFECTIVE",
+    "ADM TYPE",
+    "EXAM LEVEL",
+    "DOB",
+    "AGE IN AY'21",
+    "GENDER",
+    "LANG 1",
+    "LANG 2",
+    "MATH 1",
+    "MATH 2",
+    "SCI",
+    "HUM",
+    "COM 1",
+    "COM 2",
+    "COM 3",
+    "ELECTIVE",
+    "AA",
+    "NATIONALITY",
+    "BIRTHPLACE",
+    "RELIGION",
+    "RACE",
+    "MARITAL STATUS",
+    "MCH / NOK NAME",
+    "MCH / NOK NRIC",
+    "MCH / NOK RELATIONSHIP",
+    "MCH / NOK CONTACT NUMBER",
+    "MCH / NOK ADDRESS (PORTS)",
+    "MCH / NOK ADDRESS (From Student)",
+]
+PROFILE_FIELDS_2021 = [
+    "pris_no",
+    "category",
+    "edr_ros",
+    "verification_note",
+    "ic_number",
+    "name",
+    "class_name",
+    "status",
+    "status_effective",
+    "admission_type",
+    "exam_level",
+    "date_of_birth",
+    "age_in_academic_year",
+    "gender",
+    "language_1",
+    "language_2",
+    "math_1",
+    "math_2",
+    "science",
+    "humanities",
+    "commerce_1",
+    "commerce_2",
+    "commerce_3",
+    "elective",
+    "aa",
+    "nationality",
+    "birthplace",
+    "religion",
+    "race",
+    "marital_status",
+    "next_of_kin_name",
+    "next_of_kin_nric",
+    "next_of_kin_relationship",
+    "next_of_kin_contact",
+    "next_of_kin_address_ports",
+    "next_of_kin_address_from_student",
+]
 
 
 def workbook(
@@ -140,6 +217,39 @@ def workbook(
     return updated.getvalue()
 
 
+def workbook_2021(rows, *, formula_age=False, cached_formula_value="21", hidden=False):
+    output = BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Student Intake 2021"
+    if hidden:
+        wb.create_sheet("Visible dashboard")
+        ws.sheet_state = "hidden"
+    ws.append(HEADERS_2021)
+    for position, payload in enumerate(rows, start=1):
+        ws.append([position, *(payload.get(field) for field in PROFILE_FIELDS_2021)])
+        if formula_age:
+            ws.cell(row=position + 1, column=14, value="=20+1")
+    wb.save(output)
+    data = output.getvalue()
+    if not formula_age:
+        return data
+    namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    ET.register_namespace("", namespace)
+    updated = BytesIO()
+    with zipfile.ZipFile(BytesIO(data)) as original, zipfile.ZipFile(updated, "w", zipfile.ZIP_DEFLATED) as result:
+        for entry in original.infolist():
+            content = original.read(entry.filename)
+            if entry.filename == "xl/worksheets/sheet1.xml":
+                root = ET.fromstring(content)
+                age_cell = root.find(f".//{{{namespace}}}c[@r='N2']")
+                age_value = age_cell.find(f"{{{namespace}}}v")
+                age_value.text = cached_formula_value
+                content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            result.writestr(entry, content)
+    return updated.getvalue()
+
+
 def intake_row(pris_no=None, **changes):
     return {
         "pris_no": pris_no or "INTAKE-" + uuid4().hex[:10].upper(),
@@ -179,28 +289,30 @@ def intake_row(pris_no=None, **changes):
         "next_of_kin_address_ports": "Synthetic port address",
         "next_of_kin_address_from_student": "Synthetic home address",
         "student_contact": "1111-2222",
+        "verification_note": "Synthetic verification detail",
+        "elective": "Synthetic elective",
         **changes,
     }
 
 
-def upload(client, headers, content):
+def upload(client, headers, content, source_workbook="STUDENT_INTAKE_2023"):
     mappings = client.get("/api/v1/student-reference/class-mappings", headers=headers["admin"])
     assert mappings.status_code == 200, mappings.text
-    if not any(row["source_workbook"] == "STUDENT_INTAKE_2023" and row["source_label"] == "A4 A" for row in mappings.json()):
+    if not any(row["source_workbook"] == source_workbook and row["source_label"] == "A4 A" for row in mappings.json()):
         class_code = "IM" + uuid4().hex[:8].upper()
         instructional_class = client.post("/api/v1/timetable/classes", json={"code": class_code, "name": "A4 A"}, headers=headers["admin"])
         assert instructional_class.status_code == 201, instructional_class.text
         mapped = client.post(
             "/api/v1/student-reference/class-mappings",
             json={
-                "source_workbook": "STUDENT_INTAKE_2023",
+                "source_workbook": source_workbook,
                 "source_label": "A4 A",
                 "instructional_class_id": instructional_class.json()["id"],
             },
             headers=headers["admin"],
         )
         assert mapped.status_code == 201, mapped.text
-    return client.post(BASE, content=content, headers={**headers["operator"], "Content-Type": XLSX})
+    return client.post(f"{BASE}?source_workbook={source_workbook}", content=content, headers={**headers["operator"], "Content-Type": XLSX})
 
 
 def test_parser_maps_supported_2023_headers_and_keeps_values_private():
@@ -216,6 +328,72 @@ def test_parser_maps_supported_2023_headers_and_keeps_values_private():
     assert fields["academic_year"] == "2023" and fields["age_in_academic_year"] == 23
     assert fields["next_of_kin_address_from_student"] == "Synthetic home address"
     assert fields["date_of_birth"] == "2000-01-02"
+
+
+def test_parser_maps_supported_2021_headers_and_year_specific_fields():
+    from app.student_import import parse_student_workbook
+
+    candidate = intake_row("PARSE-2021-0001", age_in_academic_year=21)
+    parsed = parse_student_workbook(workbook_2021([candidate]), "STUDENT_INTAKE_2021")
+    assert len(parsed) == 1 and parsed[0]["errors"] == []
+    fields = parsed[0]["fields"]
+    assert fields["pris_no"] == "PARSE-2021-0001"
+    assert fields["class_name"] == "A4 A"
+    assert fields["academic_year"] == "2021" and fields["age_in_academic_year"] == 21
+    assert fields["verification_note"] == "Synthetic verification detail"
+    assert fields["elective"] == "Synthetic elective"
+    assert fields["citizenship"] is None and fields["student_contact"] is None
+
+
+def test_parser_accepts_the_explicitly_selected_hidden_2021_worksheet():
+    from app.student_import import parse_student_workbook
+
+    parsed = parse_student_workbook(
+        workbook_2021([intake_row("PARSE-HIDDEN-2021")], hidden=True),
+        "STUDENT_INTAKE_2021",
+    )
+    assert len(parsed) == 1 and parsed[0]["errors"] == []
+    assert parsed[0]["fields"]["pris_no"] == "PARSE-HIDDEN-2021"
+
+
+def test_parser_reads_cached_2021_age_formula_and_rejects_unknown_source():
+    from app.student_import import ImportFileError, parse_student_workbook
+
+    parsed = parse_student_workbook(workbook_2021([intake_row("AGE-2021-FORMULA")], formula_age=True), "STUDENT_INTAKE_2021")
+    assert parsed[0]["fields"]["age_in_academic_year"] == 21
+    assert parsed[0]["fields"]["academic_year"] == "2021"
+    with pytest.raises(ImportFileError, match="unsupported_workbook"):
+        parse_student_workbook(workbook_2021([intake_row("UNKNOWN-SOURCE")]), "STUDENT_INTAKE_2019")
+
+
+def test_2021_import_uses_its_own_class_crosswalk_and_preserves_every_supported_field(lesson_context):
+    client, headers, _ = lesson_context
+    academic_years = client.get("/api/v1/student-reference/catalogs/academic-years", headers=headers["admin"]).json()
+    if not any(value["name"] == "2021" for value in academic_years):
+        created_year = client.post("/api/v1/student-reference/catalogs/academic-years", json={"name": "2021"}, headers=headers["admin"])
+        assert created_year.status_code == 201, created_year.text
+
+    response = upload(
+        client,
+        headers,
+        workbook_2021([intake_row("IMPORT-2021-0001", age_in_academic_year=21)]),
+        source_workbook="STUDENT_INTAKE_2021",
+    )
+    assert response.status_code == 201, response.text
+    preview = response.json()
+    assert preview["source_workbook"] == "STUDENT_INTAKE_2021"
+    assert preview["valid_count"] == 1 and preview["invalid_count"] == 0
+    committed = client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["source_workbook"] == "STUDENT_INTAKE_2021"
+    student = client.get("/api/v1/students?q=IMPORT-2021-0001", headers=headers["operator"]).json()[0]
+    assert student["academic_year"] == "2021" and student["age_in_academic_year"] == 21
+    assert student["verification_note"] == "Synthetic verification detail"
+    assert student["elective"] == "Synthetic elective"
+    with SessionLocal() as db:
+        saved = db.scalar(select(Student).where(Student.pris_no == "IMPORT-2021-0001"))
+        assert saved.verification_note_encrypted != "Synthetic verification detail"
+        assert decrypt_sensitive(saved.verification_note_encrypted) == "Synthetic verification detail"
 
 
 def test_import_retention_is_admin_only_dry_run_and_expires_preview_payloads(lesson_context, monkeypatch):

@@ -42,6 +42,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Validate GitHub Actions workflow YAML
+        run: >-
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path, aliases: true); puts "Valid YAML #{path}" }' .github/workflows/ci.yml .github/workflows/production-release.yml
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -91,7 +95,7 @@ jobs:
         timeout-minutes: 10
         run: python -m playwright install chromium
 
-      - name: Run browser authentication, administration, dashboard, and report tests
+      - name: Run browser authentication, administration, sessions, dashboard, and report tests
         run: pytest browser_tests
 
       - name: Upload synthetic browser screenshots
@@ -185,6 +189,9 @@ jobs:
           docker run --rm sps-student-dashboard-proxy:ci nginx -t
           docker run --rm --entrypoint sh sps-student-dashboard-proxy:ci -c 'test -s /etc/nginx/conf.d/default.conf && test -s /usr/share/nginx/html/prototype/index.html && test -s /usr/share/nginx/html/prototype/reports/active-breakdown-by-category.csv'
           bash scripts/test-proxy-startup.sh sps-student-dashboard-proxy:ci
+
+      - name: Verify production HTTPS Compose and proxy behavior
+        run: bash scripts/test-production-tls.sh sps-student-dashboard-proxy:ci
 
       - name: Verify repeated sign-in requests are throttled
         run: bash scripts/test-login-rate-limit.sh
