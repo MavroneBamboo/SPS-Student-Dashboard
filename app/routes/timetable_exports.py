@@ -163,7 +163,10 @@ def _workbook(view: dict, kinds: tuple[str, ...], audit_event: AuditEvent) -> by
                         for (class_id, day, slot_code), placed in occupied.items()
                         if day == weekday_code
                         and slot_code == period["slot_code"]
-                        and placed["teacher"]["id"] == teacher["id"]
+                        and (
+                            teacher["id"] == placed["teacher"]["id"]
+                            or teacher["id"] in placed["teacher"].get("participant_ids", [placed["teacher"]["id"]])
+                        )
                         and placed["slot"]["starts_at"] == period.get("starts_at")
                         and placed["slot"]["ends_at"] == period.get("ends_at")
                     ]

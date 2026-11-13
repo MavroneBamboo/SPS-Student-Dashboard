@@ -1,0 +1,4 @@
+services:
+  db:
+    volumes:
+      - ./tests/tde/preseed.sql:/docker-entrypoint-initdb.d/20-tde-preseed.sql:ro

@@ -12,7 +12,9 @@ from app.schemas import (
     TimetableDraftCreate,
     TimetableGenerateRequest,
     TimetableLockRequest,
+    TimetableMoveRequest,
     TimetablePlacementWrite,
+    TimetableRenameRequest,
     TimetableRevisionRequest,
     TimetableSwapRequest,
 )
@@ -109,11 +111,20 @@ def _block(blocks: list[dict], block_id: int, *, require_unlocked: bool = True) 
 
 
 def _finish(
-    db: DbSession, version: TimetableVersion, actor_id: int, expected_revision: int, action: str, details: dict, *, approve: bool = False
+    db: DbSession,
+    version: TimetableVersion,
+    actor_id: int,
+    expected_revision: int,
+    action: str,
+    details: dict,
+    *,
+    approve: bool = False,
+    updates: dict | None = None,
 ) -> dict:
     values = {"revision": TimetableVersion.revision + 1}
     if approve:
         values.update(status="APPROVED", approved_by=actor_id, approved_at=datetime.now(UTC))
+    values.update(updates or {})
     changed = db.execute(
         update(TimetableVersion)
         .where(TimetableVersion.id == version.id, TimetableVersion.revision == expected_revision, TimetableVersion.status == "DRAFT")
@@ -245,6 +256,21 @@ def get_version(version_id: int, db: DbSession, claims: Claims) -> dict:
     return _view(db, _get(db, version_id, claims))
 
 
+@router.patch("/{version_id}/name", dependencies=[EDIT_ACCESS])
+def rename_version(version_id: int, payload: TimetableRenameRequest, db: DbSession, claims: Claims) -> dict:
+    version, _, _ = _mutation(db, version_id, payload.expected_revision, claims)
+    previous_name = version.name
+    return _finish(
+        db,
+        version,
+        int(claims["sub"]),
+        payload.expected_revision,
+        "timetable.version.renamed",
+        {"before": previous_name, "after": payload.name},
+        updates={"name": payload.name},
+    )
+
+
 @router.post("/{version_id}/placements", status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
 def add_placement(version_id: int, payload: TimetablePlacementWrite, db: DbSession, claims: Claims) -> dict:
     version, snapshot, before = _mutation(db, version_id, payload.expected_revision, claims)
@@ -262,6 +288,25 @@ def amend_placement(version_id: int, placement_id: int, payload: TimetablePlacem
     after = [updated if block["id"] == placement_id else block for block in before]
     return _persist_plan(
         db, version, snapshot, before, after, {placement_id}, int(claims["sub"]), payload.expected_revision, "timetable.lesson.amended"
+    )
+
+
+@router.patch("/{version_id}/placements/{placement_id}/move", dependencies=[EDIT_ACCESS])
+def move_placement(version_id: int, placement_id: int, payload: TimetableMoveRequest, db: DbSession, claims: Claims) -> dict:
+    version, snapshot, before = _mutation(db, version_id, payload.expected_revision, claims)
+    original = _block(before, placement_id)
+    moved = {**original, "weekday": payload.weekday, "start_period": payload.start_period}
+    after = [moved if block["id"] == placement_id else block for block in before]
+    return _persist_plan(
+        db,
+        version,
+        snapshot,
+        before,
+        after,
+        {placement_id},
+        int(claims["sub"]),
+        payload.expected_revision,
+        "timetable.lesson.moved",
     )
 
 
