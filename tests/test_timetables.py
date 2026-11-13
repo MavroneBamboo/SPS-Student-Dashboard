@@ -165,6 +165,115 @@ def test_draft_amend_lock_swap_remove_approve_and_snapshot_history(timetable_con
     )
 
 
+def test_single_block_move_is_revision_guarded_validated_and_audited(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    version = _draft(ctx)
+    path = f"{BASE}/versions/{version['id']}"
+    first = _place(ctx, version).json()
+    second = _place(ctx, first, weekday="THU").json()
+    first_id = next(block["id"] for block in second["placements"] if block["weekday"] == "MON")
+
+    conflict = client.patch(
+        f"{path}/placements/{first_id}/move",
+        json={"expected_revision": second["revision"], "weekday": "THU", "start_period": "P1"},
+        headers=headers["operator"],
+    )
+    assert conflict.status_code == 409
+    assert client.get(path, headers=headers["operator"]).json() == second
+
+    moved = client.patch(
+        f"{path}/placements/{first_id}/move",
+        json={"expected_revision": second["revision"], "weekday": "FRI", "start_period": "P1"},
+        headers=headers["operator"],
+    )
+    assert moved.status_code == 200, moved.text
+    version = moved.json()
+    assert version["revision"] == second["revision"] + 1
+    assert next(block for block in version["placements"] if block["id"] == first_id)["weekday"] == "FRI"
+    assert (
+        client.patch(
+            f"{path}/placements/{first_id}/move",
+            json={"expected_revision": second["revision"], "weekday": "WED", "start_period": "P1"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+
+    locked = client.patch(
+        f"{path}/placements/{first_id}/lock",
+        json={"expected_revision": version["revision"], "is_locked": True},
+        headers=headers["operator"],
+    ).json()
+    assert (
+        client.patch(
+            f"{path}/placements/{first_id}/move",
+            json={"expected_revision": locked["revision"], "weekday": "WED", "start_period": "P1"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+
+    with SessionLocal() as db:
+        events = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == "timetable_version",
+                AuditEvent.entity_id == str(version["id"]),
+                AuditEvent.action == "timetable.lesson.moved",
+            )
+        ).all()
+        assert len(events) == 1
+        assert json.loads(events[0].details_json)["after"][0]["weekday"] == "FRI"
+
+
+def test_draft_rename_is_audited_revision_guarded_and_immutable_after_approval(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    version = _draft(ctx)
+    path = f"{BASE}/versions/{version['id']}"
+    renamed = client.patch(
+        path + "/name", json={"expected_revision": version["revision"], "name": "Quarter 4 timetable"}, headers=headers["operator"]
+    )
+    assert renamed.status_code == 200, renamed.text
+    version = renamed.json()
+    assert (version["name"], version["revision"]) == ("Quarter 4 timetable", 2)
+    assert (
+        client.patch(path + "/name", json={"expected_revision": 1, "name": "Stale rename"}, headers=headers["operator"]).status_code == 409
+    )
+    assert client.patch(path + "/name", json={"expected_revision": 2, "name": "   "}, headers=headers["operator"]).status_code == 422
+    assert client.patch(path + "/name", json={"expected_revision": 2, "name": "Denied"}, headers=headers["executive"]).status_code == 403
+
+    generated = _generate(ctx, version)
+    assert generated.status_code == 200, generated.text
+    version = generated.json()["timetable"]
+    approved = client.post(path + "/approve", json={"expected_revision": version["revision"]}, headers=headers["admin"])
+    assert approved.status_code == 200, approved.text
+    assert (
+        client.patch(
+            path + "/name",
+            json={"expected_revision": approved.json()["revision"], "name": "Approved rename"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+
+    with SessionLocal() as db:
+        events = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == "timetable_version",
+                AuditEvent.entity_id == str(version["id"]),
+                AuditEvent.action == "timetable.version.renamed",
+            )
+        ).all()
+        assert len(events) == 1
+        assert json.loads(events[0].details_json) == {
+            "previous_revision": 1,
+            "revision": 2,
+            "before": "Operational week",
+            "after": "Quarter 4 timetable",
+        }
+
+
 def test_rule_limits_availability_lunch_and_block_pattern_are_enforced(timetable_context):
     ctx = timetable_context
     client, headers = ctx["client"], ctx["headers"]
@@ -331,6 +440,148 @@ def test_teacher_clashes_use_actual_overridden_times_and_database_guards(timetab
                 db.flush()
             assert "double-booked" in str(error.value)
             db.rollback()
+
+
+def test_composite_teacher_groups_validate_member_availability_and_clashes(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    _single_requirement(ctx, count=1)
+    second_teacher = client.post(
+        f"{BASE}/teachers",
+        json={
+            "short_code": f"T{uuid4().hex[:10]}",
+            "full_name": "Second group member",
+            "availability": {day: ["P1", "P2", "P3"] for day in ("MON", "TUE", "WED", "THU", "FRI")},
+        },
+        headers=headers["admin"],
+    )
+    assert second_teacher.status_code == 201, second_teacher.text
+    group_payload = {
+        "short_code": f"G{uuid4().hex[:10]}",
+        "full_name": "Composite teaching team",
+        "member_ids": [ctx["lesson"]["teacher_id"], second_teacher.json()["id"]],
+    }
+    assert client.post(f"{BASE}/teacher-groups", json=group_payload, headers=headers["operator"]).status_code == 403
+    group_response = client.post(
+        f"{BASE}/teacher-groups",
+        json=group_payload,
+        headers=headers["admin"],
+    )
+    assert group_response.status_code == 201, group_response.text
+    group = group_response.json()
+    assert group["is_composite"] is True
+    assert set(group["member_ids"]) == {ctx["lesson"]["teacher_id"], second_teacher.json()["id"]}
+    assert (
+        client.post(
+            f"{BASE}/teacher-groups",
+            json={"short_code": "INVALID", "full_name": "Invalid", "member_ids": [ctx["lesson"]["teacher_id"]]},
+            headers=headers["admin"],
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"{BASE}/teacher-groups",
+            json={
+                "short_code": "NESTED",
+                "full_name": "Nested group",
+                "member_ids": [group["id"], second_teacher.json()["id"]],
+            },
+            headers=headers["admin"],
+        ).status_code
+        == 422
+    )
+
+    other_class = client.post(
+        f"{BASE}/classes", json={"code": f"O{uuid4().hex[:10]}", "name": "Group lesson class"}, headers=headers["admin"]
+    )
+    assert other_class.status_code == 201
+    other_id = other_class.json()["id"]
+    assert client.post(f"{BASE}/rules", json={**ctx["rule"], "target_id": other_id}, headers=headers["admin"]).status_code == 201
+    group_lesson = client.post(
+        f"{BASE}/lessons",
+        json={
+            **ctx["lesson"],
+            "instructional_class_id": other_id,
+            "teacher_id": group["id"],
+            "weekly_count": 1,
+            "block_length": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert group_lesson.status_code == 201, group_lesson.text
+    version = _draft(ctx, class_ids=[ctx["lesson"]["instructional_class_id"], other_id])
+    individual_placement = _place(ctx, version, period_count=1)
+    assert individual_placement.status_code == 201, individual_placement.text
+    clash = client.post(
+        f"{BASE}/versions/{version['id']}/placements",
+        json={
+            "expected_revision": individual_placement.json()["revision"],
+            "lesson_requirement_id": group_lesson.json()["id"],
+            "weekday": "MON",
+            "start_period": "P1",
+            "period_count": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert clash.status_code == 409 and "teacher conflict" in clash.json()["detail"]
+    if engine.dialect.name == "postgresql":
+        with SessionLocal() as db:
+            direct_parent = TimetablePlacement(
+                version_id=version["id"],
+                lesson_requirement_id=group_lesson.json()["id"],
+                weekday="MON",
+                start_period="P1",
+                period_count=1,
+                is_locked=False,
+                note="",
+                created_by=1,
+                updated_by=1,
+            )
+            db.add(direct_parent)
+            db.flush()
+            db.add(
+                TimetableSlot(
+                    placement_id=direct_parent.id,
+                    version_id=version["id"],
+                    instructional_class_id=other_id,
+                    teacher_id=group["id"],
+                    subject_id=ctx["lesson"]["subject_id"],
+                    weekday="MON",
+                    slot_code="P1",
+                    starts_at=time(8, 30),
+                    ends_at=time(10, 15),
+                )
+            )
+            with pytest.raises(IntegrityError) as error:
+                db.flush()
+            assert "double-booked" in str(error.value)
+            db.rollback()
+    group_placement = client.post(
+        f"{BASE}/versions/{version['id']}/placements",
+        json={
+            "expected_revision": individual_placement.json()["revision"],
+            "lesson_requirement_id": group_lesson.json()["id"],
+            "weekday": "TUE",
+            "start_period": "P1",
+            "period_count": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert group_placement.status_code == 201, group_placement.text
+    availability_draft = _draft(ctx, class_ids=[other_id])
+    unavailable = client.post(
+        f"{BASE}/versions/{availability_draft['id']}/placements",
+        json={
+            "expected_revision": availability_draft["revision"],
+            "lesson_requirement_id": group_lesson.json()["id"],
+            "weekday": "TUE",
+            "start_period": "P4",
+            "period_count": 1,
+        },
+        headers=headers["operator"],
+    )
+    assert unavailable.status_code == 409 and "member is unavailable" in unavailable.json()["detail"]
 
 
 def test_concurrent_draft_writes_use_revision_and_do_not_leave_partial_cells(timetable_context):

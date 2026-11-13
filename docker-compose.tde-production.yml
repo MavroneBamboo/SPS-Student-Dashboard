@@ -1,0 +1,21 @@
+services:
+  tde-setup:
+    environment:
+      APP_ENV: production
+      TDE_PROVIDER: vault
+      TDE_VAULT_URL: ${TDE_VAULT_URL:?set TDE_VAULT_URL for production}
+      TDE_VAULT_TOKEN_FILE: /run/secrets/pg-tde-vault-token
+
+  tde-restore-setup:
+    environment:
+      APP_ENV: production
+      TDE_PROVIDER: vault
+      TDE_VAULT_URL: ${TDE_VAULT_URL:?set TDE_VAULT_URL for production}
+      TDE_VAULT_TOKEN_FILE: /run/secrets/pg-tde-vault-token
+
+  db:
+    volumes:
+      - type: bind
+        source: ${TDE_VAULT_TOKEN_HOST_FILE:?set TDE_VAULT_TOKEN_HOST_FILE to a protected token file}
+        target: /run/secrets/pg-tde-vault-token
+        read_only: true

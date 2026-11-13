@@ -103,11 +103,25 @@ class Teacher(Base):
     short_code: Mapped[str] = mapped_column(String(24), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(160), index=True)
     is_adjunct: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_composite: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     availability_json: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class TeacherGroupMember(Base):
+    __tablename__ = "teacher_group_members"
+    __table_args__ = (
+        UniqueConstraint("group_teacher_id", "member_teacher_id", name="uq_teacher_group_member"),
+        CheckConstraint("group_teacher_id <> member_teacher_id", name="ck_teacher_group_not_self"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id", ondelete="CASCADE"), index=True)
+    member_teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id", ondelete="RESTRICT"), index=True)
+    created_by: Mapped[int] = mapped_column(Integer)
 
 
 class Subject(Base):

@@ -1,19 +1,75 @@
-from fastapi import APIRouter, HTTPException, status
+import json
+import secrets
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, HTTPException, Path, Response, status
 from sqlalchemy import func, select
 
 from app.audit import record_event
 from app.config import get_settings
 from app.deps import CurrentClaims, DbSession
 from app.identity import current_actor, lock_identity
-from app.models import User
+from app.models import AuditEvent, User
 from app.schemas import LoginRequest, PasswordChangeRequest, TokenResponse
-from app.security import create_access_token, hash_password, verify_password
+from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # A well-formed PBKDF2 value ensures unknown usernames take the same password
 # verification path as known accounts without generating a new hash per request.
 _DUMMY_PASSWORD_HASH = f"pbkdf2_sha256$310000${'00' * 16}${'00' * 32}"
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_FAILURE_WINDOW = timedelta(minutes=15)
+LOGIN_COOLDOWN = timedelta(minutes=15)
+
+
+def _login_cooldown_active(db: DbSession, user: User, now: datetime) -> bool:
+    recent = db.execute(
+        select(AuditEvent.action, AuditEvent.created_at)
+        .where(
+            AuditEvent.actor_id == user.id,
+            AuditEvent.entity_type == "user",
+            AuditEvent.entity_id == str(user.id),
+            AuditEvent.action.in_(("auth.login.failed", "auth.login.succeeded")),
+        )
+        .order_by(AuditEvent.id.desc())
+        .limit(LOGIN_FAILURE_LIMIT)
+    ).all()
+    failures = []
+    for action, created_at in recent:
+        if action != "auth.login.failed":
+            break
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        failures.append(created_at.astimezone(UTC))
+    if len(failures) < LOGIN_FAILURE_LIMIT:
+        return False
+    if any(now - timestamp > LOGIN_FAILURE_WINDOW for timestamp in failures):
+        return False
+    return now - failures[0] < LOGIN_COOLDOWN
+
+
+def issue_session(db: DbSession, user: User) -> tuple[str, int]:
+    settings = get_settings()
+    session_id = secrets.token_hex(16)
+    access_token = create_access_token(
+        user.id,
+        user.username,
+        user.role,
+        user.must_change_password,
+        user.token_version,
+        session_id=session_id,
+    )
+    expires_at = datetime.fromtimestamp(decode_access_token(access_token)["exp"], UTC)
+    record_event(
+        db,
+        user.id,
+        "auth.session.created",
+        "auth_session",
+        session_id,
+        {"expires_at": expires_at.isoformat(), "token_version": user.token_version},
+    )
+    return access_token, settings.access_token_minutes * 60
 
 
 @router.get("/me")
@@ -24,25 +80,26 @@ def current_identity(claims: CurrentClaims) -> dict:
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
     username = payload.username.strip().lower()
-    user = db.scalar(select(User).where(func.lower(User.username) == username))
+    user = db.scalar(select(User).where(func.lower(User.username) == username).with_for_update())
     password_valid = verify_password(payload.password, user.password_hash if user is not None else _DUMMY_PASSWORD_HASH)
+    cooldown = user is not None and user.is_active and _login_cooldown_active(db, user, datetime.now(UTC))
     if user is None or not user.is_active or not password_valid:
         record_event(
             db,
             user.id if user is not None else 0,
-            "auth.login.failed",
+            "auth.login.blocked" if cooldown else "auth.login.failed",
             "user" if user is not None else "authentication_attempt",
             str(user.id) if user is not None else "unknown",
-            {"outcome": "failed"},
+            {"outcome": "blocked" if cooldown else "failed"},
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    access_token, expires_in = issue_session(db, user)
     record_event(db, user.id, "auth.login.succeeded", "user", str(user.id), {"outcome": "success"})
     db.commit()
-    settings = get_settings()
     return TokenResponse(
-        access_token=create_access_token(user.id, user.username, user.role, user.must_change_password, user.token_version),
-        expires_in=settings.access_token_minutes * 60,
+        access_token=access_token,
+        expires_in=expires_in,
         role=user.role,
         must_change_password=user.must_change_password,
     )
@@ -59,12 +116,12 @@ def change_password(payload: PasswordChangeRequest, db: DbSession, claims: Curre
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
     user.token_version += 1
+    access_token, expires_in = issue_session(db, user)
     record_event(db, user.id, "auth.password.changed", "user", str(user.id))
     db.commit()
-    settings = get_settings()
     return TokenResponse(
-        access_token=create_access_token(user.id, user.username, user.role, token_version=user.token_version),
-        expires_in=settings.access_token_minutes * 60,
+        access_token=access_token,
+        expires_in=expires_in,
         role=user.role,
         must_change_password=False,
     )
@@ -72,8 +129,116 @@ def change_password(payload: PasswordChangeRequest, db: DbSession, claims: Curre
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(db: DbSession, claims: CurrentClaims) -> None:
+    revoke_session(db, claims, claims["jti"])
+
+
+def _session_events(db: DbSession, user_id: int) -> list[AuditEvent]:
+    return list(
+        db.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.actor_id == user_id,
+                AuditEvent.entity_type == "auth_session",
+                AuditEvent.action.in_(("auth.session.created", "auth.session.revoked")),
+            )
+            .order_by(AuditEvent.id)
+        )
+    )
+
+
+def _session_states(events: list[AuditEvent]) -> dict[str, dict]:
+    sessions = {}
+    for event in events:
+        if event.action == "auth.session.created":
+            details = json.loads(event.details_json or "{}")
+            sessions[event.entity_id] = {
+                "id": event.entity_id,
+                "created_at": event.created_at,
+                "expires_at": datetime.fromisoformat(details["expires_at"]),
+                "token_version": details["token_version"],
+                "revoked": False,
+            }
+        elif event.entity_id in sessions:
+            sessions[event.entity_id]["revoked"] = True
+    return sessions
+
+
+@router.get("/sessions")
+def list_sessions(db: DbSession, claims: CurrentClaims) -> list[dict]:
+    now = datetime.now(UTC)
+    sessions = _session_states(_session_events(db, int(claims["sub"])))
+    active = []
+    for session in sessions.values():
+        expires_at = session["expires_at"]
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if session["revoked"] or session["token_version"] != claims["ver"] or expires_at <= now:
+            continue
+        created_at = session["created_at"]
+        active.append(
+            {
+                "id": session["id"],
+                "created_at": created_at.isoformat() if created_at else None,
+                "expires_at": expires_at.isoformat(),
+                "is_current": session["id"] == claims["jti"],
+            }
+        )
+    return sorted(active, key=lambda session: session["created_at"] or "", reverse=True)
+
+
+def revoke_session(db: DbSession, claims: dict, session_id: str) -> None:
     lock_identity(db)
     user = current_actor(db, claims)
-    user.token_version += 1
-    record_event(db, user.id, "auth.logout", "user", str(user.id))
+    user_id = user.id
+    session = db.scalar(
+        select(AuditEvent.id).where(
+            AuditEvent.actor_id == user_id,
+            AuditEvent.action == "auth.session.created",
+            AuditEvent.entity_type == "auth_session",
+            AuditEvent.entity_id == session_id,
+        )
+    )
+    if session is None and session_id != claims["jti"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    already_revoked = db.scalar(
+        select(AuditEvent.id).where(
+            AuditEvent.actor_id == user_id,
+            AuditEvent.action == "auth.session.revoked",
+            AuditEvent.entity_type == "auth_session",
+            AuditEvent.entity_id == session_id,
+        )
+    )
+    if already_revoked is None:
+        record_event(db, user_id, "auth.session.revoked", "auth_session", session_id, {"outcome": "revoked"})
+        db.commit()
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_user_session(
+    db: DbSession,
+    claims: CurrentClaims,
+    session_id: str = Path(pattern=r"^[0-9a-f]{32}$"),
+) -> Response:
+    revoke_session(db, claims, session_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/sessions/revoke-others", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_other_sessions(db: DbSession, claims: CurrentClaims) -> None:
+    lock_identity(db)
+    user = current_actor(db, claims)
+    user_id = user.id
+    sessions = _session_states(_session_events(db, user_id))
+    for session_id, session in sessions.items():
+        expires_at = session["expires_at"]
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if (
+            session_id == claims["jti"]
+            or session["revoked"]
+            or session["token_version"] != claims["ver"]
+            or expires_at <= datetime.now(UTC)
+        ):
+            continue
+        record_event(db, user_id, "auth.session.revoked", "auth_session", session_id, {"outcome": "revoked"})
     db.commit()

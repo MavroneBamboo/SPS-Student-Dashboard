@@ -15,6 +15,7 @@ from app.models import (
     Subject,
     Teacher,
     TimetableFixedEvent,
+    TeacherGroupMember,
     TimetablePlacement,
     TimetableSlot,
     TimetableVersion,
@@ -70,6 +71,26 @@ def build_snapshot(db: Session, academic_year: str, week_start: date, class_ids:
         validate_lesson_resources(db, payload)
         snapshot["requirements"][str(row.id)] = payload.model_dump(mode="json")
         teacher = db.get(Teacher, row.teacher_id)
+        member_ids = db.scalars(
+            select(TeacherGroupMember.member_teacher_id)
+            .where(TeacherGroupMember.group_teacher_id == teacher.id)
+            .order_by(TeacherGroupMember.member_teacher_id)
+        ).all()
+        participant_ids = member_ids if teacher.is_composite else [teacher.id]
+        if teacher.is_composite and len(participant_ids) < 2:
+            raise HTTPException(status_code=409, detail="Teacher group needs at least two members before timetable planning")
+        for participant_id in participant_ids:
+            participant = db.get(Teacher, participant_id)
+            if participant is None or not participant.is_active or participant.is_composite:
+                raise HTTPException(status_code=409, detail="Teacher group contains an inactive or invalid member")
+            if teacher.is_composite:
+                snapshot["teachers"][str(participant.id)] = {
+                    "id": participant.id,
+                    "short_code": participant.short_code,
+                    "full_name": participant.full_name,
+                    "is_adjunct": participant.is_adjunct,
+                    "availability": json.loads(participant.availability_json),
+                }
         subject = db.get(Subject, row.subject_id)
         snapshot["teachers"][str(teacher.id)] = {
             "id": teacher.id,
@@ -78,6 +99,10 @@ def build_snapshot(db: Session, academic_year: str, week_start: date, class_ids:
             "is_adjunct": teacher.is_adjunct,
             "availability": json.loads(teacher.availability_json),
         }
+        if teacher.is_composite:
+            snapshot["teachers"][str(teacher.id)].update(
+                {"is_composite": True, "member_ids": participant_ids, "participant_ids": participant_ids}
+            )
         snapshot["subjects"][str(subject.id)] = {
             "id": subject.id,
             "code": subject.code,
@@ -239,13 +264,19 @@ def validate_plan(snapshot: dict, blocks: list[dict], *, require_complete: bool 
         daily_counts[(class_id, weekday)] += len(selection)
         if daily_counts[(class_id, weekday)] > rule["max_lessons_per_day"]:
             raise HTTPException(status_code=409, detail="Scheduling rule daily lesson limit would be exceeded")
-        availability = snapshot["teachers"][str(teacher_id)]["availability"][weekday]
+        teacher_snapshot = snapshot["teachers"][str(teacher_id)]
+        participant_ids = teacher_snapshot.get("participant_ids", [teacher_id])
         slots = []
         for period in selection:
             if period["slot_code"] not in rule["allowed_periods"]:
                 raise HTTPException(status_code=409, detail="Scheduling rule does not allow this teaching period")
-            if period["slot_code"] not in availability:
-                raise HTTPException(status_code=409, detail="Teacher is unavailable in this teaching period")
+            unavailable = [
+                participant_id
+                for participant_id in participant_ids
+                if period["slot_code"] not in snapshot["teachers"][str(participant_id)]["availability"][weekday]
+            ]
+            if unavailable:
+                raise HTTPException(status_code=409, detail="A teacher group member is unavailable in this teaching period")
             fixed_event = next(
                 (
                     event
@@ -253,7 +284,10 @@ def validate_plan(snapshot: dict, blocks: list[dict], *, require_complete: bool 
                     if any(slot["weekday"] == weekday and slot["slot_code"] == period["slot_code"] for slot in event["slots"])
                     and (
                         (event["audience_type"] == "CLASS" and class_id in event["target_ids"])
-                        or (event["audience_type"] == "TEACHER" and teacher_id in event["target_ids"])
+                        or (
+                            event["audience_type"] == "TEACHER"
+                            and any(target_id in event["target_ids"] for target_id in [teacher_id, *participant_ids])
+                        )
                     )
                 ),
                 None,
@@ -261,7 +295,8 @@ def validate_plan(snapshot: dict, blocks: list[dict], *, require_complete: bool 
             if fixed_event is not None:
                 raise HTTPException(status_code=409, detail=f"Fixed event {fixed_event['label']} occupies this timetable slot")
             start, end = time.fromisoformat(period["starts_at"]), time.fromisoformat(period["ends_at"])
-            for resource_type, resource_id in (("class", class_id), ("teacher", teacher_id)):
+            resources = [("class", class_id), *(("teacher", participant_id) for participant_id in participant_ids)]
+            for resource_type, resource_id in resources:
                 key = (resource_type, resource_id, weekday)
                 if any(start < other_end and other_start < end for other_start, other_end in occupied[key]):
                     raise HTTPException(status_code=409, detail=f"Timetable {resource_type} conflict at the configured time interval")
