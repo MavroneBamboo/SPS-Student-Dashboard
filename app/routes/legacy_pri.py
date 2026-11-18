@@ -299,10 +299,22 @@ def _validate_whole_school_event_mappings(
             weekday = row.get("DayOfWeek")
             period = row.get("Period")
             class_id = class_ids_by_name.get(class_name.strip()) if isinstance(class_name, str) else None
-            weekday_code = {
-                "mo": "MON", "mon": "MON", "tu": "TUE", "tue": "TUE", "we": "WED", "wed": "WED",
-                "th": "THU", "thu": "THU", "fr": "FRI", "fri": "FRI",
-            }.get(weekday.casefold()) if isinstance(weekday, str) else None
+            weekday_code = (
+                {
+                    "mo": "MON",
+                    "mon": "MON",
+                    "tu": "TUE",
+                    "tue": "TUE",
+                    "we": "WED",
+                    "wed": "WED",
+                    "th": "THU",
+                    "thu": "THU",
+                    "fr": "FRI",
+                    "fri": "FRI",
+                }.get(weekday.casefold())
+                if isinstance(weekday, str)
+                else None
+            )
             slot_code = slot_by_legacy_period.get(period) if type(period) is int else None
             if class_id is None or weekday_code is None or slot_code is None:
                 raise HTTPException(status_code=422, detail="Whole-school source event has an unmappable class, day or teaching period")
