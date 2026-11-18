@@ -1,6 +1,6 @@
 # Legacy `.pri` reconciliation findings
 
-Reviewed 10 November 2026 from the legacy TImeTables source and representative local `.pri` samples. Counts below are aggregate counts; this document intentionally omits personal/resource names and decrypted field values. The source archives were only read by the bounded validator and were not changed. No staging database import was run.
+Reviewed 18 November 2026 from the legacy TImeTables source and representative local `.pri` samples. Counts below are aggregate counts; this document intentionally omits personal/resource names and decrypted field values. The source archives were only read by the bounded validator and were not changed. No staging database import was run.
 
 ## Slot and availability interpretation
 
@@ -12,7 +12,7 @@ Reviewed 10 November 2026 from the legacy TImeTables source and representative l
 | 4 | P3 | Teaching slot |
 | 5 | P4 | Teaching slot |
 
-The legacy application source defines 20 availability flags for four teaching periods across five weekdays. Some saved projects contain 25 binary flags. The validator recognizes both shapes, but neither is silently rewritten into the replacement availability model. Confirm the intended meaning of 25-entry profiles with the operator before migration.
+The legacy availability dialog stores 20 flags in weekday-major order: four teaching periods for Monday, then Tuesday through Friday. This matches the replacement's four schedulable slots; a deterministic helper maps the flags to `MON`–`FRI` / `P1`–`P4` for the future import layer. Some saved projects contain 25 binary flags; the legacy UI does not explain that shape. Such profiles are reported as `legacy_availability_mapping_required` and block import readiness until an operator resolves them. The importer must not guess their meaning.
 
 Period 3 placements are excluded from lesson occupancy and placed-versus-required totals. A period-3 row with a named teacher is flagged `lesson_in_lunch_slot`. A blank-teacher period-3 row is flagged `lunch_entry_requires_review` so a legacy placeholder is visible and cannot be mistaken for a confirmed lesson. A period-3 `ALL` row also requires whole-school event mapping.
 

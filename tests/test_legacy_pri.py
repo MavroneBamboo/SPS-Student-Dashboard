@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.legacy_pri import LegacyPriError, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
+from app.legacy_pri import LegacyPriError, map_legacy_availability, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
 from app.models import AuditEvent
 
 KEY = bytes(range(16))
@@ -25,7 +25,7 @@ def encrypted_member(value):
 
 def sample_data():
     return {
-        "R01.bin": [{"Id": 0, "Name": "T1", "Availability": ":".join(["1"] * 25)}],
+        "R01.bin": [{"Id": 0, "Name": "T1", "Availability": ":".join(["1"] * 20)}],
         "R02.bin": [{"Id": 0, "Name": "S1"}],
         "R03.bin": [{"Id": 0, "Name": "C1"}],
         "R04.bin": [{"Id": 0, "Teacher": "T1", "Subject": "S1", "InstClass": "C1", "Count": 2, "Length": 1}],
@@ -60,7 +60,7 @@ def test_reads_exact_encrypted_json_members_without_mutating_source(tmp_path):
     assert report["import_ready"] is True
     assert report["issue_counts"] == {}
     assert report["period_mapping"] == {"1": "P1", "2": "P2", "3": "LUNCH", "4": "P3", "5": "P4"}
-    assert report["availability_profiles"] == {"25_period_position_profiles": 1}
+    assert report["availability_profiles"] == {"20_teaching_slot_profiles": 1}
     assert report["counts"] == {
         "teachers": 1,
         "subjects": 1,
@@ -128,7 +128,7 @@ def test_reports_missing_placement_teacher_without_fabricating_a_clash(tmp_path)
 
 
 @pytest.mark.parametrize("availability_size", [20, 25])
-def test_accepts_legacy_availability_profiles(tmp_path, availability_size):
+def test_classifies_legacy_availability_profiles_and_blocks_ambiguous_shape(tmp_path, availability_size):
     path = tmp_path / "sample.pri"
     values = sample_data()
     values["R01.bin"][0]["Availability"] = ":".join(["1"] * availability_size)
@@ -139,6 +139,34 @@ def test_accepts_legacy_availability_profiles(tmp_path, availability_size):
     expected_profile = "20_teaching_slot_profiles" if availability_size == 20 else "25_period_position_profiles"
     assert report["availability_profiles"] == {expected_profile: 1}
     assert "invalid_teacher_availability" not in report["issue_counts"]
+    if availability_size == 20:
+        assert report["valid"] is True
+        assert "legacy_availability_mapping_required" not in report["issue_counts"]
+    else:
+        assert report["valid"] is False
+        assert report["import_ready"] is False
+        assert report["issue_counts"]["legacy_availability_mapping_required"] == 1
+
+
+def test_maps_legacy_availability_in_day_major_ui_order():
+    flags = ["0"] * 20
+    flags[0] = "1"  # Monday, first teaching period
+    flags[7] = "1"  # Tuesday, fourth teaching period
+    flags[19] = "1"  # Friday, fourth teaching period
+
+    mapped = map_legacy_availability(":".join(flags))
+
+    assert mapped == {
+        "MON": ["P1"],
+        "TUE": ["P4"],
+        "WED": [],
+        "THU": [],
+        "FRI": ["P4"],
+    }
+
+
+def test_does_not_guess_25_flag_availability_mapping():
+    assert map_legacy_availability(":".join(["1"] * 25)) is None
 
 
 def test_blank_teacher_lunch_row_is_reviewable_not_a_lesson(tmp_path):

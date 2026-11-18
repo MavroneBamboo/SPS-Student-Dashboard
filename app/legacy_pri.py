@@ -22,12 +22,29 @@ MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 MAX_MEMBER_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
 LEGACY_DAYS = {"mo", "tu", "we", "th", "fr", "mon", "tue", "wed", "thu", "fri"}
+LEGACY_AVAILABILITY_DAYS = ("MON", "TUE", "WED", "THU", "FRI")
+LEGACY_AVAILABILITY_PERIODS = ("P1", "P2", "P3", "P4")
 LEGACY_PERIOD_MAP = {1: "P1", 2: "P2", 3: "LUNCH", 4: "P3", 5: "P4"}
 LEGACY_LUNCH_PERIOD = 3
 
 
 class LegacyPriError(ValueError):
     """The .pri archive is invalid or cannot be safely interpreted."""
+
+
+def map_legacy_availability(value: str) -> dict[str, list[str]] | None:
+    """Translate the legacy UI's 20 day-major checkboxes into current slots.
+
+    The 25-flag shape appears in saved files but has no verified meaning in the
+    legacy UI, so it must be reconciled manually instead of guessed.
+    """
+    flags = value.split(":") if isinstance(value, str) else []
+    if len(flags) != len(LEGACY_AVAILABILITY_DAYS) * len(LEGACY_AVAILABILITY_PERIODS) or any(flag not in {"0", "1"} for flag in flags):
+        return None
+    return {
+        day: [period for period_index, period in enumerate(LEGACY_AVAILABILITY_PERIODS) if flags[day_index * 4 + period_index] == "1"]
+        for day_index, day in enumerate(LEGACY_AVAILABILITY_DAYS)
+    }
 
 
 @dataclass(frozen=True)
@@ -128,10 +145,11 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             if kind == "teacher":
                 availability = row.get("Availability", "")
                 slots = availability.split(":") if isinstance(availability, str) else []
-                if len(slots) == 20 and all(slot in {"0", "1"} for slot in slots):
+                if map_legacy_availability(availability) is not None:
                     availability_mapping["20_teaching_slot_profiles"] += 1
                 elif len(slots) == 25 and all(slot in {"0", "1"} for slot in slots):
                     availability_mapping["25_period_position_profiles"] += 1
+                    issues.append({"code": "legacy_availability_mapping_required", "row": row_index})
                 else:
                     issues.append({"code": "invalid_teacher_availability", "row": row_index})
 
