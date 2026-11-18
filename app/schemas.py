@@ -186,6 +186,26 @@ class LegacyPriImportOptions(BaseModel):
         return self
 
 
+class TimetableCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=120)
+    academic_year: str = Field(min_length=1, max_length=20)
+    week_start: date
+
+    @model_validator(mode="after")
+    def valid_week(self):
+        if self.week_start.weekday() != 0:
+            raise ValueError("week_start must be a Monday")
+        try:
+            self.week_start + timedelta(days=4)
+        except OverflowError as exc:
+            raise ValueError("The complete teaching week must be representable") from exc
+        self.academic_year = self.academic_year.upper()
+        return self
+
+
 class TimetableRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)

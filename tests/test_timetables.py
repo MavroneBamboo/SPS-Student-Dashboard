@@ -69,6 +69,20 @@ def _place(ctx, version, role="operator", **changes):
     )
 
 
+def _copy(ctx, version, *, name="Copied week", academic_year=None, week_start="2026-10-26", role="operator", **changes):
+    return ctx["client"].post(
+        f"{BASE}/versions/{version['id']}/copy",
+        json={
+            "expected_revision": version["revision"],
+            "name": name,
+            "academic_year": academic_year or version["academic_year"],
+            "week_start": week_start,
+            **changes,
+        },
+        headers=ctx["headers"][role],
+    )
+
+
 def _single_requirement(ctx, count=2):
     response = ctx["client"].put(
         f"{BASE}/lessons/{ctx['lesson_id']}",
@@ -272,6 +286,101 @@ def test_draft_rename_is_audited_revision_guarded_and_immutable_after_approval(t
             "before": "Operational week",
             "after": "Quarter 4 timetable",
         }
+
+
+def test_copy_rebases_current_snapshot_and_unlocks_carried_lessons(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    source = _draft(ctx)
+    placed = _place(ctx, source)
+    assert placed.status_code == 201, placed.text
+    source = placed.json()
+    placement_id = source["placements"][0]["id"]
+    locked = client.patch(
+        f"{BASE}/versions/{source['id']}/placements/{placement_id}/lock",
+        json={"expected_revision": source["revision"], "is_locked": True},
+        headers=headers["operator"],
+    )
+    assert locked.status_code == 200, locked.text
+    source = locked.json()
+    copied = _copy(ctx, source)
+    assert copied.status_code == 201, copied.text
+    target = copied.json()
+    assert target["id"] != source["id"]
+    assert target["week_start"] == "2026-10-26"
+    assert target["revision"] == 1
+    assert target["status"] == "DRAFT"
+    assert len(target["placements"]) == 1
+    assert target["placements"][0]["is_locked"] is False
+    assert target["placements"][0]["lesson_requirement_id"] == ctx["lesson_id"]
+    assert target["placements"][0]["slots"] == source["placements"][0]["slots"]
+    assert client.get(f"{BASE}/versions/{source['id']}", headers=headers["operator"]).json()["placements"][0]["is_locked"] is True
+    with SessionLocal() as db:
+        event = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "timetable.version.copied",
+                AuditEvent.entity_id == str(target["id"]),
+            )
+        )
+        assert event is not None
+        assert json.loads(event.details_json) == {
+            "academic_year": ctx["draft"]["academic_year"],
+            "class_ids": [ctx["lesson"]["instructional_class_id"]],
+            "copied_placements": 1,
+            "source_revision": source["revision"],
+            "source_version_id": source["id"],
+            "source_week_start": source["week_start"],
+            "unlocked_placements": 1,
+            "week_start": "2026-10-26",
+        }
+
+
+def test_copy_maps_requirements_by_resources_for_new_academic_year(timetable_context):
+    ctx = timetable_context
+    source = _draft(ctx)
+    placed = _place(ctx, source)
+    assert placed.status_code == 201, placed.text
+    source = placed.json()
+    target_rule = {**ctx["rule"], "academic_year": "2027"}
+    assert ctx["client"].post(f"{BASE}/rules", json=target_rule, headers=ctx["headers"]["admin"]).status_code == 201
+    target_lesson = {**ctx["lesson"], "academic_year": "2027"}
+    created_requirement = ctx["client"].post(f"{BASE}/lessons", json=target_lesson, headers=ctx["headers"]["operator"])
+    assert created_requirement.status_code == 201, created_requirement.text
+    target_requirement_id = created_requirement.json()["id"]
+    copied = _copy(ctx, source, academic_year="2027", week_start="2027-01-04")
+    assert copied.status_code == 201, copied.text
+    target = copied.json()
+    assert target["academic_year"] == "2027"
+    assert target["placements"][0]["lesson_requirement_id"] == target_requirement_id
+    assert target["placements"][0]["lesson_requirement_id"] != source["placements"][0]["lesson_requirement_id"]
+
+
+def test_copy_rejects_unmatched_requirements_and_rebased_conflicts_atomically(timetable_context):
+    ctx = timetable_context
+    client, headers = ctx["client"], ctx["headers"]
+    source = _draft(ctx)
+    placed = _place(ctx, source)
+    assert placed.status_code == 201, placed.text
+    source = placed.json()
+    target_rule = {**ctx["rule"], "academic_year": "2027"}
+    assert client.post(f"{BASE}/rules", json=target_rule, headers=headers["admin"]).status_code == 201
+    before_count = len(client.get(f"{BASE}/versions", headers=headers["operator"]).json())
+    unmatched = _copy(ctx, source, academic_year="2027", week_start="2027-01-04")
+    assert unmatched.status_code == 409
+    assert unmatched.json()["detail"]["unresolved"] == [
+        {"source_placement": source["placements"][0]["id"], "reason": "matching_active_requirement_missing"}
+    ]
+    with SessionLocal() as db:
+        teacher = db.get(Teacher, ctx["lesson"]["teacher_id"])
+        teacher.availability_json = json.dumps({day: [] for day in ("MON", "TUE", "WED", "THU", "FRI")})
+        db.commit()
+    conflict = _copy(ctx, source)
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["message"] == "Source placements do not fit current target configuration; no draft was created"
+    assert len(client.get(f"{BASE}/versions", headers=headers["operator"]).json()) == before_count
+    stale = _copy(ctx, source, expected_revision=source["revision"] + 1)
+    assert stale.status_code == 409
+    assert _copy(ctx, source, role="executive").status_code == 403
 
 
 def test_rule_limits_availability_lunch_and_block_pattern_are_enforced(timetable_context):
