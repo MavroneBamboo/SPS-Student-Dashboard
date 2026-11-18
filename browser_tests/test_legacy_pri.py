@@ -145,7 +145,7 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     assert teacher_name not in page.locator("#legacy-pri-result").inner_text()
     assert class_name not in page.locator("#legacy-pri-result").inner_text()
 
-    page.locator("#legacy-pri-issues button[data-source='placement'][data-source-index='2']").click()
+    page.locator("#legacy-pri-issues button[data-source='placement'][data-source-index='2']").first.click()
     expect(page.locator("#legacy-pri-source")).to_be_visible()
     expect(page.locator("#legacy-pri-source-placements tr.legacy-source-row-highlight")).to_contain_text(class_name)
     assert page.locator("#legacy-pri-source-placements tr.legacy-source-row-highlight").get_attribute("data-source-index") == "2"
