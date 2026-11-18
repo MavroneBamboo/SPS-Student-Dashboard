@@ -34,6 +34,24 @@ def test_legacy_import_options_validate_numeric_resource_and_event_indexes_with_
     assert options.fixed_events == {3: 15}
 
 
+def test_legacy_import_options_reject_duplicate_or_invalid_lunch_review_rows():
+    base = {
+        "name": "Lunch review",
+        "academic_year": "2026",
+        "week_start": "2026-11-02",
+        "teachers": {0: 1},
+        "subjects": {0: 1},
+        "classes": {0: 1},
+    }
+
+    with pytest.raises(ValueError, match="cannot be repeated"):
+        LegacyPriImportOptions(**base, confirmed_lunch_placeholder_rows=[2, 2])
+    with pytest.raises(ValueError, match="non-negative source indexes"):
+        LegacyPriImportOptions(**base, confirmed_lunch_placeholder_rows=[-1])
+    with pytest.raises(ValueError):
+        LegacyPriImportOptions(**base, confirmed_lunch_placeholder_rows=[True])
+
+
 def encrypted_member(value):
     iv = bytes(range(16, 32))
     padder = padding.PKCS7(algorithms.AES.block_size).padder()
@@ -615,6 +633,92 @@ def test_legacy_project_maps_many_whole_school_class_rows_to_one_fixed_event(les
     assert imported_event["target_mode"] == "SELECTED"
     assert imported_event["target_ids"] == sorted(target_ids)
     assert imported_event["slots"] == [{"weekday": "WED", "slot_code": "P1"}]
+
+
+def test_legacy_project_import_requires_explicit_lunch_placeholder_review(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+    values = sample_data()
+    values["R05.bin"].append(
+        {
+            "Id": 2,
+            "Teacher": "",
+            "Subject": "S1",
+            "InstClass": "C1",
+            "DayOfWeek": "Wed",
+            "Period": 3,
+        }
+    )
+    archive = encrypted_archive(values)
+    options = {
+        "name": "Reviewed lunch week",
+        "academic_year": "2026",
+        "week_start": "2026-11-09",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    request_headers = {**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"}
+
+    unreviewed = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert unreviewed.status_code == 422
+    assert unreviewed.json()["detail"] == {
+        "message": "Review every blank-teacher lunch row and confirm only placeholders to exclude from lesson import",
+        "missing_rows": [2],
+        "unexpected_rows": [],
+    }
+
+    options["confirmed_lunch_placeholder_rows"] = [0, 2]
+    mismatched_review = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert mismatched_review.status_code == 422
+    assert mismatched_review.json()["detail"]["missing_rows"] == []
+    assert mismatched_review.json()["detail"]["unexpected_rows"] == [0]
+
+    options["confirmed_lunch_placeholder_rows"] = [2]
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert imported.status_code == 201, imported.text
+    result = imported.json()
+    assert result["placement_count"] == 2
+    assert result["confirmed_lunch_placeholder_count"] == 1
+    version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
+    assert version.status_code == 200
+    assert all(slot["slot_code"] != "LUNCH" for placement in version.json()["placements"] for slot in placement["slots"])
+    with SessionLocal() as db:
+        audit = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "timetable.legacy_project.imported",
+                AuditEvent.entity_id == str(result["version_id"]),
+            )
+        )
+        assert audit is not None
+        details = json.loads(audit.details_json)
+        assert details["confirmed_lunch_placeholder_rows"] == [2]
+        assert "C1" not in audit.details_json
+        assert "S1" not in audit.details_json
 
 
 def test_legacy_project_import_requires_explicit_mapping_and_it_role(lesson_context, configured_legacy_key):

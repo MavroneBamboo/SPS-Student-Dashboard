@@ -388,7 +388,25 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             status_code=422,
             detail={"message": "Unplaced legacy records must be reconciled before import", "pending_count": len(data.pending)},
         )
-    resolved_by_mapping = {"composite_teacher_mapping_required", "whole_school_event_mapping_required"}
+    lunch_placeholder_rows = sorted(
+        issue["row"]
+        for issue in report["issues"]
+        if issue["code"] == "lunch_entry_requires_review"
+        and isinstance(issue.get("row"), int)
+        and issue["row"] < len(data.placements)
+        and not str(data.placements[issue["row"]].get("Teacher") or "").strip()
+    )
+    confirmed_lunch_rows = sorted(options.confirmed_lunch_placeholder_rows)
+    if confirmed_lunch_rows != lunch_placeholder_rows:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Review every blank-teacher lunch row and confirm only placeholders to exclude from lesson import",
+                "missing_rows": sorted(set(lunch_placeholder_rows) - set(confirmed_lunch_rows)),
+                "unexpected_rows": sorted(set(confirmed_lunch_rows) - set(lunch_placeholder_rows)),
+            },
+        )
+    resolved_by_mapping = {"composite_teacher_mapping_required", "whole_school_event_mapping_required", "lunch_entry_requires_review"}
     blockers = {code: count for code, count in report["issue_counts"].items() if code not in resolved_by_mapping}
     if blockers:
         raise HTTPException(status_code=422, detail={"message": "Resolve source validation issues before import", "issue_counts": blockers})
@@ -463,8 +481,9 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             requirements_by_source[source_index] = requirement
 
         source_slots: dict[int, list[tuple[str, int]]] = defaultdict(list)
-        for source in data.placements:
-            if source.get("Teacher") == "ALL":
+        confirmed_lunch_row_set = set(confirmed_lunch_rows)
+        for placement_index, source in enumerate(data.placements):
+            if placement_index in confirmed_lunch_row_set or source.get("Teacher") == "ALL":
                 continue
             teacher = _mapped_teacher(data, options, db, source["Teacher"])
             key = (
@@ -556,6 +575,8 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
                 "counts": report["counts"],
                 "week_start": options.week_start.isoformat(),
                 "fixed_event_mappings": {str(source_index): event_id for source_index, event_id in sorted(options.fixed_events.items())},
+                "confirmed_lunch_placeholder_rows": confirmed_lunch_rows,
+                "confirmed_lunch_placeholder_count": len(confirmed_lunch_rows),
             },
         )
         db.commit()
@@ -568,6 +589,7 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             "revision": version.revision,
             "placement_count": len(blocks),
             "class_ids": target_class_ids,
+            "confirmed_lunch_placeholder_count": len(confirmed_lunch_rows),
         }
     except IntegrityError as exc:
         db.rollback()
