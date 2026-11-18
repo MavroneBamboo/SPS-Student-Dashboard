@@ -162,6 +162,30 @@ class TimetableDraftCreate(BaseModel):
         return self
 
 
+class LegacyPriImportOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=120)
+    academic_year: str = Field(min_length=1, max_length=20)
+    week_start: date
+    teachers: dict[int, int]
+    subjects: dict[int, int]
+    classes: dict[int, int]
+    teacher_groups: dict[str, int] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_import_mapping(self):
+        self.academic_year = self.academic_year.upper()
+        if self.week_start.weekday() != 0:
+            raise ValueError("week_start must be a Monday")
+        for mapping in (self.teachers, self.subjects, self.classes, self.teacher_groups):
+            if any(key < 0 or value < 1 for key, value in mapping.items()):
+                raise ValueError("Resource mappings require non-negative source indices and positive target IDs")
+        if any(not key or len(key) > 320 for key in self.teacher_groups):
+            raise ValueError("Composite teacher source labels must contain 1 to 320 characters")
+        return self
+
+
 class TimetableRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)

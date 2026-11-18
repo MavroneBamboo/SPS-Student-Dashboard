@@ -594,3 +594,19 @@ class AuditEvent(Base):
     entity_id: Mapped[str] = mapped_column(String(120), index=True)
     details_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class LegacyTimetableImport(Base):
+    __tablename__ = "legacy_timetable_imports"
+    __table_args__ = (
+        UniqueConstraint("source_sha256", "academic_year", "week_start", name="uq_legacy_import_source_week"),
+        CheckConstraint("length(source_sha256) = 64", name="ck_legacy_import_sha256_length"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    academic_year: Mapped[str] = mapped_column(String(20), index=True)
+    week_start: Mapped[date] = mapped_column(Date, index=True)
+    timetable_version_id: Mapped[int] = mapped_column(ForeignKey("timetable_versions.id"), unique=True)
+    imported_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
