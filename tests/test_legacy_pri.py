@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.legacy_pri import LegacyPriError, map_legacy_availability, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
-from app.models import AuditEvent
+from app.models import AuditEvent, LessonRequirement, TimetableVersion
 
 KEY = bytes(range(16))
 
@@ -288,6 +288,171 @@ def test_legacy_project_inspection_reveals_source_labels_only_to_it_and_superuse
         assert "T1" not in event.details_json
         assert "S1" not in event.details_json
         assert "C1" not in event.details_json
+
+
+def test_legacy_project_import_creates_audited_draft_and_rejects_duplicate(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+    values = sample_data()
+    values["R04.bin"][0]["Length"] = 2
+    values["R05.bin"][1]["DayOfWeek"] = "Mon"
+    values["R05.bin"][1]["Period"] = 2
+    archive = encrypted_archive(values)
+    options = {
+        "name": "Imported legacy week",
+        "academic_year": "2026",
+        "week_start": "2026-11-02",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    import_envelope = json.dumps(options).encode() + b"\n" + archive
+    response = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=import_envelope,
+        headers={
+            **headers["admin"],
+            "Content-Type": "application/vnd.sps.legacy-pri-import",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["status"] == "DRAFT"
+    assert result["placement_count"] == 1
+    version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
+    assert version.status_code == 200
+    assert len(version.json()["placements"]) == 1
+    assert version.json()["placements"][0]["period_count"] == 2
+    assert len(version.json()["placements"][0]["slots"]) == 2
+    assert version.json()["pending"] == []
+    duplicate = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=import_envelope,
+        headers={
+            **headers["admin"],
+            "Content-Type": "application/vnd.sps.legacy-pri-import",
+        },
+    )
+    assert duplicate.status_code == 409
+    with SessionLocal() as db:
+        event = db.scalar(select(AuditEvent).where(AuditEvent.action == "timetable.legacy_project.imported"))
+        assert event is not None
+        assert "source_sha256" in event.details_json
+        assert "T1" not in event.details_json
+
+
+def test_legacy_project_import_requires_explicit_mapping_and_it_role(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    archive = encrypted_archive()
+    options = {
+        "name": "Imported legacy week",
+        "academic_year": "2026",
+        "week_start": "2026-10-19",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    request_headers = {
+        "Content-Type": "application/vnd.sps.legacy-pri-import",
+    }
+    denied = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["operator"], **request_headers},
+    )
+    assert denied.status_code == 403
+    missing = {**options, "teachers": {}}
+    rejected = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(missing).encode() + b"\n" + archive,
+        headers={**headers["admin"], **request_headers},
+    )
+    assert rejected.status_code == 422
+
+
+def test_legacy_project_import_rejects_empty_schedule(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    values = sample_data()
+    values["R04.bin"] = []
+    values["R05.bin"] = []
+    archive = encrypted_archive(values)
+    options = {
+        "name": "Empty legacy week",
+        "academic_year": "2026",
+        "week_start": "2026-10-26",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    response = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Legacy project must contain classes, lesson requirements and placements"
+
+
+def test_legacy_project_import_rolls_back_requirements_when_source_blocks_cannot_be_packed(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+    values = sample_data()
+    values["R04.bin"][0]["Length"] = 2
+    archive = encrypted_archive(values)
+    options = {
+        "name": "Rollback invalid imported week",
+        "academic_year": "2026",
+        "week_start": "2026-11-16",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    response = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+
+    assert response.status_code == 422
+    with SessionLocal() as db:
+        assert (
+            db.scalar(
+                select(LessonRequirement.id).where(
+                    LessonRequirement.academic_year == options["academic_year"],
+                    LessonRequirement.instructional_class_id == resources["instructional_class_id"],
+                    LessonRequirement.teacher_id == resources["teacher_id"],
+                    LessonRequirement.subject_id == resources["subject_id"],
+                )
+            )
+            is None
+        )
+        assert db.scalar(select(TimetableVersion.id).where(TimetableVersion.name == options["name"])) is None
 
 
 def test_legacy_project_preflight_requires_key_and_bounds_upload(lesson_context, monkeypatch):

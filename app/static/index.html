@@ -271,10 +271,10 @@
         <div class="panel table-wrap"><table><thead><tr><th>Name</th><th>Description</th><th>Effective from</th><th>Effective to</th><th>Active</th><th>Version</th><th>Action</th></tr></thead><tbody id="reference-catalog-rows"></tbody></table></div>
       </section>
       <section id="legacy-pri-panel" hidden aria-labelledby="legacy-pri-title">
-        <div class="section-bar"><div><h2 id="legacy-pri-title">Legacy timetable preflight</h2><p>Check a legacy project before planning migration. This preflight never imports timetable data.</p></div></div>
+        <div class="section-bar"><div><h2 id="legacy-pri-title">Legacy timetable preflight</h2><p>Validate and map a legacy project before creating a draft. Import is explicit and never approves or publishes a timetable.</p></div></div>
         <section class="panel">
-          <h3>Validate a .pri project</h3>
-          <p>The encrypted project is processed in memory and discarded after validation. Results omit teacher, subject and class names. Rows in numeric Period 3 are reported for review because Period 3 is lunch in this system.</p>
+          <h3>Reconcile a .pri project</h3>
+          <p>The encrypted project is processed in memory and discarded after each action. Validation omits names; inspect labels only when you need to map them. Numeric Period 3 is lunch here and cannot be imported as a lesson.</p>
           <form id="legacy-pri-form" class="filters">
             <label>Legacy project (.pri)<input name="project" type="file" accept=".pri,application/octet-stream" required></label>
             <button type="submit">Validate project</button>
@@ -295,6 +295,20 @@
             <details><summary>Subjects</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Name</th></tr></thead><tbody id="legacy-pri-source-subjects"></tbody></table></div></details>
             <details><summary>Classes</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Name</th></tr></thead><tbody id="legacy-pri-source-classes"></tbody></table></div></details>
             <details><summary>Lesson requirements</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Teacher</th><th>Subject</th><th>Class</th><th>Weekly periods</th><th>Block length</th></tr></thead><tbody id="legacy-pri-source-lessons"></tbody></table></div></details>
+            <section id="legacy-pri-import-panel" class="panel" hidden aria-labelledby="legacy-pri-import-title">
+              <h3 id="legacy-pri-import-title">Map resources and create a draft</h3>
+              <p>Choose the matching application resource for every source row. Import creates a new draft, checks it against the active timetable rules, and records its source fingerprint. It does not approve or publish the timetable. Unplaced records, lunch rows, whole-school entries and ambiguous availability must be reconciled first.</p>
+              <form id="legacy-pri-import-form" class="profile-fields">
+                <label>Draft name<input name="name" maxlength="120" required></label>
+                <label>Academic year<input name="academic_year" maxlength="20" required></label>
+                <label>Week starting Monday<input name="week_start" type="date" required></label>
+                <h4>Teacher mappings</h4><div id="legacy-pri-map-teachers" class="table-wrap"></div>
+                <h4>Subject mappings</h4><div id="legacy-pri-map-subjects" class="table-wrap"></div>
+                <h4>Class mappings</h4><div id="legacy-pri-map-classes" class="table-wrap"></div>
+                <h4>Composite teacher groups</h4><div id="legacy-pri-map-groups" class="table-wrap"></div>
+                <button type="submit">Import as draft</button>
+              </form>
+            </section>
           </section>
         </section>
       </section>

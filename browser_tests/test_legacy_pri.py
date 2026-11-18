@@ -1,12 +1,15 @@
 import io
 import json
 import zipfile
+from uuid import uuid4
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from fastapi.testclient import TestClient
 from playwright.sync_api import expect
 
 from app.config import get_settings
+from app.main import app
 
 KEY = bytes(range(16))
 
@@ -19,17 +22,17 @@ def _encrypted_member(value):
     return iv + encryptor.update(padded) + encryptor.finalize()
 
 
-def _valid_project():
+def _valid_project(teacher_name="Synthetic Teacher", subject_name="Synthetic Subject", class_name="Synthetic Class"):
     members = {
-        "R01.bin": [{"Id": 0, "Name": "Synthetic Teacher", "Availability": ":".join(["1"] * 20)}],
-        "R02.bin": [{"Id": 0, "Name": "Synthetic Subject"}],
-        "R03.bin": [{"Id": 0, "Name": "Synthetic Class"}],
+        "R01.bin": [{"Id": 0, "Name": teacher_name, "Availability": ":".join(["1"] * 20)}],
+        "R02.bin": [{"Id": 0, "Name": subject_name}],
+        "R03.bin": [{"Id": 0, "Name": class_name}],
         "R04.bin": [
             {
                 "Id": 0,
-                "Teacher": "Synthetic Teacher",
-                "Subject": "Synthetic Subject",
-                "InstClass": "Synthetic Class",
+                "Teacher": teacher_name,
+                "Subject": subject_name,
+                "InstClass": class_name,
                 "Count": 2,
                 "Length": 1,
             }
@@ -37,17 +40,17 @@ def _valid_project():
         "R05.bin": [
             {
                 "Id": 0,
-                "Teacher": "Synthetic Teacher",
-                "Subject": "Synthetic Subject",
-                "InstClass": "Synthetic Class",
+                "Teacher": teacher_name,
+                "Subject": subject_name,
+                "InstClass": class_name,
                 "DayOfWeek": "Mon",
                 "Period": 1,
             },
             {
                 "Id": 1,
-                "Teacher": "Synthetic Teacher",
-                "Subject": "Synthetic Subject",
-                "InstClass": "Synthetic Class",
+                "Teacher": teacher_name,
+                "Subject": subject_name,
+                "InstClass": class_name,
                 "DayOfWeek": "Tue",
                 "Period": 1,
             },
@@ -72,12 +75,52 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     settings = get_settings()
     monkeypatch.setattr(settings, "legacy_pri_key_hex", KEY.hex())
     account = make_account("IT Administrator")
+    suffix = uuid4().hex[:8]
+    teacher_name = "Synthetic Teacher " + suffix
+    subject_name = "Synthetic Subject " + suffix
+    class_name = "Synthetic Class " + suffix
+    with TestClient(app) as client:
+        login = client.post("/api/v1/auth/login", json={"username": account["username"], "password": account["password"]})
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        teacher = client.post(
+            "/api/v1/timetable/teachers",
+            json={"short_code": "SYNTH-LT-" + suffix, "full_name": teacher_name},
+            headers=headers,
+        )
+        subject = client.post(
+            "/api/v1/timetable/subjects",
+            json={"code": "SYNTH-LS-" + suffix, "name": subject_name},
+            headers=headers,
+        )
+        instructional_class = client.post(
+            "/api/v1/timetable/classes",
+            json={"code": "SYNTH-LC-" + suffix, "name": class_name},
+            headers=headers,
+        )
+        assert teacher.status_code == subject.status_code == instructional_class.status_code == 201
+        rule = client.post(
+            "/api/v1/timetable/rules",
+            json={
+                "academic_year": "2026",
+                "target_type": "CLASS",
+                "target_id": instructional_class.json()["id"],
+                "effective_from": "2026-01-01",
+                "effective_to": "2026-12-31",
+                "rule": {},
+            },
+            headers=headers,
+        )
+        assert rule.status_code == 201, rule.text
     _sign_in(page, account)
 
     page.get_by_role("button", name="Legacy timetable preflight", exact=True).click()
     expect(page.locator("#legacy-pri-panel")).to_be_visible()
     page.locator("#legacy-pri-form input[type=file]").set_input_files(
-        {"name": "synthetic.pri", "mimeType": "application/octet-stream", "buffer": _valid_project()}
+        {
+            "name": "synthetic.pri",
+            "mimeType": "application/octet-stream",
+            "buffer": _valid_project(teacher_name, subject_name, class_name),
+        }
     )
     page.get_by_role("button", name="Validate project", exact=True).click()
 
@@ -86,17 +129,25 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     expect(page.locator("#legacy-pri-counts")).to_contain_text("teachers")
     expect(page.locator("#legacy-pri-periods")).to_contain_text("LUNCH")
     expect(page.locator("#legacy-pri-readiness")).to_contain_text("no data was imported")
-    assert "Synthetic Teacher" not in page.locator("#legacy-pri-result").inner_text()
-    assert "Synthetic Class" not in page.locator("#legacy-pri-result").inner_text()
+    assert teacher_name not in page.locator("#legacy-pri-result").inner_text()
+    assert class_name not in page.locator("#legacy-pri-result").inner_text()
 
     page.get_by_role("button", name="Inspect source labels for mapping", exact=True).click()
     expect(page.locator("#legacy-pri-source")).to_be_visible()
-    expect(page.locator("#legacy-pri-source-teachers")).to_contain_text("Synthetic Teacher")
-    expect(page.locator("#legacy-pri-source-subjects")).to_contain_text("Synthetic Subject")
-    expect(page.locator("#legacy-pri-source-classes")).to_contain_text("Synthetic Class")
+    expect(page.locator("#legacy-pri-source-teachers")).to_contain_text(teacher_name)
+    expect(page.locator("#legacy-pri-source-subjects")).to_contain_text(subject_name)
+    expect(page.locator("#legacy-pri-source-classes")).to_contain_text(class_name)
+    page.locator("#legacy-pri-import-form [name=name]").fill("Synthetic migrated week " + suffix)
+    page.locator("#legacy-pri-import-form [name=academic_year]").fill("2026")
+    page.locator("#legacy-pri-import-form [name=week_start]").fill("2026-10-26")
+    page.get_by_role("button", name="Import as draft", exact=True).click()
+    expect(page.locator("#notice")).to_contain_text("Legacy timetable imported as draft")
+    expect(page.locator("#timetable-panel")).to_be_visible()
+    expect(page.locator("#timetable-version-rows")).to_contain_text("Synthetic migrated week " + suffix)
+    expect(page.locator("#timetable-version-rows")).to_contain_text("DRAFT")
     page.get_by_role("button", name="Sign out", exact=True).click()
     expect(page.locator("#legacy-pri-source")).to_be_hidden()
-    assert "Synthetic Teacher" not in page.locator("#legacy-pri-source").inner_text()
+    assert teacher_name not in page.locator("#legacy-pri-source").inner_text()
 
 
 def test_operator_does_not_see_legacy_project_preflight(page, make_account):
