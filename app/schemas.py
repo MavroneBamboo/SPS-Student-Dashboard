@@ -230,6 +230,32 @@ class TeacherResponse(TeacherCreate):
     id: int
     is_composite: bool = False
     member_ids: list[int] = Field(default_factory=list)
+    revision: str
+
+
+class TeacherUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    short_code: str | None = Field(default=None, min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    full_name: str | None = Field(default=None, min_length=1, max_length=160)
+    is_adjunct: bool | None = None
+    availability: dict[str, list[str]] | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self):
+        if not self.model_fields_set - {"expected_revision"}:
+            raise ValueError("At least one teacher field must be provided")
+        if any(getattr(self, field) is None for field in self.model_fields_set - {"expected_revision"}):
+            raise ValueError("Teacher fields cannot be null")
+        if self.availability is not None:
+            TeacherCreate(
+                short_code=self.short_code or "TEMP",
+                full_name=self.full_name or "Temporary profile",
+                availability=self.availability,
+            )
+        return self
 
 
 class TeacherGroupCreate(BaseModel):
@@ -275,6 +301,25 @@ class SubjectCreate(BaseModel):
 
 class SubjectResponse(SubjectCreate):
     id: int
+    revision: str
+
+
+class SubjectUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    code: str | None = Field(default=None, min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set - {"expected_revision"}:
+            raise ValueError("At least one subject field must be provided")
+        if any(getattr(self, field) is None for field in self.model_fields_set & {"code", "name", "is_active"}):
+            raise ValueError("Subject fields cannot be null")
+        return self
 
 
 class InstructionalClassCreate(BaseModel):
@@ -287,6 +332,26 @@ class InstructionalClassCreate(BaseModel):
 
 class InstructionalClassResponse(InstructionalClassCreate):
     id: int
+    revision: str
+
+
+class InstructionalClassUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    code: str | None = Field(default=None, min_length=1, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    reporting_order: int | None = Field(default=None, ge=0, le=10000)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set - {"expected_revision"}:
+            raise ValueError("At least one instructional-class field must be provided")
+        if any(getattr(self, field) is None for field in self.model_fields_set & {"code", "name", "reporting_order", "is_active"}):
+            raise ValueError("Instructional-class fields cannot be null")
+        return self
 
 
 class StudentClassMappingCreate(BaseModel):
