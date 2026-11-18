@@ -22,9 +22,7 @@ def _encrypted_member(value):
     return iv + encryptor.update(padded) + encryptor.finalize()
 
 
-def _valid_project(
-    teacher_name="Synthetic Teacher", subject_name="Synthetic Subject", class_name="Synthetic Class", duplicate_slot=False
-):
+def _valid_project(teacher_name="Synthetic Teacher", subject_name="Synthetic Subject", class_name="Synthetic Class", duplicate_slot=False):
     members = {
         "R01.bin": [{"Id": 0, "Name": teacher_name, "Availability": ":".join(["1"] * 20)}],
         "R02.bin": [{"Id": 0, "Name": subject_name}],

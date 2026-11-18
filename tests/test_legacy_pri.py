@@ -499,8 +499,7 @@ def test_legacy_project_preflight_bounds_rows_before_reconciliation(lesson_conte
     client, headers, _ = lesson_context
     values = sample_data()
     values["R01.bin"] = [
-        {"Id": index, "Name": f"Teacher {index}", "Availability": ":".join(["1"] * 20)}
-        for index in range(MAX_LEGACY_SOURCE_ROWS + 1)
+        {"Id": index, "Name": f"Teacher {index}", "Availability": ":".join(["1"] * 20)} for index in range(MAX_LEGACY_SOURCE_ROWS + 1)
     ]
     archive = encrypted_archive(values)
     response = client.post(
