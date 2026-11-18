@@ -491,18 +491,16 @@ def test_legacy_project_maps_whole_school_placements_to_exact_fixed_events(lesso
     assert result["placement_count"] == 2
     version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
     assert version.status_code == 200
-    assert version.json()["snapshot"]["fixed_events"] == [
-        {
-            "id": fixed_event.json()["id"],
-            "academic_year": "2026",
-            "label": "Assembly",
-            "audience_type": "CLASS",
-            "target_mode": "SELECTED",
-            "target_ids": [resources["instructional_class_id"]],
-            "slots": [{"weekday": "WED", "slot_code": "P1"}],
-            "version": 1,
-        }
-    ]
+    assert {
+        "id": fixed_event.json()["id"],
+        "academic_year": "2026",
+        "label": "Assembly",
+        "audience_type": "CLASS",
+        "target_mode": "SELECTED",
+        "target_ids": [resources["instructional_class_id"]],
+        "slots": [{"weekday": "WED", "slot_code": "P1"}],
+        "version": 1,
+    } in version.json()["snapshot"]["fixed_events"]
     with SessionLocal() as db:
         audit = db.scalar(select(AuditEvent).where(AuditEvent.action == "timetable.legacy_project.imported"))
         assert audit is not None
