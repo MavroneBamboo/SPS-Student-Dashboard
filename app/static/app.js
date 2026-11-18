@@ -299,6 +299,7 @@ function renderLegacyPriSourceTable(targetId, rows, fields) {
   target.replaceChildren();
   for (const source of rows) {
     const row = document.createElement("tr");
+    if (Number.isInteger(source.source_index)) row.dataset.sourceIndex = String(source.source_index);
     for (const field of fields) {
       let value = source[field.key];
       if (field.key === "source_index" && Number.isInteger(value)) value += 1;
@@ -311,6 +312,51 @@ function renderLegacyPriSourceTable(targetId, rows, fields) {
     cell(row, "No records.").colSpan = fields.length;
     target.append(row);
   }
+}
+
+async function inspectLegacyPriSource() {
+  const file = $("legacy-pri-form").elements.project.files[0];
+  if (!file) throw new Error("Select the .pri project again before inspecting its source labels.");
+  $("legacy-pri-status").textContent = "Inspecting source labels…";
+  const data = await requestLegacyPri("inspect", file);
+  renderLegacyPriInspection(data);
+  const [teachers, subjects, classes] = await Promise.all([
+    api("/timetable/teachers"),
+    api("/timetable/subjects"),
+    api("/timetable/classes"),
+  ]);
+  renderLegacyPriMappings(data, {teachers, subjects, classes});
+  $("legacy-pri-status").textContent = "Source labels are displayed for IT reconciliation and have not been saved.";
+}
+
+function focusLegacyPriSourceRow(source, sourceIndex) {
+  const table = {
+    teacher: "teachers",
+    subject: "subjects",
+    class: "classes",
+    lesson_requirement: "lessons",
+    placement: "placements",
+  }[source];
+  if (!table || !Number.isInteger(sourceIndex)) return;
+  const row = document.querySelector(`#legacy-pri-source-${table} tr[data-source-index="${sourceIndex}"]`);
+  if (!row) throw new Error("The selected source row is not available in this inspection.");
+  document.querySelectorAll(".legacy-source-row-highlight").forEach((element) => element.classList.remove("legacy-source-row-highlight"));
+  row.closest("details").open = true;
+  row.classList.add("legacy-source-row-highlight");
+  row.tabIndex = -1;
+  row.focus({preventScroll: true});
+  row.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center"});
+}
+
+function legacyPriIssueRowButton(source, sourceIndex) {
+  const rowButton = document.createElement("button");
+  rowButton.type = "button";
+  rowButton.className = "secondary legacy-issue-row";
+  rowButton.dataset.source = source;
+  rowButton.dataset.sourceIndex = String(sourceIndex);
+  rowButton.textContent = String(sourceIndex + 1);
+  rowButton.setAttribute("aria-label", `Inspect ${source.replaceAll("_", " ")} source row ${sourceIndex + 1}`);
+  return rowButton;
 }
 
 function renderLegacyPriInspection(data) {
@@ -337,6 +383,23 @@ function renderLegacyPriInspection(data) {
 function renderLegacyPriIssues(report) {
   const target = $("legacy-pri-issues");
   target.replaceChildren();
+  target.onclick = (event) => {
+    const expandButton = event.target.closest("button[data-source-indices]");
+    if (expandButton) {
+      const source = expandButton.dataset.source;
+      const indices = JSON.parse(expandButton.dataset.sourceIndices);
+      const fragment = document.createDocumentFragment();
+      indices.forEach((sourceIndex) => fragment.append(legacyPriIssueRowButton(source, sourceIndex)));
+      expandButton.replaceWith(fragment);
+      return;
+    }
+    const button = event.target.closest("button[data-source][data-source-index]");
+    if (!button) return;
+    run(button, async () => {
+      if (!legacyPriInspection) await inspectLegacyPriSource();
+      focusLegacyPriSourceRow(button.dataset.source, Number(button.dataset.sourceIndex));
+    });
+  };
   const issues = Array.isArray(report.issues) ? report.issues : [];
   for (const [code, count] of Object.entries(report.issue_counts)) {
     const matching = issues.filter((issue) => issue.code === code);
@@ -344,22 +407,39 @@ function renderLegacyPriIssues(report) {
     let affectedCount = 0;
     for (const issue of matching) {
       if (Number.isInteger(issue.row)) {
-        const source = String(issue.source || "source").replaceAll("_", " ");
+        const source = String(issue.source || "source");
         if (!rowGroups.has(source)) rowGroups.set(source, new Set());
-        rowGroups.get(source).add(issue.row + 1);
+        rowGroups.get(source).add(issue.row);
+      }
+      if (Array.isArray(issue.rows)) {
+        const source = String(issue.source || "source");
+        if (!rowGroups.has(source)) rowGroups.set(source, new Set());
+        issue.rows.filter(Number.isInteger).forEach((row) => rowGroups.get(source).add(row));
       }
       if (Number.isInteger(issue.count)) affectedCount += issue.count;
     }
-    const details = [];
+    const item = document.createElement("li");
+    item.append(document.createTextNode(`${code.replaceAll("_", " ")}: ${count}`));
     for (const [source, rows] of rowGroups) {
       const ordered = [...rows].sort((left, right) => left - right);
-      const shown = ordered.slice(0, 40).join(", ");
-      const suffix = ordered.length > 40 ? `, … ${ordered.length - 40} more` : "";
-      details.push(`${source} rows ${shown}${suffix}`);
+      const shown = ordered.slice(0, 40);
+      const sourceLabel = document.createElement("span");
+      sourceLabel.textContent = `${source.replaceAll("_", " ")} rows `;
+      item.append(document.createTextNode(" — "), sourceLabel);
+      for (const sourceIndex of shown) {
+        item.append(legacyPriIssueRowButton(source, sourceIndex));
+      }
+      if (ordered.length > shown.length) {
+        const expandButton = document.createElement("button");
+        expandButton.type = "button";
+        expandButton.className = "secondary legacy-issue-expand";
+        expandButton.dataset.source = source;
+        expandButton.dataset.sourceIndices = JSON.stringify(ordered.slice(shown.length));
+        expandButton.textContent = `Show ${ordered.length - shown.length} more`;
+        item.append(expandButton);
+      }
     }
-    if (affectedCount) details.push(`${affectedCount} periods/records`);
-    const item = document.createElement("li");
-    item.textContent = `${code.replaceAll("_", " ")}: ${count}${details.length ? ` — ${details.join("; ")}` : ""}`;
+    if (affectedCount) item.append(document.createTextNode(` — ${affectedCount} periods/records`));
     target.append(item);
   }
   if (!target.childElementCount) {
@@ -788,20 +868,7 @@ $("legacy-pri-form").elements.project.addEventListener("change", () => {
   $("legacy-pri-status").textContent = "Project selection changed. Validate the selected project before inspecting its labels.";
 });
 $("legacy-pri-inspect-button").addEventListener("click", (event) => {
-  run(event.currentTarget, async () => {
-    const file = $("legacy-pri-form").elements.project.files[0];
-    if (!file) throw new Error("Select the .pri project again before inspecting its source labels.");
-    $("legacy-pri-status").textContent = "Inspecting source labels…";
-    const data = await requestLegacyPri("inspect", file);
-    renderLegacyPriInspection(data);
-    const [teachers, subjects, classes] = await Promise.all([
-      api("/timetable/teachers"),
-      api("/timetable/subjects"),
-      api("/timetable/classes"),
-    ]);
-    renderLegacyPriMappings(data, {teachers, subjects, classes});
-    $("legacy-pri-status").textContent = "Source labels are displayed for IT reconciliation and have not been saved.";
-  });
+  run(event.currentTarget, inspectLegacyPriSource);
 });
 $("legacy-pri-import-form").addEventListener("submit", (event) => {
   event.preventDefault();

@@ -163,6 +163,7 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
                     add_issue("invalid_teacher_availability", kind, row=row_index)
 
     requirements: Counter[tuple[str, str, str]] = Counter()
+    requirement_rows: dict[tuple[str, str, str], list[int]] = {}
     for row_index, row in enumerate(data.lessons):
         references = {kind: row.get(field) for kind, field in (("teacher", "Teacher"), ("subject", "Subject"), ("class", "InstClass"))}
         for kind, value in references.items():
@@ -187,7 +188,9 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
                     add_issue("invalid_composite_teacher_reference", "lesson_requirement", row=row_index)
                 add_issue("composite_teacher_mapping_required", "lesson_requirement", row=row_index)
         if all(isinstance(value, str) for value in references.values()):
-            requirements[(references["class"], str(teacher_ref), references["subject"])] += count if isinstance(count, int) else 0
+            resource_tuple = (references["class"], str(teacher_ref), references["subject"])
+            requirements[resource_tuple] += count if isinstance(count, int) else 0
+            requirement_rows.setdefault(resource_tuple, []).append(row_index)
 
     occupied_classes: set[tuple[str, str, int]] = set()
     occupied_teachers: set[tuple[str, str, int]] = set()
@@ -240,9 +243,21 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
     for resource_tuple, expected in requirements.items():
         actual = placed[resource_tuple]
         if actual < expected:
-            add_issue("unplaced_lesson_periods", "lesson_requirement", count=expected - actual)
+            issue = {
+                "code": "unplaced_lesson_periods",
+                "source": "lesson_requirement",
+                "rows": requirement_rows[resource_tuple],
+                "count": expected - actual,
+            }
+            issues.append(issue)
         elif actual > expected:
-            add_issue("overplaced_lesson_periods", "lesson_requirement", count=actual - expected)
+            issue = {
+                "code": "overplaced_lesson_periods",
+                "source": "lesson_requirement",
+                "rows": requirement_rows[resource_tuple],
+                "count": actual - expected,
+            }
+            issues.append(issue)
     for resource_tuple, actual in placed.items():
         if resource_tuple not in requirements:
             add_issue("placement_without_lesson_requirement", "placement", count=actual)

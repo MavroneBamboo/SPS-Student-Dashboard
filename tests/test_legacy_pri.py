@@ -101,7 +101,7 @@ def test_reconciliation_reports_invalid_or_incomplete_schedule(tmp_path, mutate,
     assert expected_code in report["issue_counts"]
     issue = next(issue for issue in report["issues"] if issue["code"] == expected_code)
     if mutate == "unplaced":
-        assert issue == {"code": expected_code, "source": "lesson_requirement", "count": 1}
+        assert issue == {"code": expected_code, "source": "lesson_requirement", "rows": [0], "count": 1}
     else:
         assert issue["source"] == "placement"
         assert issue["row"] == (0 if mutate == "reference" else 1)
@@ -188,6 +188,8 @@ def test_blank_teacher_lunch_row_is_reviewable_not_a_lesson(tmp_path):
     assert "missing_placement_teacher" not in report["issue_counts"]
     assert "lesson_in_lunch_slot" not in report["issue_counts"]
     assert report["issue_counts"]["unplaced_lesson_periods"] == 1
+    unplaced = next(issue for issue in report["issues"] if issue["code"] == "unplaced_lesson_periods")
+    assert unplaced["rows"] == [0]
 
 
 def test_teacher_assigned_lunch_row_is_reported_as_a_conflict(tmp_path):
