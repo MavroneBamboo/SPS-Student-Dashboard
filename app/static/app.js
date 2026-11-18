@@ -28,7 +28,7 @@ function clearData() {
   legacyPriInspection = null;
   for (const id of [
     "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
-    "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups",
+    "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups", "legacy-pri-map-events",
   ]) $(id).replaceChildren();
   $("legacy-pri-source").hidden = true;
   $("legacy-pri-import-panel").hidden = true;
@@ -320,12 +320,13 @@ async function inspectLegacyPriSource() {
   $("legacy-pri-status").textContent = "Inspecting source labels…";
   const data = await requestLegacyPri("inspect", file);
   renderLegacyPriInspection(data);
-  const [teachers, subjects, classes] = await Promise.all([
+  const [teachers, subjects, classes, fixedEvents] = await Promise.all([
     api("/timetable/teachers"),
     api("/timetable/subjects"),
     api("/timetable/classes"),
+    api("/timetable/fixed-events"),
   ]);
-  renderLegacyPriMappings(data, {teachers, subjects, classes});
+  renderLegacyPriMappings(data, {teachers, subjects, classes, fixedEvents});
   $("legacy-pri-status").textContent = "Source labels are displayed for IT reconciliation and have not been saved.";
 }
 
@@ -535,7 +536,45 @@ function renderLegacyPriMappings(data, targets) {
       container.append(label);
     }
   }
+  renderLegacyPriEventMappings(data, targets.fixedEvents);
   $("legacy-pri-import-panel").hidden = false;
+}
+
+function renderLegacyPriEventMappings(data, fixedEvents) {
+  const eventContainer = $("legacy-pri-map-events");
+  eventContainer.replaceChildren();
+  const eventLabels = [...new Set(
+    data.placements.filter((row) => row.teacher === "ALL").map((row) => row.subject?.trim()).filter(Boolean),
+  )].sort((left, right) => left.localeCompare(right));
+  if (!eventLabels.length) {
+    eventContainer.textContent = "No whole-school event rows need mapping.";
+  } else {
+    const availableEvents = fixedEvents.filter((event) => event.is_active && event.audience_type === "CLASS");
+    for (const eventLabel of eventLabels) {
+      const sourceSubjects = data.resources.subjects.filter((subject) => subject.name?.trim() === eventLabel);
+      if (sourceSubjects.length !== 1) {
+        const message = document.createElement("p");
+        message.textContent = `${eventLabel}: the event label must match exactly one legacy subject row before it can be mapped.`;
+        eventContainer.append(message);
+        continue;
+      }
+      const sourceSubjectIndex = sourceSubjects[0].source_index;
+      const label = document.createElement("label");
+      const rows = data.placements
+        .filter((row) => row.teacher === "ALL" && row.subject?.trim() === eventLabel)
+        .map((row) => row.source_index + 1);
+      label.append(document.createTextNode(`${eventLabel} · source subject row ${sourceSubjectIndex + 1} · placement rows ${rows.join(", ")}`));
+      const select = document.createElement("select");
+      select.required = true;
+      select.dataset.fixedEventSourceIndex = String(sourceSubjectIndex);
+      select.append(new Option("Select a matching class fixed event", ""));
+      for (const event of availableEvents) {
+        select.append(new Option(`${event.academic_year} · ${event.label}`, String(event.id)));
+      }
+      label.append(select);
+      eventContainer.append(label);
+    }
+  }
 }
 
 function renderLegacyPriSummary(targetId, values) {
@@ -872,12 +911,18 @@ $("legacy-pri-form").elements.project.addEventListener("change", () => {
   $("legacy-pri-map-groups").replaceChildren();
   for (const id of [
     "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
-    "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups",
+    "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups", "legacy-pri-map-events",
   ]) $(id).replaceChildren();
   $("legacy-pri-status").textContent = "Project selection changed. Validate the selected project before inspecting its labels.";
 });
 $("legacy-pri-inspect-button").addEventListener("click", (event) => {
   run(event.currentTarget, inspectLegacyPriSource);
+});
+$("legacy-pri-refresh-events").addEventListener("click", (event) => {
+  run(event.currentTarget, async () => {
+    if (!legacyPriInspection) throw new Error("Inspect the selected project before refreshing event mappings.");
+    renderLegacyPriEventMappings(legacyPriInspection, await api("/timetable/fixed-events"));
+  });
 });
 $("legacy-pri-import-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -899,6 +944,10 @@ $("legacy-pri-import-form").addEventListener("submit", (event) => {
       teacher_groups: Object.fromEntries(
         [...document.querySelectorAll("#legacy-pri-map-groups select[data-group-reference]")]
           .map((select) => [select.dataset.groupReference, Number(select.value)]),
+      ),
+      fixed_events: Object.fromEntries(
+        [...document.querySelectorAll("#legacy-pri-map-events select[data-fixed-event-source-index]")]
+          .map((select) => [select.dataset.fixedEventSourceIndex, Number(select.value)]),
       ),
     };
     $("legacy-pri-status").textContent = "Validating mappings and creating a timetable draft…";

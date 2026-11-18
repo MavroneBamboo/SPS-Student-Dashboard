@@ -1,6 +1,7 @@
 import io
 import json
 import zipfile
+from datetime import date
 
 import pytest
 from cryptography.hazmat.primitives import padding
@@ -11,9 +12,26 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.legacy_pri import LegacyPriError, map_legacy_availability, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
 from app.models import AuditEvent, LessonRequirement, TimetableVersion
+from app.schemas import LegacyPriImportOptions
 from app.routes.legacy_pri import MAX_LEGACY_SOURCE_ROWS
 
 KEY = bytes(range(16))
+
+
+def test_legacy_import_options_validate_numeric_resource_and_event_indexes_with_labelled_groups():
+    options = LegacyPriImportOptions(
+        name="Legacy import",
+        academic_year="2026",
+        week_start=date(2026, 11, 16),
+        teachers={0: 11},
+        subjects={1: 12},
+        classes={2: 13},
+        teacher_groups={"Teacher A/Teacher B": 14},
+        fixed_events={3: 15},
+    )
+
+    assert options.teacher_groups == {"Teacher A/Teacher B": 14}
+    assert options.fixed_events == {3: 15}
 
 
 def encrypted_member(value):
@@ -374,6 +392,122 @@ def test_legacy_project_import_creates_audited_draft_and_rejects_duplicate(lesso
         assert event is not None
         assert "source_sha256" in event.details_json
         assert "T1" not in event.details_json
+
+
+def test_legacy_project_maps_whole_school_placements_to_exact_fixed_events(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    event_subject = client.post(
+        "/api/v1/timetable/subjects",
+        json={"code": "ASM-LEGACY", "name": "Assembly"},
+        headers=headers["admin"],
+    )
+    assert event_subject.status_code == 201, event_subject.text
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+    fixed_event = client.post(
+        "/api/v1/timetable/fixed-events",
+        json={
+            "academic_year": "2026",
+            "label": "Assembly",
+            "audience_type": "CLASS",
+            "target_mode": "SELECTED",
+            "target_ids": [resources["instructional_class_id"]],
+            "slots": [{"weekday": "WED", "slot_code": "P1"}],
+        },
+        headers=headers["admin"],
+    )
+    assert fixed_event.status_code == 201, fixed_event.text
+    wrong_event = client.post(
+        "/api/v1/timetable/fixed-events",
+        json={
+            "academic_year": "2026",
+            "label": "Wrong assembly slot",
+            "audience_type": "CLASS",
+            "target_mode": "SELECTED",
+            "target_ids": [resources["instructional_class_id"]],
+            "slots": [{"weekday": "WED", "slot_code": "P2"}],
+        },
+        headers=headers["admin"],
+    )
+    assert wrong_event.status_code == 201, wrong_event.text
+
+    values = sample_data()
+    values["R02.bin"].append({"Id": 1, "Name": "Assembly"})
+    values["R05.bin"].append(
+        {
+            "Id": 2,
+            "Teacher": "ALL",
+            "Subject": "Assembly",
+            "InstClass": "C1",
+            "DayOfWeek": "Wed",
+            "Period": 1,
+        }
+    )
+    archive = encrypted_archive(values)
+    options = {
+        "name": "Legacy week with assembly",
+        "academic_year": "2026",
+        "week_start": "2026-11-16",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"], "1": event_subject.json()["id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    without_event_mapping = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+    assert without_event_mapping.status_code == 422
+    assert without_event_mapping.json()["detail"] == "Map each whole-school event label to one fixed event"
+
+    options["fixed_events"] = {"1": wrong_event.json()["id"]}
+    mismatched_event = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+    assert mismatched_event.status_code == 422
+    assert "must match the source classes and weekday/period slots exactly" in mismatched_event.json()["detail"]
+
+    options["fixed_events"] = {"1": fixed_event.json()["id"]}
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+    assert imported.status_code == 201, imported.text
+    result = imported.json()
+    assert result["placement_count"] == 2
+    version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
+    assert version.status_code == 200
+    assert version.json()["snapshot"]["fixed_events"] == [
+        {
+            "id": fixed_event.json()["id"],
+            "academic_year": "2026",
+            "label": "Assembly",
+            "audience_type": "CLASS",
+            "target_mode": "SELECTED",
+            "target_ids": [resources["instructional_class_id"]],
+            "slots": [{"weekday": "WED", "slot_code": "P1"}],
+            "version": 1,
+        }
+    ]
+    with SessionLocal() as db:
+        audit = db.scalar(select(AuditEvent).where(AuditEvent.action == "timetable.legacy_project.imported"))
+        assert audit is not None
+        assert '"fixed_event_mappings":{"1":' in audit.details_json
+        assert "Assembly" not in audit.details_json
 
 
 def test_legacy_project_import_requires_explicit_mapping_and_it_role(lesson_context, configured_legacy_key):

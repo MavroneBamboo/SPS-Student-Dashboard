@@ -172,17 +172,20 @@ class LegacyPriImportOptions(BaseModel):
     subjects: dict[int, int]
     classes: dict[int, int]
     teacher_groups: dict[str, int] = Field(default_factory=dict)
+    fixed_events: dict[int, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_import_mapping(self):
         self.academic_year = self.academic_year.upper()
         if self.week_start.weekday() != 0:
             raise ValueError("week_start must be a Monday")
-        for mapping in (self.teachers, self.subjects, self.classes, self.teacher_groups):
+        for mapping in (self.teachers, self.subjects, self.classes, self.fixed_events):
             if any(key < 0 or value < 1 for key, value in mapping.items()):
                 raise ValueError("Resource mappings require non-negative source indices and positive target IDs")
         if any(not key or len(key) > 320 for key in self.teacher_groups):
             raise ValueError("Composite teacher source labels must contain 1 to 320 characters")
+        if any(value < 1 for value in self.teacher_groups.values()):
+            raise ValueError("Composite teacher mappings require positive target IDs")
         return self
 
 

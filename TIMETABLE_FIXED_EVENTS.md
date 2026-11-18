@@ -23,6 +23,8 @@ The `/ui/` **Fixed events** workspace provides the same management flow, includi
 
 Class/teacher browser boards, print reports and audited By InstClass/By Teacher workbooks render an event only in an otherwise empty cell. Historical versions without `fixed_events` remain readable and export normally.
 
+During legacy `.pri` import, each `Teacher = ALL` placement maps through its source subject row to an existing class fixed event. The academic year, imported class targets and weekday/period slots must match exactly. The draft snapshots the event configuration, and the source placement is not imported as a lesson.
+
 ## Data and verification
 
 Migration `20261110_0020` adds the event definition table without changing student, attendance, timetable, or user records. JSON fields store target IDs and weekday/period pairs; schema validation and the shared PostgreSQL configuration lock enforce uniqueness and overlap rules across API writers. The tests cover role boundaries, invalid definitions, overlap behavior, optimistic updates, snapshot staleness and XLSX output.
