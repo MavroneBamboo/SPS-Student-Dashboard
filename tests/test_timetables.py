@@ -372,7 +372,15 @@ def test_copy_rejects_unmatched_requirements_and_rebased_conflicts_atomically(ti
     ]
     with SessionLocal() as db:
         teacher = db.get(Teacher, ctx["lesson"]["teacher_id"])
-        teacher.availability_json = json.dumps({day: [] for day in ("MON", "TUE", "WED", "THU", "FRI")})
+        teacher.availability_json = json.dumps(
+            {
+                "MON": [],
+                "TUE": ["P1", "P2", "P3", "P4"],
+                "WED": ["P1", "P2", "P3", "P4"],
+                "THU": ["P1", "P2", "P3", "P4"],
+                "FRI": ["P1", "P2", "P3", "P4"],
+            }
+        )
         db.commit()
     conflict = _copy(ctx, source)
     assert conflict.status_code == 409
