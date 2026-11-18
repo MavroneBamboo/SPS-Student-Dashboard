@@ -12,8 +12,8 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.legacy_pri import LegacyPriError, map_legacy_availability, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
 from app.models import AuditEvent, LessonRequirement, TimetableVersion
-from app.schemas import LegacyPriImportOptions
 from app.routes.legacy_pri import MAX_LEGACY_SOURCE_ROWS
+from app.schemas import LegacyPriImportOptions
 
 KEY = bytes(range(16))
 
