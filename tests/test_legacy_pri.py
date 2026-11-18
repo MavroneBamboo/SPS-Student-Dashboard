@@ -104,7 +104,7 @@ def test_reconciliation_reports_invalid_or_incomplete_schedule(tmp_path, mutate,
         assert issue == {"code": expected_code, "source": "lesson_requirement", "count": 1}
     else:
         assert issue["source"] == "placement"
-        assert issue["row"] == 1
+        assert issue["row"] == (0 if mutate == "reference" else 1)
 
 
 def test_rejects_unexpected_member_set(tmp_path):
