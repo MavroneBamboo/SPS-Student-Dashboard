@@ -1083,7 +1083,10 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
         return `<tr data-weekday="${day}"><th scope="row">${dayLabels[day]}</th>${cells}</tr>`;
       }).join("");
       const className = itemKind === "class" ? `<span>${escapeHTML(item.name)}</span>` : "";
-      return `<section class="report-page" data-report-kind="${itemKind}"><header class="report-header"><div class="report-brand"><img src="/ui/sps-crest.png" alt=""><strong>Singapore Prison Service</strong></div><div class="report-title"><h1>${escapeHTML(title)}</h1>${className}<p>Academic year ${escapeHTML(current.academic_year)} · Week of ${escapeHTML(current.week_start)}</p><p>${escapeHTML(current.status)} · Revision ${escapeHTML(current.revision)}</p></div></header><table class="report-table"><thead><tr><th class="day-heading"></th>${periodHeaders}</tr></thead><tbody>${rows}</tbody></table><footer class="report-footer"><span>Timetable generated on ${escapeHTML(generatedAt)}</span><span>Prison School Timetables</span></footer></section>`;
+      const reportTitleClass = itemKind === "teacher"
+        ? title.length > 44 ? "report-title report-title-very-long" : title.length > 30 ? "report-title report-title-long" : "report-title"
+        : "report-title";
+      return `<section class="report-page" data-report-kind="${itemKind}"><header class="report-header"><div class="report-brand"><img src="/ui/sps-crest.png" alt=""><strong>Singapore Prison Service</strong></div><div class="${reportTitleClass}"><h1>${escapeHTML(title)}</h1>${className}<p>Academic year ${escapeHTML(current.academic_year)} · Week of ${escapeHTML(current.week_start)}</p><p>${escapeHTML(current.status)} · Revision ${escapeHTML(current.revision)}</p></div></header><table class="report-table"><thead><tr><th class="day-heading"></th>${periodHeaders}</tr></thead><tbody>${rows}</tbody></table><footer class="report-footer"><span>Timetable generated on ${escapeHTML(generatedAt)}</span><span>Prison School Timetables</span></footer></section>`;
     }).join("");
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
