@@ -287,7 +287,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     copy_form.get_by_label("Week starting Monday", exact=True).fill("2026-11-02")
     copy_form.get_by_role("button", name="Create copied draft", exact=True).click()
     expect(page.locator("#timetable-version-detail")).to_contain_text("week of 2026-11-02 · DRAFT · revision 1")
-    expect(page.locator("#timetable-grid .lesson-cell[data-placement-id]")).to_have_count(2)
+    expect(page.locator("#timetable-grid .lesson-cell[data-placement-id]")).to_have_count(3)
     expect(page.get_by_role("status")).to_contain_text("Copied timetable draft created")
 
     page.get_by_role("button", name="Reports & export", exact=True).click()
