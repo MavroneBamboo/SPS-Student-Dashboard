@@ -12,7 +12,9 @@ Build the system in vertical increments. Each increment must produce a deployabl
 
 The initial release should be delivered in phases over approximately 16–20 weeks, subject to staffing, environment approval and data-migration complexity. Dates are planning estimates, not commitments.
 
-### Current delivery checkpoint (6 November 2026)
+### Current delivery checkpoint (18 November 2026)
+
+- Timetable resource profile lifecycle (18 November): teacher, subject and instructional-class responses carry deterministic SHA-256 revisions. IT Administrators and Superusers can edit profiles with stale-write protection, audited changes and reversible activation. Deactivation is blocked while active lessons, mappings, rules, overrides, groups or fixed events depend on the resource. Teacher availability edits recompute composite-group availability and are rejected if they invalidate active requirements. The resource tables provide Edit, Deactivate and Reactivate actions; no schema migration is required. API and Chromium acceptance coverage is in `tests/test_timetable_resource_lifecycle.py` and `browser_tests/test_timetable.py`.
 
 - First-run setup increment: a persisted API gate now blocks normal operations until the bootstrap Superuser rotates the initial password, creates a named IT Administrator and completes the setup wizard. Administrator creation, setup state and both audit records commit atomically. The migration preserves existing installations already meeting the setup criteria; see FIRST_RUN_SETUP.md.
 
@@ -396,7 +398,7 @@ Preflight now bounds each source collection to 5,000 rows and includes redacted 
 
 **Estimated duration:** 2–3 weeks
 
-- Implement teachers, subjects, instructional classes, availability and lesson requirements.
+- [x] Implement teachers, subjects, instructional classes, availability and lesson requirements.
 - Implement deterministic draft generation with five days and four teaching periods, displayed as `P1`, `P2`, `Lunch`, `P3`, `P4`.
 - Report unplaced lessons, class clashes, teacher clashes and availability failures.
 - [x] Configure recurring school events for classes and teachers, with overlap checks, immutable draft snapshots, audit history and free-cell display in browser/PDF/XLSX reports. See [TIMETABLE_FIXED_EVENTS.md](TIMETABLE_FIXED_EVENTS.md).
@@ -404,8 +406,8 @@ Preflight now bounds each source collection to 5,000 rows and includes redacted 
 
 Resource setup is an explicit delivery slice before lesson scheduling:
 
-- Build teacher profile CRUD with short code, full name, adjunct status and availability editor.
-- Build subject and instructional-class reference data.
+- [x] Build teacher profile create/edit/archive-reactivate with short code, full name, adjunct status and availability editor. Edits use expected revisions and audit events; deactivation respects dependent scheduling data.
+- [x] Build subject and instructional-class reference data with revision-guarded edits and reversible deactivation.
 - Build class-cluster membership and period-definition management: seed a default period pattern for all classes, then allow class or cluster overrides.
 - Build versioned scheduling-rule management and resolution for every planned class; reject missing, duplicate and overlapping rules.
 - Build lesson-requirement CRUD with controlled teacher/subject/class selectors.
@@ -421,7 +423,7 @@ Resource setup is an explicit delivery slice before lesson scheduling:
 
 Exit criteria: a draft can be generated, conflicts are visible and the legacy project can be compared slot-for-slot.
 
-Resource setup exit criteria: an Operator can create a teacher profile, mark availability, create a lesson requirement using that profile and see invalid references rejected before generation.
+Resource setup exit criteria (delivered): an Operator can create a teacher profile, mark availability, create a lesson requirement using that profile and see invalid references rejected before generation. IT Administrators and Superusers can safely maintain profile details and active status without changing stable resource IDs or historical timetable snapshots.
 Class-period exit criteria: every class resolves to the default period pattern unless an explicit class or cluster override exists; Period 3 remains lunch and cannot be made schedulable.
 Scheduling-rule exit criteria: no planning run or manual placement can proceed without exactly one applicable rule per class, and no duplicate or overlapping rule/placement is accepted.
 

@@ -175,6 +175,52 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     if (rows.some((row) => String(row.id) === previous)) select.value = previous;
   }
 
+  function openResourceEditor(formId, item, kind) {
+    const form = $(formId);
+    form.reset();
+    form.dataset.resourceId = String(item.id);
+    form.elements.expected_revision.value = item.revision;
+    form.elements.is_active.checked = item.is_active;
+    if (kind === "teacher") {
+      form.elements.short_code.value = item.short_code;
+      form.elements.full_name.value = item.full_name;
+      form.elements.is_adjunct.checked = item.is_adjunct;
+      for (const input of $("teacher-availability").querySelectorAll('input[type="checkbox"]')) {
+        input.checked = (item.availability[input.dataset.day] || []).includes(input.value);
+        input.disabled = item.is_composite;
+      }
+      form.elements.is_adjunct.disabled = item.is_composite;
+    } else {
+      form.elements.code.value = item.code;
+      form.elements.name.value = item.name;
+      form.elements.description.value = item.description || "";
+      if (kind === "class") form.elements.reporting_order.value = item.reporting_order;
+    }
+    form.querySelector("h3").textContent = `Edit ${kind === "class" ? "instructional class" : kind} profile`;
+    form.querySelector('button[type="submit"]').textContent = "Save changes";
+    form.querySelector("[data-cancel-resource]").hidden = false;
+    form.hidden = false;
+    form.scrollIntoView({behavior: "smooth", block: "center"});
+    form.elements[kind === "teacher" ? "full_name" : "name"].focus();
+  }
+
+  function resetResourceForm(form) {
+    form.reset();
+    delete form.dataset.resourceId;
+    form.elements.expected_revision.value = "";
+    form.querySelector("h3").textContent = form.dataset.defaultTitle;
+    form.querySelector('button[type="submit"]').textContent = form.dataset.createLabel;
+    form.querySelector("[data-cancel-resource]").hidden = true;
+    if (form.id === "timetable-teacher-form") {
+      for (const input of $("teacher-availability").querySelectorAll('input[type="checkbox"]')) {
+        input.checked = true;
+        input.disabled = false;
+      }
+      form.elements.is_adjunct.disabled = false;
+    }
+    form.hidden = true;
+  }
+
   function renderAvailability() {
     const fieldset = $("teacher-availability");
     if (fieldset.childElementCount) return;
@@ -225,7 +271,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("student-class-mapping-form").hidden = !["IT Administrator", "Superuser"].includes(currentRole());
     fillSelect($("attendance-class-mapping-form").elements.instructional_class_id, activeClasses, (row) => `${row.code} · ${row.name}`);
     $("attendance-class-mapping-form").hidden = !canConfigure;
-    for (const [id, values] of [["timetable-teacher-rows", teacherRows], ["timetable-subject-rows", subjects], ["timetable-class-rows", instructionalClasses]]) {
+    for (const [id, values, kind] of [["timetable-teacher-rows", teacherRows, "teacher"], ["timetable-subject-rows", subjects, "subject"], ["timetable-class-rows", instructionalClasses, "class"]]) {
       const body = $(id);
       body.replaceChildren();
       for (const item of values) {
@@ -237,6 +283,28 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           cell(row, periodsPerWeek);
           cell(row, item.member_ids?.map((memberId) => teacherRows.find((member) => member.id === memberId)?.short_code || memberId).join(", ") || "—");
         }
+        const actions = cell(row, "");
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "secondary";
+        edit.textContent = "Edit";
+        edit.hidden = !canConfigure;
+        edit.addEventListener("click", () => openResourceEditor(`timetable-${kind}-form`, item, kind));
+        actions.append(edit);
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "secondary";
+        toggle.textContent = item.is_active ? "Deactivate" : "Reactivate";
+        toggle.hidden = !canConfigure;
+        toggle.addEventListener("click", () => run(toggle, async () => {
+          await api(`/timetable/${kind === "class" ? "classes" : `${kind}s`}/${item.id}`, "PATCH", {
+            expected_revision: item.revision,
+            is_active: !item.is_active,
+          });
+          await refreshSetup();
+          notice(`${kind === "class" ? "Instructional class" : kind[0].toUpperCase() + kind.slice(1)} ${item.is_active ? "deactivated" : "reactivated"}.`);
+        }));
+        actions.append(toggle);
         body.append(row);
       }
     }
@@ -334,7 +402,15 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     $("attendance-class-mapping-section").hidden = !["Operator", "IT Administrator", "Superuser"].includes(currentRole());
     updatePeriodTargets();
     updateRuleTargets();
-    for (const id of ["timetable-class-form", "timetable-cluster-form", "timetable-cluster-member-form", "timetable-subject-form", "timetable-period-form", "timetable-rule-form"]) $(id).hidden = !canConfigure;
+    for (const id of ["timetable-class-form", "timetable-subject-form"]) {
+      const form = $(id);
+      form.dataset.defaultTitle ||= form.querySelector("h3").textContent;
+      form.hidden = !canConfigure;
+    }
+    const teacherForm = $("timetable-teacher-form");
+    teacherForm.dataset.defaultTitle ||= teacherForm.querySelector("h3").textContent;
+    teacherForm.hidden = !canConfigure || !teacherForm.dataset.resourceId && teacherForm.hidden;
+    for (const id of ["timetable-cluster-form", "timetable-cluster-member-form", "timetable-period-form", "timetable-rule-form"]) $(id).hidden = !canConfigure;
     for (const button of document.querySelectorAll('[data-open-resource-form]')) button.hidden = !canConfigure;
   }
 
@@ -475,21 +551,28 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       event.preventDefault();
       run(form, async () => {
         const payload = payloadFor(form);
-        await api(path, "POST", payload);
-        form.reset();
-        if (formId === "timetable-teacher-form") {
-          for (const input of $("teacher-availability").querySelectorAll('input[type="checkbox"]')) input.checked = true;
+        const resourceId = form.dataset.resourceId;
+        if (resourceId) {
+          payload.expected_revision = form.elements.expected_revision.value;
+          payload.is_active = form.elements.is_active.checked;
+          await api(`${path}/${resourceId}`, "PATCH", payload);
+        } else {
+          await api(path, "POST", payload);
         }
+        if (["timetable-teacher-form", "timetable-subject-form", "timetable-class-form"].includes(formId)) resetResourceForm(form);
+        else form.reset();
         await refresh();
-        notice(success);
+        notice(resourceId ? success.replace("created", "updated") : success);
       });
     });
+    form.querySelector("[data-cancel-resource]")?.addEventListener("click", () => resetResourceForm(form));
   }
 
   submitJSON("timetable-teacher-form", "/timetable/teachers", (form) => ({
     short_code: form.elements.short_code.value,
     full_name: form.elements.full_name.value,
     is_adjunct: form.elements.is_adjunct.checked,
+    is_active: form.elements.is_active.checked,
     availability: availabilityPayload(),
   }), "Teacher profile created.");
   $("timetable-teacher-group-form").addEventListener("submit", (event) => {
@@ -506,8 +589,19 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       notice("Composite teacher group created. Member availability and clashes will be checked individually.");
     });
   });
-  submitJSON("timetable-subject-form", "/timetable/subjects", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Subject created.");
-  submitJSON("timetable-class-form", "/timetable/classes", (form) => ({code: form.elements.code.value, name: form.elements.name.value}), "Instructional class created.");
+  submitJSON("timetable-subject-form", "/timetable/subjects", (form) => ({
+    code: form.elements.code.value,
+    name: form.elements.name.value,
+    description: form.elements.description.value || null,
+    is_active: form.elements.is_active.checked,
+  }), "Subject created.");
+  submitJSON("timetable-class-form", "/timetable/classes", (form) => ({
+    code: form.elements.code.value,
+    name: form.elements.name.value,
+    description: form.elements.description.value || null,
+    reporting_order: Number(form.elements.reporting_order.value),
+    is_active: form.elements.is_active.checked,
+  }), "Instructional class created.");
   $("student-class-mapping-form").addEventListener("submit", (event) => {
     event.preventDefault();
     run(event.currentTarget, async () => {
@@ -1447,9 +1541,10 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   for (const button of document.querySelectorAll("[data-open-resource-form]")) {
     button.addEventListener("click", () => {
       const form = $(button.dataset.openResourceForm);
+      resetResourceForm(form);
       form.hidden = false;
       form.scrollIntoView({behavior: "smooth", block: "center"});
-      form.querySelector("input")?.focus();
+      form.querySelector('input:not([type="hidden"])')?.focus();
     });
   }
   $("teacher-search").addEventListener("input", () => {

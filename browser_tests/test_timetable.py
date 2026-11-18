@@ -4,6 +4,55 @@ from uuid import uuid4
 from playwright.sync_api import expect
 
 
+def test_it_can_edit_and_reactivate_timetable_resource_profiles(page, make_account, live_url):
+    admin = make_account("IT Administrator")
+    login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})
+    assert login.status == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    suffix = uuid4().hex[:8].upper()
+
+    def create(path, payload):
+        response = page.request.post(live_url + path, data=payload, headers=headers)
+        assert response.status == 201, response.text()
+        return response.json()
+
+    teacher = create("/api/v1/timetable/teachers", {"short_code": f"E{suffix}", "full_name": "Lifecycle Teacher"})
+    subject = create("/api/v1/timetable/subjects", {"code": f"E{suffix}", "name": "Lifecycle Subject"})
+    instructional_class = create("/api/v1/timetable/classes", {"code": f"E{suffix}", "name": "Lifecycle Class"})
+
+    page.goto(live_url + "/ui/")
+    page.get_by_label("Username", exact=True).fill(admin["username"])
+    page.get_by_label("Password", exact=True).fill(admin["password"])
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    page.get_by_role("button", name="Timetable / Schedule", exact=True).click()
+    page.get_by_role("button", name="Classes & teachers", exact=True).click()
+    expect(page.locator("#timetable-resource-summary")).to_contain_text("teacher profiles")
+
+    teacher_row = page.locator("#timetable-teacher-rows tr").filter(has_text=teacher["short_code"])
+    teacher_row.get_by_role("button", name="Edit", exact=True).click(timeout=3000)
+    page.locator("#timetable-teacher-form input[name='full_name']").fill("Updated Lifecycle Teacher")
+    page.locator("#timetable-teacher-form").get_by_role("button", name="Save changes", exact=True).click()
+    expect(teacher_row).to_contain_text("Updated Lifecycle Teacher")
+    teacher_row.get_by_role("button", name="Deactivate", exact=True).click()
+    expect(teacher_row).to_contain_text("Inactive")
+    teacher_row.get_by_role("button", name="Reactivate", exact=True).click()
+    expect(teacher_row).to_contain_text("Active")
+
+    page.get_by_role("button", name="Classes & clusters", exact=True).click()
+    class_row = page.locator("#timetable-class-rows tr").filter(has_text=instructional_class["code"])
+    class_row.get_by_role("button", name="Edit", exact=True).click()
+    page.locator("#timetable-class-form input[name='name']").fill("Updated Lifecycle Class")
+    page.locator("#timetable-class-form").get_by_role("button", name="Save changes", exact=True).click()
+    expect(class_row).to_contain_text("Updated Lifecycle Class")
+
+    page.get_by_role("button", name="Subjects", exact=True).click()
+    subject_row = page.locator("#timetable-subject-rows tr").filter(has_text=subject["code"])
+    subject_row.get_by_role("button", name="Edit", exact=True).click()
+    page.locator("#timetable-subject-form input[name='name']").fill("Updated Lifecycle Subject")
+    page.locator("#timetable-subject-form").get_by_role("button", name="Save changes", exact=True).click()
+    expect(subject_row).to_contain_text("Updated Lifecycle Subject")
+
+
 def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, make_account, live_url, tmp_path):
     admin = make_account("IT Administrator")
     login = page.request.post(live_url + "/api/v1/auth/login", data={"username": admin["username"], "password": admin["password"]})

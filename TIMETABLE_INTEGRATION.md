@@ -1,6 +1,8 @@
 # Timetable Integration Notes
 
-Attendance boundary (26 October 2026): the browser supports daily attendance sessions/records but does not create them from unpublished timetable drafts. At this stage, published timetable-to-attendance mapping, instructional/student class reconciliation and historical roster policies remained required; the mapping and provenance-linked session flow were implemented in the 3 November publication increment. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md).
+Resource lifecycle delivery (18 November 2026): the `/ui/` **Classes & teachers** workspace now lets IT Administrators and Superusers edit teacher, subject and instructional-class profiles, then deactivate or reactivate them. The API returns a deterministic SHA-256 revision for each resource; updates require that revision, serialize with timetable configuration writes, and record audit events. Deactivation is blocked while active scheduling dependencies remain. Teacher availability changes recalculate composite-group availability and are rejected if they would invalidate active lesson requirements. No schema migration is needed. The API and Chromium workflows are covered by `tests/test_timetable_resource_lifecycle.py` and `browser_tests/test_timetable.py`.
+
+Attendance integration (3 November 2026): operators can create provenance-linked attendance sessions from classes scheduled in the currently published timetable, using a separate IT-managed attendance class mapping. Manual session creation remains supported. See [ATTENDANCE_WORKSPACE.md](ATTENDANCE_WORKSPACE.md) and [TIMETABLE_PUBLICATION.md](TIMETABLE_PUBLICATION.md).
 
 Profile boundary (26 October 2026): the production browser now supports core student profile processing and status history. Student class names still need an explicit mapping to instructional timetable class IDs during reconciliation; this increment does not infer that mapping or create timetable memberships. See [STUDENT_PROFILES.md](STUDENT_PROFILES.md).
 
@@ -69,42 +71,40 @@ Class setup also includes cluster membership and period configuration. Every cla
 
 ### Initial production API increment
 
-The application now defines the initial timetable resource schema and authenticated API routes under `/api/v1/timetable`: `teachers`, `subjects`, `classes`, `clusters`, cluster membership, `periods`, and resolved periods at `classes/{id}/periods`. The migration seeds the default five-column pattern and the documented times. Period definitions are unique by scope, target and slot. Class-specific period values override a matching cluster value, which overrides the default; a class is restricted to one cluster to avoid ambiguous inheritance. Writes are IT Administrator-only and audited. The first increment is backend-only: it does not yet include resource edit/deactivation UI, lesson requirements, scheduler rules, timetable generation, or Amend 4-up persistence.
+The initial timetable resource increment defined authenticated API routes under `/api/v1/timetable` for teachers, subjects, classes, clusters, membership, periods and resolved class periods. It seeded the five-column pattern, enforced unique period definitions and class-over-cluster-default inheritance, and audited IT-only writes. At that point the increment was backend-only; later slices added resource editing, lesson requirements, rules, generation and persistent Amend 4-up workflows.
 
-The following lesson increment adds `/api/v1/timetable/lessons` for Operators and IT Administrators: create/list/retrieve, version-checked replacement, archive and restore. Requirements use resource IDs rather than names and reject duplicate academic-year/class/teacher/subject combinations. Weekly count remains the total; block length splits it into full consecutive blocks plus a shorter remainder (3 periods with length 2 means a double plus a single). Active-resource, availability and inherited-period checks run centrally, with lunch and time gaps breaking blocks. Configuration changes cannot invalidate active requirements, including when concurrent with requirement writes on PostgreSQL. These are requirement-level checks; rule completeness, whole-schedule clashes, generation and Amend 4-up remain later work.
+The lesson API at `/api/v1/timetable/lessons` supports Operator and IT Administrator create/list/retrieve, version-checked replacement, archive and restore. Requirements use resource IDs and reject duplicate academic-year/class/teacher/subject combinations. Weekly count is split into full consecutive blocks plus a shorter remainder; unavailable periods, lunch and time gaps break blocks. Active-resource and inherited-period checks run centrally, and configuration changes cannot invalidate active requirements, including during concurrent PostgreSQL writes. Scheduling rules, complete-grid clash validation, generation and Amend 4-up now use the shared planning validation; see [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md) and [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md).
 
 Scheduling rules are a required prerequisite for every planning run. Each class must resolve to one and only one applicable rule set. Missing, duplicated or overlapping class/cluster rules must prevent generation and manual placement; duplicate timetable placements are also rejected.
 
-The lesson editor should use controlled selectors populated from these profiles. It must reject a lesson that references a missing teacher, subject or instructional class. Teacher availability must be visible and editable before generation, and the scheduler plus Amend 4-up must use the same availability rules.
+The lesson editor uses controlled selectors populated from these profiles and rejects references to missing or inactive teachers, subjects and instructional classes. Teacher availability is managed in the resource workspace; requirement validation, schedule generation and Amend 4-up placement use the shared availability rules.
 
 The legacy source serialises availability as a colon-separated array of 20 teaching slots. The visual report has a lunch column for daily alignment, but lunch must remain non-schedulable. The replacement system uses a day/period availability model. IT can create named composite teacher groups from individual profiles; all members must be available and are independently checked for clashes. Composite source references can map only to an existing group whose member IDs match the selected source teachers. `ALL` whole-school entries still require fixed-event reconciliation before import.
 
-The clickable prototype now exposes this prerequisite through **Resource setup** before the Amend 4-up grid. It demonstrates teacher profile creation/editing, availability selection, subject and instructional-class references, class clusters, default periods, class/cluster period overrides, lesson requirements, duplicate short-code validation, teacher-code cascade and availability checks during timetable amendments.
+The production application exposes resource setup before scheduling. IT Administrators and Superusers maintain versioned teacher, subject and class profiles, clusters, default periods and class/cluster overrides; Operators create lesson requirements and work with the draft timetable. Resource edits are audited, use stale-write protection and preserve stable IDs and approved snapshots.
 
 ## 3. Why Amend 4-up is the key capability
 
-The production backend persists weekly drafts and the operations required by this workspace: add/amend/move, atomic swap, remove and block lock/unlock. It snapshots rules, resource labels/availability and inherited period times, preserves approved history, and reports pending requirement blocks. Edits revalidate the complete resulting grid and current rules under the timetable transaction lock. Approval is IT Administrator-only and requires completeness; Executive reads are approved-only. Generation uses these services and saves revision-linked planning reports. The first production browser increment now supports class-grid operations and generation; teacher grid modes and report rendering still need implementation. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md) and [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md).
+The production backend persists weekly drafts and supports add/amend/move, atomic swap, remove and block lock/unlock. It snapshots rules, resource labels and availability, inherited period times and fixed events; preserves approved history; and reports unplaced requirement blocks. Edits revalidate the complete resulting grid and current configuration under the timetable transaction lock. The browser provides By Class and By Teacher views, Amend 4-up, generation, audited XLSX reports and a browser print view. IT approval requires a complete draft, publication exposes the current approved version to attendance, and Executive access is limited to approved timetables. See [TIMETABLE_DRAFTS.md](TIMETABLE_DRAFTS.md), [TIMETABLE_GENERATION.md](TIMETABLE_GENERATION.md) and [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md).
 
-Scheduling-rule resolution now has its own implementation slice: stable class/cluster IDs, inclusive effective dates, validated rule definitions and versioned edits. The resolver must find exactly one applicable rule for every planned class; a class rule and its cluster rule may not overlap. PostgreSQL guards and service validation also prevent membership changes from introducing conflicting scopes. Existing text-only rules remain unresolved until IT explicitly binds or archives them. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md). This supplies the prerequisite service for future generation and manual placement; those workflows still require implementation.
+Scheduling-rule resolution uses stable class/cluster IDs, inclusive effective dates, validated definitions and versioned edits. Every planned class must resolve to exactly one applicable rule. Class and cluster rule scopes cannot overlap, and PostgreSQL guards plus service validation prevent membership changes from creating conflicting scopes. Legacy text-only rules remain unresolved until IT explicitly binds or archives them. Generation and manual placement call this resolver and reject missing or ambiguous rules. See [SCHEDULING_RULES.md](SCHEDULING_RULES.md).
 
 Amend 4-up is the practical operational tool for finishing a generated timetable. It shows multiple mini-grids on one page and lets an operator inspect and correct the timetable in the same visual arrangement used by the printed reports.
 
-The integrated system should make this the primary timetable workspace, with:
+The production Amend 4-up workspace provides:
 
 - By Class / By Teacher toggle.
 - Configurable 2, 4, 6, 8, 12, 16, 24 or 32 tables per page.
 - Previous/Next paging.
 - Search by instructional class, teacher code or full teacher name.
 - Five day rows and five period columns.
-- Double-click cell editing.
-- Drag-and-drop movement and validated swaps.
-- Right-click shift/remove.
-- Lock/unlock.
+- Click-to-add/edit and validated drag-and-drop movement or swaps.
+- Remove and lock/unlock controls.
 - Double-click title rename with controlled cascade.
 - Save amendments directly to the draft timetable.
 - Audit event for every material change.
 
-The new implementation must retain the legacy fixes: the lunch column must render but reject moves, teacher double-booking must be blocked, Amend changes must sync back to Schedule, and editing after Day sorting must operate on the displayed weekday rather than a stale row index.
+The shared validator keeps lunch non-schedulable, blocks teacher and class double-booking, and applies edits to stable weekday/period identifiers regardless of visual sorting. Right-click legacy interactions and exact `.pri` parity remain follow-up work.
 
 ## 4. Integration with the dashboard system
 
