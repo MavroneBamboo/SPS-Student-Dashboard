@@ -341,7 +341,7 @@ def test_copy_maps_requirements_by_resources_for_new_academic_year(timetable_con
     placed = _place(ctx, source)
     assert placed.status_code == 201, placed.text
     source = placed.json()
-    target_rule = {**ctx["rule"], "academic_year": "2027"}
+    target_rule = {**ctx["rule"], "academic_year": "2027", "effective_from": "2027-01-01", "effective_to": None}
     assert ctx["client"].post(f"{BASE}/rules", json=target_rule, headers=ctx["headers"]["admin"]).status_code == 201
     target_lesson = {**ctx["lesson"], "academic_year": "2027"}
     created_requirement = ctx["client"].post(f"{BASE}/lessons", json=target_lesson, headers=ctx["headers"]["operator"])
@@ -362,7 +362,7 @@ def test_copy_rejects_unmatched_requirements_and_rebased_conflicts_atomically(ti
     placed = _place(ctx, source)
     assert placed.status_code == 201, placed.text
     source = placed.json()
-    target_rule = {**ctx["rule"], "academic_year": "2027"}
+    target_rule = {**ctx["rule"], "academic_year": "2027", "effective_from": "2027-01-01", "effective_to": None}
     assert client.post(f"{BASE}/rules", json=target_rule, headers=headers["admin"]).status_code == 201
     before_count = len(client.get(f"{BASE}/versions", headers=headers["operator"]).json())
     unmatched = _copy(ctx, source, academic_year="2027", week_start="2027-01-04")
