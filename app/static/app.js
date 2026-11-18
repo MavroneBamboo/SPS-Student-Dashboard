@@ -27,7 +27,7 @@ function clearData() {
   for (const id of ["user-rows", "audit-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
   legacyPriInspection = null;
   for (const id of [
-    "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons",
+    "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
     "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups",
   ]) $(id).replaceChildren();
   $("legacy-pri-source").hidden = true;
@@ -301,6 +301,7 @@ function renderLegacyPriSourceTable(targetId, rows, fields) {
     const row = document.createElement("tr");
     for (const field of fields) {
       let value = source[field.key];
+      if (field.key === "source_index" && Number.isInteger(value)) value += 1;
       cell(row, value ?? "");
     }
     target.append(row);
@@ -327,7 +328,45 @@ function renderLegacyPriInspection(data) {
   renderLegacyPriSourceTable("legacy-pri-source-lessons", data.lesson_requirements, [
     {key: "source_index"}, {key: "teacher"}, {key: "subject"}, {key: "class"}, {key: "weekly_count"}, {key: "block_length"},
   ]);
+  renderLegacyPriSourceTable("legacy-pri-source-placements", data.placements, [
+    {key: "source_index"}, {key: "class"}, {key: "teacher"}, {key: "subject"}, {key: "weekday"}, {key: "period"},
+  ]);
   $("legacy-pri-source").hidden = false;
+}
+
+function renderLegacyPriIssues(report) {
+  const target = $("legacy-pri-issues");
+  target.replaceChildren();
+  const issues = Array.isArray(report.issues) ? report.issues : [];
+  for (const [code, count] of Object.entries(report.issue_counts)) {
+    const matching = issues.filter((issue) => issue.code === code);
+    const rowGroups = new Map();
+    let affectedCount = 0;
+    for (const issue of matching) {
+      if (Number.isInteger(issue.row)) {
+        const source = String(issue.source || "source").replaceAll("_", " ");
+        if (!rowGroups.has(source)) rowGroups.set(source, new Set());
+        rowGroups.get(source).add(issue.row + 1);
+      }
+      if (Number.isInteger(issue.count)) affectedCount += issue.count;
+    }
+    const details = [];
+    for (const [source, rows] of rowGroups) {
+      const ordered = [...rows].sort((left, right) => left - right);
+      const shown = ordered.slice(0, 40).join(", ");
+      const suffix = ordered.length > 40 ? `, … ${ordered.length - 40} more` : "";
+      details.push(`${source} rows ${shown}${suffix}`);
+    }
+    if (affectedCount) details.push(`${affectedCount} periods/records`);
+    const item = document.createElement("li");
+    item.textContent = `${code.replaceAll("_", " ")}: ${count}${details.length ? ` — ${details.join("; ")}` : ""}`;
+    target.append(item);
+  }
+  if (!target.childElementCount) {
+    const item = document.createElement("li");
+    item.textContent = "No reconciliation issues found.";
+    target.append(item);
+  }
 }
 
 function appendLegacyMapRows(targetId, sourceRows, targets, kind, fields, labelFor) {
@@ -726,18 +765,7 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
     renderLegacyPriSummary("legacy-pri-counts", report.counts);
     renderLegacyPriSummary("legacy-pri-periods", report.period_mapping);
     renderLegacyPriSummary("legacy-pri-availability", report.availability_profiles);
-    const issues = $("legacy-pri-issues");
-    issues.replaceChildren();
-    for (const [code, count] of Object.entries(report.issue_counts)) {
-      const item = document.createElement("li");
-      item.textContent = `${code.replaceAll("_", " ")}: ${count}`;
-      issues.append(item);
-    }
-    if (!issues.childElementCount) {
-      const item = document.createElement("li");
-      item.textContent = "No reconciliation issues found.";
-      issues.append(item);
-    }
+    renderLegacyPriIssues(report);
     $("legacy-pri-readiness").textContent = report.import_ready
       ? "Preflight passed. This report is advisory; no data was imported."
       : "Resolve these findings before a migration. No data was imported.";
@@ -754,7 +782,7 @@ $("legacy-pri-form").elements.project.addEventListener("change", () => {
   $("legacy-pri-import-panel").hidden = true;
   $("legacy-pri-map-groups").replaceChildren();
   for (const id of [
-    "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons",
+    "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
     "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups",
   ]) $(id).replaceChildren();
   $("legacy-pri-status").textContent = "Project selection changed. Validate the selected project before inspecting its labels.";

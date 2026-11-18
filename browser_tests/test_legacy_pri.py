@@ -22,7 +22,9 @@ def _encrypted_member(value):
     return iv + encryptor.update(padded) + encryptor.finalize()
 
 
-def _valid_project(teacher_name="Synthetic Teacher", subject_name="Synthetic Subject", class_name="Synthetic Class"):
+def _valid_project(
+    teacher_name="Synthetic Teacher", subject_name="Synthetic Subject", class_name="Synthetic Class", duplicate_slot=False
+):
     members = {
         "R01.bin": [{"Id": 0, "Name": teacher_name, "Availability": ":".join(["1"] * 20)}],
         "R02.bin": [{"Id": 0, "Name": subject_name}],
@@ -57,6 +59,17 @@ def _valid_project(teacher_name="Synthetic Teacher", subject_name="Synthetic Sub
         ],
         "R06.bin": [],
     }
+    if duplicate_slot:
+        members["R05.bin"].append(
+            {
+                "Id": 2,
+                "Teacher": teacher_name,
+                "Subject": subject_name,
+                "InstClass": class_name,
+                "DayOfWeek": "Mon",
+                "Period": 1,
+            }
+        )
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w") as zipped:
         for name, value in members.items():
@@ -115,11 +128,12 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
 
     page.get_by_role("button", name="Legacy timetable preflight", exact=True).click()
     expect(page.locator("#legacy-pri-panel")).to_be_visible()
-    page.locator("#legacy-pri-form input[type=file]").set_input_files(
+    project_input = page.locator("#legacy-pri-form input[type=file]")
+    project_input.set_input_files(
         {
-            "name": "synthetic.pri",
+            "name": "synthetic-invalid.pri",
             "mimeType": "application/octet-stream",
-            "buffer": _valid_project(teacher_name, subject_name, class_name),
+            "buffer": _valid_project(teacher_name, subject_name, class_name, duplicate_slot=True),
         }
     )
     page.get_by_role("button", name="Validate project", exact=True).click()
@@ -128,15 +142,28 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     expect(page.locator("#legacy-pri-result")).to_be_visible()
     expect(page.locator("#legacy-pri-counts")).to_contain_text("teachers")
     expect(page.locator("#legacy-pri-periods")).to_contain_text("LUNCH")
-    expect(page.locator("#legacy-pri-readiness")).to_contain_text("no data was imported")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("duplicate class slot: 1")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("placement rows 3")
     assert teacher_name not in page.locator("#legacy-pri-result").inner_text()
     assert class_name not in page.locator("#legacy-pri-result").inner_text()
+
+    project_input.set_input_files(
+        {
+            "name": "synthetic.pri",
+            "mimeType": "application/octet-stream",
+            "buffer": _valid_project(teacher_name, subject_name, class_name),
+        }
+    )
+    page.get_by_role("button", name="Validate project", exact=True).click()
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("No reconciliation issues found")
+    expect(page.locator("#legacy-pri-readiness")).to_contain_text("no data was imported")
 
     page.get_by_role("button", name="Inspect source labels for mapping", exact=True).click()
     expect(page.locator("#legacy-pri-source")).to_be_visible()
     expect(page.locator("#legacy-pri-source-teachers")).to_contain_text(teacher_name)
     expect(page.locator("#legacy-pri-source-subjects")).to_contain_text(subject_name)
     expect(page.locator("#legacy-pri-source-classes")).to_contain_text(class_name)
+    expect(page.locator("#legacy-pri-source-placements")).to_contain_text("Mon")
     page.locator("#legacy-pri-import-form [name=name]").fill("Synthetic migrated week " + suffix)
     page.locator("#legacy-pri-import-form [name=academic_year]").fill("2026")
     page.locator("#legacy-pri-import-form [name=week_start]").fill("2026-10-26")
@@ -148,6 +175,7 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     page.get_by_role("button", name="Sign out", exact=True).click()
     expect(page.locator("#legacy-pri-source")).to_be_hidden()
     assert teacher_name not in page.locator("#legacy-pri-source").inner_text()
+    assert not page.locator("#legacy-pri-source-placements").inner_text().strip()
 
 
 def test_operator_does_not_see_legacy_project_preflight(page, make_account):

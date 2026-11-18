@@ -71,6 +71,11 @@ async def _read_project(request: Request) -> tuple[LegacyPriData, dict]:
     finally:
         archive_bytes.clear()
 
+    if any(
+        len(rows) > MAX_INSPECT_ROWS
+        for rows in (data.teachers, data.subjects, data.classes, data.lessons, data.placements, data.pending)
+    ):
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project has too many rows to inspect")
     return data, reconcile_legacy_pri(data)
 
 
@@ -127,12 +132,24 @@ def _source_rows(rows: list[dict], *, kind: str) -> list[dict]:
     return output
 
 
+def _source_placements(rows: list[dict]) -> list[dict]:
+    return [
+        {
+            "source_index": index,
+            "class": row.get("InstClass") if isinstance(row.get("InstClass"), str) else None,
+            "teacher": row.get("Teacher") if isinstance(row.get("Teacher"), str) else None,
+            "subject": row.get("Subject") if isinstance(row.get("Subject"), str) else None,
+            "weekday": row.get("DayOfWeek") if isinstance(row.get("DayOfWeek"), str) else None,
+            "period": row.get("Period") if type(row.get("Period")) is int else None,
+        }
+        for index, row in enumerate(rows)
+    ]
+
+
 @router.post("/inspect")
 async def inspect_legacy_project(request: Request, db: DbSession, claims: Claims) -> dict:
     """Show source labels to IT/Superuser for explicit resource reconciliation."""
     data, report = await _read_project(request)
-    if any(len(rows) > MAX_INSPECT_ROWS for rows in (data.teachers, data.subjects, data.classes, data.lessons)):
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project has too many rows to inspect")
     _record_preflight(db, claims, "timetable.legacy_project.inspected", report)
     return {
         "counts": report["counts"],
@@ -152,6 +169,7 @@ async def inspect_legacy_project(request: Request, db: DbSession, claims: Claims
             }
             for index, row in enumerate(data.lessons)
         ],
+        "placements": _source_placements(data.placements),
     }
 
 

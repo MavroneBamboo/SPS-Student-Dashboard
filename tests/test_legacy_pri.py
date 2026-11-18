@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.legacy_pri import LegacyPriError, map_legacy_availability, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
 from app.models import AuditEvent, LessonRequirement, TimetableVersion
+from app.routes.legacy_pri import MAX_INSPECT_ROWS
 
 KEY = bytes(range(16))
 
@@ -98,6 +99,12 @@ def test_reconciliation_reports_invalid_or_incomplete_schedule(tmp_path, mutate,
     report = reconcile_legacy_pri(read_legacy_pri(path, KEY))
     assert report["valid"] is False
     assert expected_code in report["issue_counts"]
+    issue = next(issue for issue in report["issues"] if issue["code"] == expected_code)
+    if mutate == "unplaced":
+        assert issue == {"code": expected_code, "source": "lesson_requirement", "count": 1}
+    else:
+        assert issue["source"] == "placement"
+        assert issue["row"] == 1
 
 
 def test_rejects_unexpected_member_set(tmp_path):
@@ -225,6 +232,7 @@ def test_legacy_project_preflight_is_role_limited_audited_and_redacted(lesson_co
     report = response.json()
     assert report["valid"] is True
     assert report["counts"]["teachers"] == 1
+    assert report["issues"] == []
     assert "T1" not in response.text
     assert "C1" not in response.text
     assert "S1" not in response.text
@@ -267,6 +275,14 @@ def test_legacy_project_inspection_reveals_source_labels_only_to_it_and_superuse
         "class": "C1",
         "weekly_count": 2,
         "block_length": 1,
+    }
+    assert payload["placements"][0] == {
+        "source_index": 0,
+        "class": "C1",
+        "teacher": "T1",
+        "subject": "S1",
+        "weekday": "Mon",
+        "period": 1,
     }
     superuser_inspection = client.post(
         "/api/v1/timetable/legacy-projects/inspect",
@@ -477,3 +493,19 @@ def test_legacy_project_preflight_requires_key_and_bounds_upload(lesson_context,
         assert oversized.status_code == 413
     finally:
         get_settings.cache_clear()
+
+
+def test_legacy_project_preflight_bounds_rows_before_reconciliation(lesson_context, configured_legacy_key):
+    client, headers, _ = lesson_context
+    values = sample_data()
+    values["R01.bin"] = [
+        {"Id": index, "Name": f"Teacher {index}", "Availability": ":".join(["1"] * 20)}
+        for index in range(MAX_INSPECT_ROWS + 1)
+    ]
+    response = client.post(
+        "/api/v1/timetable/legacy-projects/validate",
+        content=encrypted_archive(values),
+        headers={**headers["admin"], "Content-Type": "application/octet-stream"},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Legacy project has too many rows to inspect"

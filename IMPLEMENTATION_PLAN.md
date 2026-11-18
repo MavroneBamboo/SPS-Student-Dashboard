@@ -390,6 +390,8 @@ Progress (18 November 2026): `app/legacy_pri.py` and `scripts/validate_legacy_pr
 
 Implementation now creates an audited, validated draft with explicit resource mappings and duplicate-import protection. Exit criteria remain: import a representative legacy project into staging, reconcile requirements and slots against the source, and record business-owner sign-off with no silent data loss.
 
+Preflight now bounds each source collection to 5,000 rows and includes redacted issue locations by source type and row index. The IT-only inspection view includes placed schedule rows so administrators can match those locations to source data; audit events retain counts and issue codes only.
+
 ### Timetable phase B — Resources and scheduling draft
 
 **Estimated duration:** 2–3 weeks

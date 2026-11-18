@@ -285,7 +285,7 @@
             <h4>Resource and record counts</h4><div id="legacy-pri-counts" class="metrics"></div>
             <h4>Legacy period mapping</h4><div id="legacy-pri-periods" class="metrics"></div>
             <h4>Availability profile formats</h4><div id="legacy-pri-availability" class="metrics"></div>
-            <h4>Issues to reconcile</h4><ul id="legacy-pri-issues"></ul>
+            <h4>Issues to reconcile</h4><p>Preflight results omit names. Row numbers are 1-based and refer to the source tables shown after inspection.</p><ul id="legacy-pri-issues"></ul>
             <p id="legacy-pri-readiness"></p>
           </div>
           <section id="legacy-pri-source" class="panel" hidden aria-labelledby="legacy-pri-source-title">
@@ -295,6 +295,7 @@
             <details><summary>Subjects</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Name</th></tr></thead><tbody id="legacy-pri-source-subjects"></tbody></table></div></details>
             <details><summary>Classes</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Name</th></tr></thead><tbody id="legacy-pri-source-classes"></tbody></table></div></details>
             <details><summary>Lesson requirements</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Teacher</th><th>Subject</th><th>Class</th><th>Weekly periods</th><th>Block length</th></tr></thead><tbody id="legacy-pri-source-lessons"></tbody></table></div></details>
+            <details><summary>Placed schedule rows</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Class</th><th>Teacher</th><th>Subject</th><th>Day</th><th>Legacy period</th></tr></thead><tbody id="legacy-pri-source-placements"></tbody></table></div></details>
             <section id="legacy-pri-import-panel" class="panel" hidden aria-labelledby="legacy-pri-import-title">
               <h3 id="legacy-pri-import-title">Map resources and create a draft</h3>
               <p>Choose the matching application resource for every source row. Import creates a new draft, checks it against the active timetable rules, and records its source fingerprint. It does not approve or publish the timetable. Unplaced records, lunch rows, whole-school entries and ambiguous availability must be reconciled first.</p>
