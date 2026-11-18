@@ -54,7 +54,7 @@ Remove-Item Env:LEGACY_PRI_KEY_HEX
 
 It prints aggregate counts and issue codes by default. Add `--details` for row-indexed issue locations. Exit code `1` means reconciliation found issues or import blockers; `2` means the archive could not be read safely.
 
-IT Administrators and Superusers can also run a 10 MiB bounded preflight from **Legacy timetable preflight** in the application. The API uses `LEGACY_PRI_KEY_HEX` from the protected environment file, processes the encrypted archive in memory, returns redacted aggregate results and records a redacted audit event. It does not retain the file or import data. The existing CLI remains available for offline projects up to the validator's 25 MiB archive bound.
+IT Administrators and Superusers can also run a 10 MiB bounded preflight from **Legacy timetable preflight** in the application. The API uses `LEGACY_PRI_KEY_HEX` from the protected environment file, processes the encrypted archive in memory, returns redacted aggregate results plus source-member and record positions, and records a redacted audit event. The browser numbers records from 1 for navigation; the JSON/CLI `row` values are zero-based array indexes. Duplicate teacher-slot findings identify the earlier conflicting placement, and unplaced-period findings identify the lesson requirement records. No names or source values are returned. The upload is not retained and no data is imported. These locations support manual reconciliation in the legacy application; they do not provide mapping edits or migration. The existing CLI remains available for offline projects up to the validator's 25 MiB archive bound.
 
 ## 2.1 Resource setup is a prerequisite
 

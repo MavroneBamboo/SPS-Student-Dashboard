@@ -103,7 +103,7 @@ def read_legacy_pri_bytes(archive_bytes: bytes, key: bytes) -> LegacyPriData:
 
 
 def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
-    """Return counts and row-indexed issues without exposing names or values."""
+    """Return counts and source-row issues without exposing names or values."""
     issues: list[dict[str, Any]] = []
     availability_mapping: Counter[str] = Counter()
     catalogs = {
@@ -136,6 +136,7 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
                     issues.append({"code": "invalid_teacher_availability", "row": row_index})
 
     requirements: Counter[tuple[str, str, str]] = Counter()
+    requirement_rows: dict[tuple[str, str, str], list[int]] = {}
     for row_index, row in enumerate(data.lessons):
         references = {kind: row.get(field) for kind, field in (("teacher", "Teacher"), ("subject", "Subject"), ("class", "InstClass"))}
         for kind, value in references.items():
@@ -160,10 +161,12 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
                     issues.append({"code": "invalid_composite_teacher_reference", "row": row_index})
                 issues.append({"code": "composite_teacher_mapping_required", "row": row_index})
         if all(isinstance(value, str) for value in references.values()):
-            requirements[(references["class"], str(teacher_ref), references["subject"])] += count if isinstance(count, int) else 0
+            resource_tuple = (references["class"], str(teacher_ref), references["subject"])
+            requirements[resource_tuple] += count if isinstance(count, int) else 0
+            requirement_rows.setdefault(resource_tuple, []).append(row_index)
 
     occupied_classes: set[tuple[str, str, int]] = set()
-    occupied_teachers: set[tuple[str, str, int]] = set()
+    occupied_teachers: dict[tuple[str, str, int], int] = {}
     placed: Counter[tuple[str, str, str]] = Counter()
     for row_index, row in enumerate(data.placements):
         class_name, day, period = row.get("InstClass"), row.get("DayOfWeek"), row.get("Period")
@@ -205,20 +208,61 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             for component in teacher_components:
                 teacher_slot = (component, day.casefold(), period)
                 if teacher_slot in occupied_teachers:
-                    issues.append({"code": "duplicate_teacher_slot", "row": row_index})
-                occupied_teachers.add(teacher_slot)
+                    issues.append(
+                        {
+                            "code": "duplicate_teacher_slot",
+                            "row": row_index,
+                            "conflicting_row": occupied_teachers[teacher_slot],
+                        }
+                    )
+                else:
+                    occupied_teachers[teacher_slot] = row_index
         if all(isinstance(value, str) for value in (class_name, teacher, subject)) and teacher != "ALL":
             placed[(class_name, teacher, subject)] += 1
 
     for resource_tuple, expected in requirements.items():
         actual = placed[resource_tuple]
         if actual < expected:
-            issues.append({"code": "unplaced_lesson_periods", "count": expected - actual})
+            rows = requirement_rows[resource_tuple]
+            issues.append(
+                {
+                    "code": "unplaced_lesson_periods",
+                    "count": expected - actual,
+                    "row": rows[0],
+                    "rows": rows,
+                    "source": "R04.bin",
+                }
+            )
         elif actual > expected:
             issues.append({"code": "overplaced_lesson_periods", "count": actual - expected})
     for resource_tuple, actual in placed.items():
         if resource_tuple not in requirements:
             issues.append({"code": "placement_without_lesson_requirement", "count": actual})
+
+    # Keep the report redacted while identifying which legacy table and record
+    # needs attention. Row indexes are zero-based positions in the .pri array.
+    for issue in issues:
+        if "source" in issue:
+            continue
+        code = issue["code"]
+        if code in {"missing_teacher_name", "duplicate_teacher_name", "invalid_teacher_availability"}:
+            issue["source"] = "R01.bin"
+        elif code in {"missing_subject_name", "duplicate_subject_name"}:
+            issue["source"] = "R02.bin"
+        elif code in {"missing_class_name", "duplicate_class_name"}:
+            issue["source"] = "R03.bin"
+        elif code in {
+            "missing_teacher_reference",
+            "invalid_teacher_reference",
+            "invalid_subject_reference",
+            "invalid_class_reference",
+            "invalid_lesson_count_or_length",
+            "invalid_composite_teacher_reference",
+            "composite_teacher_mapping_required",
+        }:
+            issue["source"] = "R04.bin"
+        else:
+            issue["source"] = "R05.bin"
 
     codes = Counter(issue["code"] for issue in issues)
     return {

@@ -273,6 +273,37 @@ function renderLegacyPriSummary(targetId, values) {
     target.append(item);
   }
 }
+function renderLegacyPriIssueRows(issues) {
+  const rows = $("legacy-pri-issue-rows");
+  rows.replaceChildren();
+  const labels = {
+    composite_teacher_mapping_required: "Composite teacher mapping required",
+    duplicate_teacher_slot: "Duplicate teacher slot",
+    invalid_composite_teacher_reference: "Invalid composite teacher reference",
+    lunch_entry_requires_review: "Lunch entry requires review",
+    missing_teacher_name: "Missing teacher name",
+    missing_teacher_reference: "Missing teacher reference",
+    unplaced_lesson_periods: "Unplaced lesson periods",
+    whole_school_event_mapping_required: "Whole-school event mapping required",
+  };
+  for (const issue of issues) {
+    const row = document.createElement("tr");
+    const code = issue.code || "unknown finding";
+    cell(row, labels[code] || code.replaceAll("_", " "));
+    cell(row, issue.source || "—");
+    const recordIndexes = Array.isArray(issue.rows) ? issue.rows : Number.isInteger(issue.row) ? [issue.row] : [];
+    let recordText = recordIndexes.map((index) => `#${index + 1}`).join(", ") || "—";
+    if (Number.isInteger(issue.conflicting_row)) recordText += ` (conflicts with #${issue.conflicting_row + 1})`;
+    cell(row, recordText);
+    cell(row, Number.isInteger(issue.count) ? `${issue.count} period(s)` : "Review source record");
+    rows.append(row);
+  }
+  if (!rows.childElementCount) {
+    const row = document.createElement("tr");
+    cell(row, "No reconciliation findings.").colSpan = 4;
+    rows.append(row);
+  }
+}
 function breakdown(id, values) {
   const list = document.createElement("dl");
   for (const [label, count] of Object.entries(values)) {
@@ -583,11 +614,12 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
       item.textContent = "No reconciliation issues found.";
       issues.append(item);
     }
+    renderLegacyPriIssueRows(report.issues || []);
     $("legacy-pri-readiness").textContent = report.import_ready
       ? "Preflight passed. This report is advisory; no data was imported."
       : "Resolve these findings before a migration. No data was imported.";
     $("legacy-pri-result").hidden = false;
-    $("legacy-pri-status").textContent = "Validation completed. Results contain counts and issue codes only.";
+    $("legacy-pri-status").textContent = "Validation completed. Findings include redacted source member and record positions; source values are not shown.";
   });
 });
 
