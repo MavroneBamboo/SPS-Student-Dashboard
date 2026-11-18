@@ -278,6 +278,7 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     expect(page.locator("#timetable-unpublish")).to_be_hidden()
     assert page.request.get(live_url + "/api/v1/timetable/published?academic_year=2026&week_start=2026-10-26", headers=headers).json() == []
 
+    page.get_by_role("button", name="Reports & export", exact=True).click()
     page.get_by_role("button", name="Copy Browser Amend 4-up Revised to new week", exact=True).click()
     copy_form = page.locator("#timetable-create-form")
     expect(copy_form).to_be_visible()

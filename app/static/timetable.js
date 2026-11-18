@@ -136,6 +136,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
         copy.setAttribute("aria-label", `Copy ${version.name} to new week`);
         copy.addEventListener("click", () => run(copy, async () => {
           const source = await api(`/timetable/versions/${version.id}`);
+          document.querySelector('[data-timetable-page="board"]')?.click();
           const form = $("timetable-create-form");
           form.reset();
           form.dataset.copyFromId = String(source.id);
