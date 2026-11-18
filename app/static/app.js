@@ -411,6 +411,11 @@ function renderLegacyPriIssues(report) {
         if (!rowGroups.has(source)) rowGroups.set(source, new Set());
         rowGroups.get(source).add(issue.row);
       }
+      if (Number.isInteger(issue.conflicting_row)) {
+        const source = String(issue.source || "placement");
+        if (!rowGroups.has(source)) rowGroups.set(source, new Set());
+        rowGroups.get(source).add(issue.conflicting_row);
+      }
       if (Array.isArray(issue.rows)) {
         const source = String(issue.source || "source");
         if (!rowGroups.has(source)) rowGroups.set(source, new Set());
@@ -439,6 +444,10 @@ function renderLegacyPriIssues(report) {
         item.append(expandButton);
       }
     }
+    const conflictingPairs = matching
+      .filter((issue) => Number.isInteger(issue.row) && Number.isInteger(issue.conflicting_row))
+      .map((issue) => `#${issue.row + 1} conflicts with #${issue.conflicting_row + 1}`);
+    if (conflictingPairs.length) item.append(document.createTextNode(` — ${conflictingPairs.join("; ")}`));
     if (affectedCount) item.append(document.createTextNode(` — ${affectedCount} periods/records`));
     target.append(item);
   }

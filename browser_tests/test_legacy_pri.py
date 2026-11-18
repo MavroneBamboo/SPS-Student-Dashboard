@@ -141,6 +141,8 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     expect(page.locator("#legacy-pri-counts")).to_contain_text("teachers")
     expect(page.locator("#legacy-pri-periods")).to_contain_text("LUNCH")
     expect(page.locator("#legacy-pri-issues")).to_contain_text("duplicate class slot: 1")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("duplicate teacher slot: 1")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("#3 conflicts with #1")
     expect(page.locator("#legacy-pri-issues")).to_contain_text("placement rows 3")
     assert teacher_name not in page.locator("#legacy-pri-result").inner_text()
     assert class_name not in page.locator("#legacy-pri-result").inner_text()

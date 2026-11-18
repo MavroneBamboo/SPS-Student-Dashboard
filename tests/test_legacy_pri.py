@@ -99,6 +99,10 @@ def test_reconciliation_reports_invalid_or_incomplete_schedule(tmp_path, mutate,
     report = reconcile_legacy_pri(read_legacy_pri(path, KEY))
     assert report["valid"] is False
     assert expected_code in report["issue_counts"]
+    if mutate == "teacher":
+        duplicate = next(issue for issue in report["issues"] if issue["code"] == "duplicate_teacher_slot")
+        assert duplicate["row"] == 1
+        assert duplicate["conflicting_row"] == 0
     issue = next(issue for issue in report["issues"] if issue["code"] == expected_code)
     if mutate == "unplaced":
         assert issue == {"code": expected_code, "source": "lesson_requirement", "rows": [0], "count": 1}

@@ -123,12 +123,21 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
     """Return counts and row-indexed issues without exposing names or values."""
     issues: list[dict[str, Any]] = []
 
-    def add_issue(code: str, source: str, *, row: int | None = None, count: int | None = None) -> None:
+    def add_issue(
+        code: str,
+        source: str,
+        *,
+        row: int | None = None,
+        count: int | None = None,
+        conflicting_row: int | None = None,
+    ) -> None:
         issue: dict[str, Any] = {"code": code, "source": source}
         if row is not None:
             issue["row"] = row
         if count is not None:
             issue["count"] = count
+        if conflicting_row is not None:
+            issue["conflicting_row"] = conflicting_row
         issues.append(issue)
 
     availability_mapping: Counter[str] = Counter()
@@ -193,7 +202,7 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             requirement_rows.setdefault(resource_tuple, []).append(row_index)
 
     occupied_classes: set[tuple[str, str, int]] = set()
-    occupied_teachers: set[tuple[str, str, int]] = set()
+    occupied_teachers: dict[tuple[str, str, int], int] = {}
     placed: Counter[tuple[str, str, str]] = Counter()
     for row_index, row in enumerate(data.placements):
         class_name, day, period = row.get("InstClass"), row.get("DayOfWeek"), row.get("Period")
@@ -235,8 +244,14 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             for component in teacher_components:
                 teacher_slot = (component, day.casefold(), period)
                 if teacher_slot in occupied_teachers:
-                    add_issue("duplicate_teacher_slot", "placement", row=row_index)
-                occupied_teachers.add(teacher_slot)
+                    add_issue(
+                        "duplicate_teacher_slot",
+                        "placement",
+                        row=row_index,
+                        conflicting_row=occupied_teachers[teacher_slot],
+                    )
+                else:
+                    occupied_teachers[teacher_slot] = row_index
         if all(isinstance(value, str) for value in (class_name, teacher, subject)) and teacher != "ALL":
             placed[(class_name, teacher, subject)] += 1
 
