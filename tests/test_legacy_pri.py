@@ -502,7 +502,12 @@ def test_legacy_project_maps_whole_school_placements_to_exact_fixed_events(lesso
         "version": 1,
     } in version.json()["snapshot"]["fixed_events"]
     with SessionLocal() as db:
-        audit = db.scalar(select(AuditEvent).where(AuditEvent.action == "timetable.legacy_project.imported"))
+        audit = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "timetable.legacy_project.imported",
+                AuditEvent.entity_id == str(result["version_id"]),
+            )
+        )
         assert audit is not None
         assert '"fixed_event_mappings":{"1":' in audit.details_json
         assert "Assembly" not in audit.details_json
