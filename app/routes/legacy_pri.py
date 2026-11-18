@@ -41,7 +41,7 @@ router = APIRouter(
 )
 MAX_LEGACY_PROJECT_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_LEGACY_IMPORT_OPTIONS_BYTES = 256 * 1024
-MAX_INSPECT_ROWS = 5000
+MAX_LEGACY_SOURCE_ROWS = 5000
 
 
 async def _read_project(request: Request) -> tuple[LegacyPriData, dict]:
@@ -72,10 +72,10 @@ async def _read_project(request: Request) -> tuple[LegacyPriData, dict]:
         archive_bytes.clear()
 
     if any(
-        len(rows) > MAX_INSPECT_ROWS
+        len(rows) > MAX_LEGACY_SOURCE_ROWS
         for rows in (data.teachers, data.subjects, data.classes, data.lessons, data.placements, data.pending)
     ):
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project has too many rows to inspect")
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project exceeds the source row limit")
     return data, reconcile_legacy_pri(data)
 
 
@@ -104,8 +104,8 @@ async def validate_legacy_project(request: Request, db: DbSession, claims: Claim
 
 
 def _source_rows(rows: list[dict], *, kind: str) -> list[dict]:
-    if len(rows) > MAX_INSPECT_ROWS:
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project has too many rows to inspect")
+    if len(rows) > MAX_LEGACY_SOURCE_ROWS:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project exceeds the source row limit")
     output = []
     for source_index, row in enumerate(rows):
         name = row.get("Name")
@@ -292,11 +292,12 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
     finally:
         envelope.clear()
 
-    report = reconcile_legacy_pri(data)
     if any(
-        len(rows) > MAX_INSPECT_ROWS for rows in (data.teachers, data.subjects, data.classes, data.lessons, data.placements, data.pending)
+        len(rows) > MAX_LEGACY_SOURCE_ROWS
+        for rows in (data.teachers, data.subjects, data.classes, data.lessons, data.placements, data.pending)
     ):
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project has too many rows to import")
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Legacy project exceeds the source row limit")
+    report = reconcile_legacy_pri(data)
     if not data.classes or not data.lessons or not data.placements:
         raise HTTPException(status_code=422, detail="Legacy project must contain classes, lesson requirements and placements")
     if data.pending:

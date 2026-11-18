@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.legacy_pri import LegacyPriError, map_legacy_availability, read_legacy_pri, read_legacy_pri_bytes, reconcile_legacy_pri
 from app.models import AuditEvent, LessonRequirement, TimetableVersion
-from app.routes.legacy_pri import MAX_INSPECT_ROWS
+from app.routes.legacy_pri import MAX_LEGACY_SOURCE_ROWS
 
 KEY = bytes(range(16))
 
@@ -500,12 +500,28 @@ def test_legacy_project_preflight_bounds_rows_before_reconciliation(lesson_conte
     values = sample_data()
     values["R01.bin"] = [
         {"Id": index, "Name": f"Teacher {index}", "Availability": ":".join(["1"] * 20)}
-        for index in range(MAX_INSPECT_ROWS + 1)
+        for index in range(MAX_LEGACY_SOURCE_ROWS + 1)
     ]
+    archive = encrypted_archive(values)
     response = client.post(
         "/api/v1/timetable/legacy-projects/validate",
-        content=encrypted_archive(values),
+        content=archive,
         headers={**headers["admin"], "Content-Type": "application/octet-stream"},
     )
     assert response.status_code == 413
-    assert response.json()["detail"] == "Legacy project has too many rows to inspect"
+    assert response.json()["detail"] == "Legacy project exceeds the source row limit"
+    options = {
+        "name": "Oversized legacy import",
+        "academic_year": "2026",
+        "week_start": "2026-11-16",
+        "teachers": {},
+        "subjects": {},
+        "classes": {},
+    }
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+    assert imported.status_code == 413
+    assert imported.json()["detail"] == "Legacy project exceeds the source row limit"
