@@ -244,6 +244,52 @@ def test_legacy_project_preflight_is_role_limited_audited_and_redacted(lesson_co
         assert "archive" not in event.details_json.lower()
 
 
+def test_legacy_project_inspection_reveals_source_labels_only_to_it_and_superuser(lesson_context, configured_legacy_key):
+    client, headers, _ = lesson_context
+    archive_bytes = encrypted_archive()
+
+    inspected = client.post(
+        "/api/v1/timetable/legacy-projects/inspect",
+        content=archive_bytes,
+        headers={**headers["admin"], "Content-Type": "application/octet-stream"},
+    )
+
+    assert inspected.status_code == 200
+    payload = inspected.json()
+    assert payload["resources"]["teachers"][0]["name"] == "T1"
+    assert payload["resources"]["teachers"][0]["availability_profile"] == "20-slot profile"
+    assert payload["resources"]["subjects"][0]["name"] == "S1"
+    assert payload["resources"]["classes"][0]["name"] == "C1"
+    assert payload["lesson_requirements"][0] == {
+        "source_index": 0,
+        "teacher": "T1",
+        "subject": "S1",
+        "class": "C1",
+        "weekly_count": 2,
+        "block_length": 1,
+    }
+    superuser_inspection = client.post(
+        "/api/v1/timetable/legacy-projects/inspect",
+        content=archive_bytes,
+        headers={**headers["superuser"], "Content-Type": "application/octet-stream"},
+    )
+    assert superuser_inspection.status_code == 200
+    for role in ("operator", "executive"):
+        rejected = client.post(
+            "/api/v1/timetable/legacy-projects/inspect",
+            content=archive_bytes,
+            headers={**headers[role], "Content-Type": "application/octet-stream"},
+        )
+        assert rejected.status_code == 403
+
+    with SessionLocal() as db:
+        event = db.scalar(select(AuditEvent).where(AuditEvent.action == "timetable.legacy_project.inspected"))
+        assert event is not None
+        assert "T1" not in event.details_json
+        assert "S1" not in event.details_json
+        assert "C1" not in event.details_json
+
+
 def test_legacy_project_preflight_requires_key_and_bounds_upload(lesson_context, monkeypatch):
     client, headers, _ = lesson_context
     monkeypatch.setenv("LEGACY_PRI_KEY_HEX", "")

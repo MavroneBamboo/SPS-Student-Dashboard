@@ -279,6 +279,7 @@
             <label>Legacy project (.pri)<input name="project" type="file" accept=".pri,application/octet-stream" required></label>
             <button type="submit">Validate project</button>
           </form>
+          <button id="legacy-pri-inspect-button" class="secondary" type="button" hidden>Inspect source labels for mapping</button>
           <p id="legacy-pri-status" aria-live="polite">No project has been checked in this session.</p>
           <div id="legacy-pri-result" hidden>
             <h4>Resource and record counts</h4><div id="legacy-pri-counts" class="metrics"></div>
@@ -287,6 +288,14 @@
             <h4>Issues to reconcile</h4><ul id="legacy-pri-issues"></ul>
             <p id="legacy-pri-readiness"></p>
           </div>
+          <section id="legacy-pri-source" class="panel" hidden aria-labelledby="legacy-pri-source-title">
+            <h3 id="legacy-pri-source-title">Source labels for IT reconciliation</h3>
+            <p>These decrypted labels are shown only after you choose to inspect them. The project is not stored. Sign out to clear the displayed source data.</p>
+            <details><summary>Teachers</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Short name</th><th>Full name</th><th>Adjunct</th><th>Availability</th></tr></thead><tbody id="legacy-pri-source-teachers"></tbody></table></div></details>
+            <details><summary>Subjects</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Name</th></tr></thead><tbody id="legacy-pri-source-subjects"></tbody></table></div></details>
+            <details><summary>Classes</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Legacy ID</th><th>Name</th></tr></thead><tbody id="legacy-pri-source-classes"></tbody></table></div></details>
+            <details><summary>Lesson requirements</summary><div class="table-wrap"><table><thead><tr><th>Source row</th><th>Teacher</th><th>Subject</th><th>Class</th><th>Weekly periods</th><th>Block length</th></tr></thead><tbody id="legacy-pri-source-lessons"></tbody></table></div></details>
+          </section>
         </section>
       </section>
       <section id="audit-panel" hidden aria-labelledby="audit-title">

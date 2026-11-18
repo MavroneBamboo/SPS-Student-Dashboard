@@ -89,6 +89,15 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     assert "Synthetic Teacher" not in page.locator("#legacy-pri-result").inner_text()
     assert "Synthetic Class" not in page.locator("#legacy-pri-result").inner_text()
 
+    page.get_by_role("button", name="Inspect source labels for mapping", exact=True).click()
+    expect(page.locator("#legacy-pri-source")).to_be_visible()
+    expect(page.locator("#legacy-pri-source-teachers")).to_contain_text("Synthetic Teacher")
+    expect(page.locator("#legacy-pri-source-subjects")).to_contain_text("Synthetic Subject")
+    expect(page.locator("#legacy-pri-source-classes")).to_contain_text("Synthetic Class")
+    page.get_by_role("button", name="Sign out", exact=True).click()
+    expect(page.locator("#legacy-pri-source")).to_be_hidden()
+    assert "Synthetic Teacher" not in page.locator("#legacy-pri-source").inner_text()
+
 
 def test_operator_does_not_see_legacy_project_preflight(page, make_account):
     account = make_account("Operator")

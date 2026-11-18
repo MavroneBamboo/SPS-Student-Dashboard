@@ -24,6 +24,10 @@ function clearData() {
   students.clear();
   referenceData?.clear();
   for (const id of ["user-rows", "audit-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
+  for (const id of ["legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons"]) $(id).replaceChildren();
+  $("legacy-pri-source").hidden = true;
+  $("legacy-pri-inspect-button").hidden = true;
+  $("legacy-pri-result").hidden = true;
   $("identity").textContent = "";
   $("dashboard-freshness").textContent = "";
   for (const form of document.forms) form.reset();
@@ -226,12 +230,12 @@ function showPanel(name) {
   $("workspace-title").textContent = {users: "Account setup", audit: "System audit", dashboard: "Dashboard", profiles: "Student profiles", attendance: "Attendance", timetable: "Timetable / Schedule", sessions: "Account sessions", "reference-data": "Reference data", "legacy-pri": "Legacy timetable preflight"}[name];
 }
 
-async function validateLegacyPri(file) {
+async function requestLegacyPri(path, file) {
   const started = epoch;
   const activeToken = token;
   let response;
   try {
-    response = await fetch("/api/v1/timetable/legacy-projects/validate", {
+    response = await fetch(`/api/v1/timetable/legacy-projects/${path}`, {
       method: "POST",
       headers: {Authorization: `Bearer ${activeToken}`, "Content-Type": "application/octet-stream", Accept: "application/json"},
       body: file,
@@ -251,6 +255,41 @@ async function validateLegacyPri(file) {
   }
   if (!response.ok) throw new Error(validationMessage(data.detail));
   return data;
+}
+
+function renderLegacyPriSourceTable(targetId, rows, fields) {
+  const target = $(targetId);
+  target.replaceChildren();
+  for (const source of rows) {
+    const row = document.createElement("tr");
+    for (const field of fields) {
+      let value = source[field.key];
+      cell(row, value ?? "");
+    }
+    target.append(row);
+  }
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    cell(row, "No records.").colSpan = fields.length;
+    target.append(row);
+  }
+}
+
+function renderLegacyPriInspection(data) {
+  renderLegacyPriSourceTable("legacy-pri-source-teachers", data.resources.teachers, [
+    {key: "source_index", label: "Source row"}, {key: "source_id", label: "Legacy ID"}, {key: "name", label: "Short name"},
+    {key: "full_name", label: "Full name"}, {key: "is_adjunct", label: "Adjunct"}, {key: "availability_profile", label: "Availability"},
+  ]);
+  renderLegacyPriSourceTable("legacy-pri-source-subjects", data.resources.subjects, [
+    {key: "source_index"}, {key: "source_id"}, {key: "name"},
+  ]);
+  renderLegacyPriSourceTable("legacy-pri-source-classes", data.resources.classes, [
+    {key: "source_index"}, {key: "source_id"}, {key: "name"},
+  ]);
+  renderLegacyPriSourceTable("legacy-pri-source-lessons", data.lesson_requirements, [
+    {key: "source_index"}, {key: "teacher"}, {key: "subject"}, {key: "class"}, {key: "weekly_count"}, {key: "block_length"},
+  ]);
+  $("legacy-pri-source").hidden = false;
 }
 
 function renderLegacyPriSummary(targetId, values) {
@@ -565,9 +604,7 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
     if (file.size > 10 * 1024 * 1024) throw new Error("Legacy project exceeds the 10 MiB upload limit.");
     $("legacy-pri-result").hidden = true;
     $("legacy-pri-status").textContent = "Validating the project…";
-    let report;
-    try { report = await validateLegacyPri(file); }
-    finally { form.reset(); }
+    const report = await requestLegacyPri("validate", file);
     renderLegacyPriSummary("legacy-pri-counts", report.counts);
     renderLegacyPriSummary("legacy-pri-periods", report.period_mapping);
     renderLegacyPriSummary("legacy-pri-availability", report.availability_profiles);
@@ -587,7 +624,24 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
       ? "Preflight passed. This report is advisory; no data was imported."
       : "Resolve these findings before a migration. No data was imported.";
     $("legacy-pri-result").hidden = false;
+    $("legacy-pri-inspect-button").hidden = false;
     $("legacy-pri-status").textContent = "Validation completed. Results contain counts and issue codes only.";
+  });
+});
+$("legacy-pri-form").elements.project.addEventListener("change", () => {
+  $("legacy-pri-result").hidden = true;
+  $("legacy-pri-inspect-button").hidden = true;
+  $("legacy-pri-source").hidden = true;
+  for (const id of ["legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons"]) $(id).replaceChildren();
+  $("legacy-pri-status").textContent = "Project selection changed. Validate the selected project before inspecting its labels.";
+});
+$("legacy-pri-inspect-button").addEventListener("click", (event) => {
+  run(event.currentTarget, async () => {
+    const file = $("legacy-pri-form").elements.project.files[0];
+    if (!file) throw new Error("Select the .pri project again before inspecting its source labels.");
+    $("legacy-pri-status").textContent = "Inspecting source labels…";
+    renderLegacyPriInspection(await requestLegacyPri("inspect", file));
+    $("legacy-pri-status").textContent = "Source labels are displayed for IT reconciliation and have not been saved.";
   });
 });
 
