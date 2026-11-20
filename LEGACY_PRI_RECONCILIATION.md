@@ -1,6 +1,6 @@
 ﻿# Legacy `.pri` reconciliation findings
 
-Reviewed 18 November 2026 from the legacy TImeTables source and representative local `.pri` samples. Counts below are aggregate counts; this document intentionally omits personal/resource names and decrypted field values. The source archives were only read by the bounded validator and were not changed. Automated tests exercise import with synthetic archives; no representative legacy archive has been imported into staging.
+Reviewed 20 November 2026 from the legacy TImeTables source and representative local `.pri` samples. Counts below are aggregate counts; this document intentionally omits personal/resource names and decrypted field values. The source archives were only read by the bounded validator and were not changed. Automated tests exercise import with synthetic archives; no representative legacy archive has been imported into staging.
 
 ## Slot and availability interpretation
 
@@ -12,7 +12,7 @@ Reviewed 18 November 2026 from the legacy TImeTables source and representative l
 | 4 | P3 | Teaching slot |
 | 5 | P4 | Teaching slot |
 
-The legacy availability dialog stores 20 flags in weekday-major order: four teaching periods for Monday, then Tuesday through Friday. This matches the replacement's four schedulable slots; a deterministic helper maps the flags to `MON`–`FRI` / `P1`–`P4` during import. Some saved projects contain 25 binary flags; the legacy UI does not explain that shape. Such profiles are reported as `legacy_availability_mapping_required` and block import. The importer does not guess their meaning.
+The checked legacy availability dialog writes 20 flags in weekday-major order: four teaching periods for Monday, then Tuesday through Friday. Its current source labels those periods 08:30–10:15, 10:15–12:00, 13:25–15:10 and 15:10–16:55; the lunch interval is not one of the four flags. A deterministic helper maps the verified shape to `MON`–`FRI` / `P1`–`P4` during import. Some saved projects contain 25 binary flags. The current resource form iterates every saved flag but has only 20 checkboxes, so positions beyond those controls are ignored; saving then rewrites the profile as 20 flags. That lossy UI behavior is not a verified 25-to-20 conversion rule. Such profiles are reported as `legacy_availability_mapping_required` and block import. The importer does not guess their meaning.
 
 Period 3 placements are excluded from lesson occupancy and placed-versus-required totals. A period-3 row with a named teacher is flagged `lesson_in_lunch_slot`. A blank-teacher period-3 row is flagged `lunch_entry_requires_review` so a legacy placeholder is visible and cannot be mistaken for a confirmed lesson. An IT Administrator or Superuser must inspect and explicitly confirm every such source row before import; the source row indexes and count are audited, and confirmed lunch placeholders are excluded from lesson placements. Missing, extra or duplicate confirmations reject the entire import. A period-3 `ALL` row also requires whole-school event mapping and cannot be acknowledged as a blank-teacher placeholder.
 
@@ -23,8 +23,11 @@ Period 3 placements are excluded from lesson occupancy and placed-versus-require
 | 24 February 2026 | 19 | 50 | 34 | 93 | 172 | 37 assigned-teacher rows; flagged as lunch conflicts |
 | 29 June 2026 | 20 | 37 | 22 | 115 | 296 | 100 blank-teacher placeholders; flagged for review, one per class/day |
 | 29 June 2026, converted copy | 20 | 37 | 21 | 113 | 286 | 90 blank-teacher placeholders; flagged for review |
+| 16 October 2026 | 19 | 38 | 22 | 112 | 287 | 95 blank-teacher placeholders; flagged for review |
 
 The 29 June sample also contains 24 `ALL` rows outside the lunch-slot handling and 15 composite-teacher placements. These require explicit event/teacher mapping. The validator does not expand composites or infer which teacher is responsible.
+
+The 16 October sample was rechecked with the read-only CLI preflight on 20 November. It reported 37 25-flag availability profiles, 24 composite teacher mappings required, 14 duplicate teacher slots, 5 invalid composite references, 1 missing teacher name, 19 missing teacher references, 31 unplaced lesson periods, 24 whole-school event mappings required and 95 lunch placeholders requiring row-by-row review. No import was attempted. `FormAvailbility.cs` writes exactly 20 values and displays four daily periods. `FormResources.cs` loads longer profiles into the first 20 checkboxes and ignores positions for which no control exists; it does not define what the extra five values mean. Those 37 profiles remain an explicit import blocker until their availability source is resolved.
 
 ## Validation and import boundary
 
