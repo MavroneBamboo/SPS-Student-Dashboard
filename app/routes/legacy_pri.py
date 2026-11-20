@@ -25,6 +25,7 @@ from app.models import (
     Subject,
     Teacher,
     TeacherGroupMember,
+    TimetableFixedEvent,
     TimetablePlacement,
     TimetableSlot,
     TimetableVersion,
@@ -250,6 +251,88 @@ def _pack_source_slots(requirement: LessonRequirement, rows: list[tuple[str, int
     return packed
 
 
+def _validate_whole_school_event_mappings(
+    data: LegacyPriData,
+    options: LegacyPriImportOptions,
+    db,
+    class_ids_by_name: dict[str, int],
+) -> None:
+    if any(row.get("Teacher") == "ALL" for row in data.lessons):
+        raise HTTPException(status_code=422, detail="Whole-school lesson requirements must be reconciled as fixed events")
+
+    subject_indexes: dict[str, list[int]] = defaultdict(list)
+    for index, subject in enumerate(data.subjects):
+        name = subject.get("Name")
+        if isinstance(name, str) and name.strip():
+            subject_indexes[name.strip()].append(index)
+
+    event_rows: dict[int, list[dict]] = defaultdict(list)
+    for row in data.placements:
+        if row.get("Teacher") == "ALL":
+            label = row.get("Subject")
+            if not isinstance(label, str) or not label.strip():
+                raise HTTPException(status_code=422, detail="Every whole-school placement needs an event label")
+            matching_subjects = subject_indexes.get(label.strip(), [])
+            if len(matching_subjects) != 1:
+                raise HTTPException(status_code=422, detail="Every whole-school event label must resolve to one source subject row")
+            event_rows[matching_subjects[0]].append(row)
+
+    if set(options.fixed_events) != set(event_rows):
+        raise HTTPException(status_code=422, detail="Map each whole-school event label to one fixed event")
+    if len(set(options.fixed_events.values())) != len(options.fixed_events):
+        raise HTTPException(status_code=422, detail="Each source whole-school event must map to a distinct fixed event")
+
+    imported_class_ids = set(class_ids_by_name.values())
+    slot_by_legacy_period = {1: "P1", 2: "P2", 4: "P3", 5: "P4"}
+    for source_subject_index, source_rows in event_rows.items():
+        event_id = options.fixed_events[source_subject_index]
+        event = db.get(TimetableFixedEvent, event_id)
+        if event is None or not event.is_active:
+            raise HTTPException(status_code=422, detail="Mapped fixed event is missing or inactive")
+        if event.audience_type != "CLASS" or event.academic_year.strip().upper() != options.academic_year.strip().upper():
+            raise HTTPException(status_code=422, detail="Mapped fixed event must be an active class event for the selected academic year")
+
+        source_classes: set[int] = set()
+        source_slots: set[tuple[str, str]] = set()
+        for row in source_rows:
+            class_name = row.get("InstClass")
+            weekday = row.get("DayOfWeek")
+            period = row.get("Period")
+            class_id = class_ids_by_name.get(class_name.strip()) if isinstance(class_name, str) else None
+            weekday_code = (
+                {
+                    "mo": "MON",
+                    "mon": "MON",
+                    "tu": "TUE",
+                    "tue": "TUE",
+                    "we": "WED",
+                    "wed": "WED",
+                    "th": "THU",
+                    "thu": "THU",
+                    "fr": "FRI",
+                    "fri": "FRI",
+                }.get(weekday.casefold())
+                if isinstance(weekday, str)
+                else None
+            )
+            slot_code = slot_by_legacy_period.get(period) if type(period) is int else None
+            if class_id is None or weekday_code is None or slot_code is None:
+                raise HTTPException(status_code=422, detail="Whole-school source event has an unmappable class, day or teaching period")
+            source_classes.add(class_id)
+            source_slots.add((weekday_code, slot_code))
+
+        if event.target_mode == "ALL":
+            event_classes = imported_class_ids
+        else:
+            event_classes = set(json.loads(event.target_ids_json)) & imported_class_ids
+        event_slots = {(slot["weekday"], slot["slot_code"]) for slot in json.loads(event.slots_json)}
+        if event_classes != source_classes or event_slots != source_slots:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Mapped fixed event for source subject row {source_subject_index + 1} must match the source classes and weekday/period slots exactly",
+            )
+
+
 @router.post("/import", status_code=status.HTTP_201_CREATED)
 async def import_legacy_project(request: Request, db: DbSession, claims: Claims) -> dict:
     """Create a validated draft from a source project and explicit resource mappings."""
@@ -305,11 +388,30 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             status_code=422,
             detail={"message": "Unplaced legacy records must be reconciled before import", "pending_count": len(data.pending)},
         )
-    blockers = {code: count for code, count in report["issue_counts"].items() if code != "composite_teacher_mapping_required"}
+    lunch_placeholder_rows = sorted(
+        issue["row"]
+        for issue in report["issues"]
+        if issue["code"] == "lunch_entry_requires_review"
+        and isinstance(issue.get("row"), int)
+        and issue["row"] < len(data.placements)
+        and not str(data.placements[issue["row"]].get("Teacher") or "").strip()
+    )
+    confirmed_lunch_rows = sorted(options.confirmed_lunch_placeholder_rows)
+    if confirmed_lunch_rows != lunch_placeholder_rows:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Review every blank-teacher lunch row and confirm only placeholders to exclude from lesson import",
+                "missing_rows": sorted(set(lunch_placeholder_rows) - set(confirmed_lunch_rows)),
+                "unexpected_rows": sorted(set(confirmed_lunch_rows) - set(lunch_placeholder_rows)),
+            },
+        )
+    resolved_by_mapping = {"composite_teacher_mapping_required", "whole_school_event_mapping_required", "lunch_entry_requires_review"}
+    blockers = {code: count for code, count in report["issue_counts"].items() if code not in resolved_by_mapping}
     if blockers:
         raise HTTPException(status_code=422, detail={"message": "Resolve source validation issues before import", "issue_counts": blockers})
-    if any(row.get("Teacher") == "ALL" for row in [*data.lessons, *data.placements]):
-        raise HTTPException(status_code=422, detail="Whole-school entries require fixed-event reconciliation before import")
+    if any(row.get("Teacher") == "ALL" for row in data.lessons):
+        raise HTTPException(status_code=422, detail="Whole-school lesson requirements must be reconciled as fixed events")
     if (
         set(options.teachers) != set(range(len(data.teachers)))
         or set(options.subjects) != set(range(len(data.subjects)))
@@ -342,6 +444,7 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
     actor_id = int(claims["sub"])
     lock_timetable_configuration(db)
     try:
+        _validate_whole_school_event_mappings(data, options, db, class_ids_by_name)
         for source_index, source in enumerate(data.lessons):
             teacher = _mapped_teacher(data, options, db, source["Teacher"])
             class_id = class_ids_by_name[source["InstClass"].strip()]
@@ -378,7 +481,10 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             requirements_by_source[source_index] = requirement
 
         source_slots: dict[int, list[tuple[str, int]]] = defaultdict(list)
-        for source in data.placements:
+        confirmed_lunch_row_set = set(confirmed_lunch_rows)
+        for placement_index, source in enumerate(data.placements):
+            if placement_index in confirmed_lunch_row_set or source.get("Teacher") == "ALL":
+                continue
             teacher = _mapped_teacher(data, options, db, source["Teacher"])
             key = (
                 class_ids_by_name[source["InstClass"].strip()],
@@ -464,7 +570,14 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             "timetable.legacy_project.imported",
             "timetable_version",
             str(version.id),
-            {"source_sha256": source_digest, "counts": report["counts"], "week_start": options.week_start.isoformat()},
+            {
+                "source_sha256": source_digest,
+                "counts": report["counts"],
+                "week_start": options.week_start.isoformat(),
+                "fixed_event_mappings": {str(source_index): event_id for source_index, event_id in sorted(options.fixed_events.items())},
+                "confirmed_lunch_placeholder_rows": confirmed_lunch_rows,
+                "confirmed_lunch_placeholder_count": len(confirmed_lunch_rows),
+            },
         )
         db.commit()
         return {
@@ -476,6 +589,7 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             "revision": version.revision,
             "placement_count": len(blocks),
             "class_ids": target_class_ids,
+            "confirmed_lunch_placeholder_count": len(confirmed_lunch_rows),
         }
     except IntegrityError as exc:
         db.rollback()

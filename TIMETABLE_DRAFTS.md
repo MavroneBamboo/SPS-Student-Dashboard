@@ -1,6 +1,6 @@
 # Timetable drafts and manual amendments
 
-The timetable API persists weekly drafts, immutable configuration snapshots, lesson blocks and occupied grid cells. The production browser follows the supplied timetable UI reference with By class and By teacher weekly boards, report/print screens, resource tabs, period/rule management and a recurring fixed-events workspace. Its board mode supports clickable lesson placement/edit/removal/locking; Amend 4-up supports 2/4/6/8/12/16/24/32 class paging, clickable editing, atomic swaps, drag/drop moves to empty slots and swaps onto occupied unlocked slots within the same class, and draft rename. The visible week is P1, P2, P3 Lunch/Muster, P4 and P5, using existing stable API slot codes. Configured class and teacher events reserve their matching slots against manual and generated lessons and appear in those cells in the browser, print view and XLSX reports. Browser print generates class/teacher report layouts for Save as PDF. The API also generates audited Excel workbooks for By InstClass and By Teacher from a version's stored snapshot; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md) and [TIMETABLE_FIXED_EVENTS.md](TIMETABLE_FIXED_EVENTS.md). Copy/rebase, broader legacy parity and server-side PDF output remain subsequent work.
+The timetable API persists weekly drafts, immutable configuration snapshots, lesson blocks and occupied grid cells. The production browser follows the supplied timetable UI reference with By class and By teacher weekly boards, report/print screens, resource tabs, period/rule management and a recurring fixed-events workspace. Its board mode supports clickable lesson placement/edit/removal/locking; Amend 4-up supports 2/4/6/8/12/16/24/32 class paging, clickable editing, atomic swaps, drag/drop moves to empty slots and swaps onto occupied unlocked slots within the same class, draft rename and copying/rebasing a draft to a new week. The visible week is P1, P2, P3 Lunch/Muster, P4 and P5, using existing stable API slot codes. Configured class and teacher events reserve their matching slots against manual and generated lessons and appear in those cells in the browser, print view and XLSX reports. Browser print generates class/teacher report layouts for Save as PDF. The API also generates audited Excel workbooks for By InstClass and By Teacher from a version's stored snapshot; see [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md) and [TIMETABLE_FIXED_EVENTS.md](TIMETABLE_FIXED_EVENTS.md). Broader legacy parity and server-side PDF output remain subsequent work.
 
 ## Create and inspect a draft
 
@@ -13,6 +13,16 @@ Operators and IT Administrators can create a draft with `POST /api/v1/timetable/
 `week_start` must be a Monday. Every selected class must be active and resolve exactly one rule on each of the five teaching dates. A midweek rule transition is captured separately for each weekday. The snapshot stores class labels/periods, resolved rule IDs/versions/definitions, active lesson requirements, teacher availability/labels and subject labels. This is a new version: creating it does not replace any earlier version or its amendments.
 
 `GET /versions` lists summaries with academic-year filtering and pagination. `GET /versions/{id}` returns the snapshot, placements and pending lesson requirements. Reads return a consistent revision/grid under the timetable transaction lock. A pending requirement reports remaining periods and block lengths. Approved versions continue to render from their snapshots after live reference data changes.
+
+## Copy and rebase a timetable
+
+Operators and IT Administrators can create a new week from any visible draft or approved version with `POST /versions/{id}/copy`:
+
+```json
+{"expected_revision":3,"name":"Week 44 draft","academic_year":"2026","week_start":"2026-10-26"}
+```
+
+The service locks the timetable configuration, checks the source revision and stored grid, then builds a fresh snapshot for the requested academic year, Monday and the source's classes. It maps placed lessons to active target-year requirements by the stable class, teacher and subject IDs. Matching placements and notes carry forward; every copied block starts unlocked. Current rules, availability, period times, fixed events, block lengths, clashes and daily limits validate the complete copied grid before any target data is written. Any missing requirement or invalid placement rejects the operation atomically with a reconciliation reason; no partial target version is created. Unplaced requirements in the current target snapshot remain visible as pending work. The source timetable and its approval/publication state are unchanged. The new draft records an audit event containing source/target version references, revisions, week/year, class IDs and copied-block counts. This also provides the safe replacement path when a draft's original configuration has become stale.
 
 ## Amend blocks
 
@@ -41,7 +51,7 @@ A stale client revision returns 409. Failed validation, swaps and database confl
 
 ## Configuration changes and approval
 
-Every edit and approval re-resolves rules for all five dates and compares the live configuration with the stored snapshot under the shared transaction lock. A changed relevant rule/resource/requirement/period makes the draft stale; reconcile live rules if needed and create a replacement draft. This increment preserves the old draft and does not silently rewrite its snapshot. Copy/rebase workflows are not yet implemented.
+Every edit and approval re-resolves rules for all five dates and compares the live configuration with the stored snapshot under the shared transaction lock. A changed relevant rule/resource/requirement/period makes the draft stale; reconcile live rules if needed and create a replacement draft with the copy/rebase workflow above. The old draft and its snapshot remain unchanged.
 
 IT Administrators and Superusers can approve a complete, valid draft using `POST /versions/{id}/approve` with `expected_revision`. Approval fails while any requirement remains unplaced or configuration has changed. Approval records the actor/time and increments the revision. Approved header, blocks, cells and selected classes are immutable; replacements use a new version. Operators cannot approve. Executives can list/read approved versions only.
 

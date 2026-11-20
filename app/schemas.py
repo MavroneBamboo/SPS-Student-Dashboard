@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from datetime import time as time_value
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -172,17 +172,45 @@ class LegacyPriImportOptions(BaseModel):
     subjects: dict[int, int]
     classes: dict[int, int]
     teacher_groups: dict[str, int] = Field(default_factory=dict)
+    fixed_events: dict[int, int] = Field(default_factory=dict)
+    confirmed_lunch_placeholder_rows: list[StrictInt] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_import_mapping(self):
         self.academic_year = self.academic_year.upper()
         if self.week_start.weekday() != 0:
             raise ValueError("week_start must be a Monday")
-        for mapping in (self.teachers, self.subjects, self.classes, self.teacher_groups):
+        for mapping in (self.teachers, self.subjects, self.classes, self.fixed_events):
             if any(key < 0 or value < 1 for key, value in mapping.items()):
                 raise ValueError("Resource mappings require non-negative source indices and positive target IDs")
+        if any(type(row) is not int or row < 0 for row in self.confirmed_lunch_placeholder_rows):
+            raise ValueError("Lunch placeholder rows require non-negative source indexes")
+        if len(set(self.confirmed_lunch_placeholder_rows)) != len(self.confirmed_lunch_placeholder_rows):
+            raise ValueError("Lunch placeholder rows cannot be repeated")
         if any(not key or len(key) > 320 for key in self.teacher_groups):
             raise ValueError("Composite teacher source labels must contain 1 to 320 characters")
+        if any(value < 1 for value in self.teacher_groups.values()):
+            raise ValueError("Composite teacher mappings require positive target IDs")
+        return self
+
+
+class TimetableCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_revision: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=120)
+    academic_year: str = Field(min_length=1, max_length=20)
+    week_start: date
+
+    @model_validator(mode="after")
+    def valid_week(self):
+        if self.week_start.weekday() != 0:
+            raise ValueError("week_start must be a Monday")
+        try:
+            self.week_start + timedelta(days=4)
+        except OverflowError as exc:
+            raise ValueError("The complete teaching week must be representable") from exc
+        self.academic_year = self.academic_year.upper()
         return self
 
 

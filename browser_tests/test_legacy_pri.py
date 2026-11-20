@@ -22,7 +22,14 @@ def _encrypted_member(value):
     return iv + encryptor.update(padded) + encryptor.finalize()
 
 
-def _valid_project(teacher_name="Synthetic Teacher", subject_name="Synthetic Subject", class_name="Synthetic Class", duplicate_slot=False):
+def _valid_project(
+    teacher_name="Synthetic Teacher",
+    subject_name="Synthetic Subject",
+    class_name="Synthetic Class",
+    duplicate_slot=False,
+    event_label=None,
+    lunch_placeholder=False,
+):
     members = {
         "R01.bin": [{"Id": 0, "Name": teacher_name, "Availability": ":".join(["1"] * 20)}],
         "R02.bin": [{"Id": 0, "Name": subject_name}],
@@ -65,6 +72,29 @@ def _valid_project(teacher_name="Synthetic Teacher", subject_name="Synthetic Sub
                 "Subject": subject_name,
                 "InstClass": class_name,
                 "DayOfWeek": "Mon",
+                "Period": 1,
+            }
+        )
+    if lunch_placeholder:
+        members["R05.bin"].append(
+            {
+                "Id": len(members["R05.bin"]),
+                "Teacher": "",
+                "Subject": subject_name,
+                "InstClass": class_name,
+                "DayOfWeek": "Wed",
+                "Period": 3,
+            }
+        )
+    if event_label:
+        members["R02.bin"].append({"Id": 1, "Name": event_label})
+        members["R05.bin"].append(
+            {
+                "Id": len(members["R05.bin"]),
+                "Teacher": "ALL",
+                "Subject": event_label,
+                "InstClass": class_name,
+                "DayOfWeek": "Wed",
                 "Period": 1,
             }
         )
@@ -122,6 +152,26 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
             headers=headers,
         )
         assert rule.status_code == 201, rule.text
+        event_label = "Synthetic Assembly " + suffix
+        event_subject = client.post(
+            "/api/v1/timetable/subjects",
+            json={"code": "SYNTH-EV-" + suffix, "name": event_label},
+            headers=headers,
+        )
+        assert event_subject.status_code == 201, event_subject.text
+        fixed_event = client.post(
+            "/api/v1/timetable/fixed-events",
+            json={
+                "academic_year": "2026",
+                "label": event_label,
+                "audience_type": "CLASS",
+                "target_mode": "SELECTED",
+                "target_ids": [instructional_class.json()["id"]],
+                "slots": [{"weekday": "WED", "slot_code": "P1"}],
+            },
+            headers=headers,
+        )
+        assert fixed_event.status_code == 201, fixed_event.text
     _sign_in(page, account)
 
     page.get_by_role("button", name="Legacy timetable preflight", exact=True).click()
@@ -131,7 +181,7 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
         {
             "name": "synthetic-invalid.pri",
             "mimeType": "application/octet-stream",
-            "buffer": _valid_project(teacher_name, subject_name, class_name, duplicate_slot=True),
+            "buffer": _valid_project(teacher_name, subject_name, class_name, duplicate_slot=True, event_label=event_label),
         }
     )
     page.get_by_role("button", name="Validate project", exact=True).click()
@@ -156,22 +206,33 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
         {
             "name": "synthetic.pri",
             "mimeType": "application/octet-stream",
-            "buffer": _valid_project(teacher_name, subject_name, class_name),
+            "buffer": _valid_project(teacher_name, subject_name, class_name, event_label=event_label, lunch_placeholder=True),
         }
     )
     page.get_by_role("button", name="Validate project", exact=True).click()
-    expect(page.locator("#legacy-pri-issues")).to_contain_text("No reconciliation issues found")
-    expect(page.locator("#legacy-pri-readiness")).to_contain_text("no data was imported")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("lunch entry requires review: 1")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("whole school event mapping required: 1")
+    expect(page.locator("#legacy-pri-readiness")).to_contain_text("Resolve these findings")
 
     page.get_by_role("button", name="Inspect source labels for mapping", exact=True).click()
     expect(page.locator("#legacy-pri-source")).to_be_visible()
     expect(page.locator("#legacy-pri-source-teachers")).to_contain_text(teacher_name)
     expect(page.locator("#legacy-pri-source-subjects")).to_contain_text(subject_name)
     expect(page.locator("#legacy-pri-source-classes")).to_contain_text(class_name)
-    expect(page.locator("#legacy-pri-source-placements")).to_contain_text("Mon")
+    event_mapping = page.locator("#legacy-pri-map-events select[data-fixed-event-source-index='1']")
+    expect(event_mapping).to_be_visible()
+    event_mapping.select_option(value=str(fixed_event.json()["id"]))
+    expect(page.locator("#legacy-pri-source-placements")).to_contain_text("Wed")
+    lunch_review = page.locator("#legacy-pri-lunch-review")
+    expect(lunch_review).to_be_visible()
+    expect(lunch_review).to_contain_text("Synthetic Class")
+    expect(lunch_review).to_contain_text("Wed")
     page.locator("#legacy-pri-import-form [name=name]").fill("Synthetic migrated week " + suffix)
     page.locator("#legacy-pri-import-form [name=academic_year]").fill("2026")
     page.locator("#legacy-pri-import-form [name=week_start]").fill("2026-10-26")
+    page.get_by_role("button", name="Import as draft", exact=True).click()
+    expect(page.locator("#notice")).to_contain_text("Review and confirm all 1 blank-teacher lunch placeholder rows")
+    page.locator("#legacy-pri-lunch-review-rows input[data-lunch-placeholder-row='2']").check()
     page.get_by_role("button", name="Import as draft", exact=True).click()
     expect(page.locator("#notice")).to_contain_text("Legacy timetable imported as draft")
     expect(page.locator("#timetable-panel")).to_be_visible()
