@@ -1,4 +1,4 @@
-FROM nginx:1.30.6-alpine3.24
+FROM nginx:1.30.7-alpine3.24
 
 RUN apk upgrade --no-cache && apk add --no-cache gettext-envsubst
 
