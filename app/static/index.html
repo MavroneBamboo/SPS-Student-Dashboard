@@ -354,13 +354,14 @@
           <button id="timetable-print" class="secondary" type="button">Export / Print</button>
         </div>
         <form id="timetable-create-form" class="panel profile-fields" hidden>
-          <h3>Create weekly draft</h3>
+          <h3 id="timetable-create-title">Create weekly draft</h3>
           <label>Draft name<input name="name" maxlength="120" required></label>
           <label>Academic year<input name="academic_year" maxlength="20" required></label>
           <label>Week starting Monday<input name="week_start" type="date" required></label>
           <label>Classes to include<select name="class_ids" multiple size="5" required aria-describedby="timetable-class-help"></select></label>
           <p id="timetable-class-help">Select one or more active instructional classes with valid scheduling rules and lesson requirements.</p>
           <button type="submit">Create draft</button>
+          <button id="timetable-create-cancel" class="secondary" type="button">Cancel</button>
         </form>
         <details id="lesson-requirements" class="panel"><summary>Lesson requirements</summary>
         <form id="timetable-lesson-form" class="panel profile-fields">
@@ -402,7 +403,7 @@
           </div>
           <button type="button" id="timetable-print-both">Open class and teacher print views</button>
           <section class="panel"><h3>Report options</h3><label class="checkline"><input id="print-lunch-row" type="checkbox" checked> Include lunch / muster row</label><label class="checkline"><input id="print-all-periods" type="checkbox" checked> Include all five timetable periods</label></section>
-          <section class="panel"><h3>Saved timetable versions</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Week</th><th>Status</th><th>Revision</th><th></th></tr></thead><tbody id="timetable-version-rows"></tbody></table></div></section>
+          <section class="panel"><h3>Saved timetable versions</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Week</th><th>Status</th><th>Revision</th><th>Actions</th></tr></thead><tbody id="timetable-version-rows"></tbody></table></div></section>
         </section>
         <section id="timetable-resources-page" class="timetable-page" hidden>
           <h3>Classes &amp; teachers</h3><p>Manage the resources used when building the timetable.</p><p id="timetable-resource-summary"></p>

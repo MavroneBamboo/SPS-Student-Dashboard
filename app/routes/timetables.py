@@ -9,6 +9,7 @@ from app.audit import record_event
 from app.deps import Claims, DbSession, require_roles
 from app.models import AuditEvent, TimetablePlacement, TimetableSlot, TimetableVersion, TimetableVersionClass
 from app.schemas import (
+    TimetableCopyRequest,
     TimetableDraftCreate,
     TimetableGenerateRequest,
     TimetableLockRequest,
@@ -248,6 +249,119 @@ def create_draft(payload: TimetableDraftCreate, db: DbSession, claims: Claims) -
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Timetable draft conflicts with stored resource data") from exc
+    return _view(db, row)
+
+
+@router.post("/{version_id}/copy", status_code=status.HTTP_201_CREATED, dependencies=[EDIT_ACCESS])
+def copy_version(version_id: int, payload: TimetableCopyRequest, db: DbSession, claims: Claims) -> dict:
+    """Create a current-configuration draft by carrying forward a source version's valid placements."""
+    lock_timetable_configuration(db)
+    source = db.scalar(select(TimetableVersion).where(TimetableVersion.id == version_id).with_for_update())
+    if source is None:
+        raise HTTPException(status_code=404, detail="Timetable version not found")
+    if source.revision != payload.expected_revision:
+        raise HTTPException(status_code=409, detail="Source timetable changed since it was loaded; reload before copying")
+
+    source_snapshot = json.loads(source.snapshot_json)
+    source_blocks = load_blocks(db, source.id)
+    assert_stored_plan(db, source.id, source_snapshot, source_blocks)
+
+    class_ids = sorted(int(class_id) for class_id in source_snapshot["classes"])
+    try:
+        target_snapshot = build_snapshot(db, payload.academic_year, payload.week_start, class_ids)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Current configuration cannot support a replacement draft", "reason": exc.detail},
+        ) from exc
+
+    def requirement_key(requirement: dict) -> tuple[int, int, int]:
+        return (requirement["instructional_class_id"], requirement["teacher_id"], requirement["subject_id"])
+
+    target_requirements = {
+        requirement_key(requirement): int(requirement_id) for requirement_id, requirement in target_snapshot["requirements"].items()
+    }
+    copied_blocks = []
+    unresolved = []
+    for index, block in enumerate(source_blocks, start=1):
+        source_requirement = source_snapshot["requirements"].get(str(block["lesson_requirement_id"]))
+        target_requirement_id = target_requirements.get(requirement_key(source_requirement)) if source_requirement else None
+        if target_requirement_id is None:
+            unresolved.append({"source_placement": block["id"], "reason": "matching_active_requirement_missing"})
+            continue
+        copied_blocks.append(
+            {
+                **block,
+                "id": -index,
+                "lesson_requirement_id": target_requirement_id,
+                "is_locked": False,
+            }
+        )
+    if unresolved:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Some source lessons have no matching active requirement in the target year", "unresolved": unresolved},
+        )
+
+    try:
+        expanded = validate_plan(target_snapshot, copied_blocks)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Source placements do not fit current target configuration; no draft was created", "reason": exc.detail},
+        ) from exc
+
+    actor_id = int(claims["sub"])
+    row = TimetableVersion(
+        name=payload.name,
+        academic_year=payload.academic_year,
+        week_start=payload.week_start,
+        snapshot_json=json.dumps(target_snapshot, separators=(",", ":"), sort_keys=True),
+        created_by=actor_id,
+        status="DRAFT",
+        revision=1,
+    )
+    try:
+        db.add(row)
+        db.flush()
+        db.add_all([TimetableVersionClass(version_id=row.id, instructional_class_id=class_id) for class_id in class_ids])
+        db.flush()
+        for block in copied_blocks:
+            placement = TimetablePlacement(
+                version_id=row.id,
+                lesson_requirement_id=block["lesson_requirement_id"],
+                weekday=block["weekday"],
+                start_period=block["start_period"],
+                period_count=block["period_count"],
+                is_locked=False,
+                note=block["note"],
+                created_by=actor_id,
+                updated_by=actor_id,
+            )
+            db.add(placement)
+            db.flush()
+            db.add_all([TimetableSlot(**slot, placement_id=placement.id, version_id=row.id) for slot in expanded[block["id"]]])
+        record_event(
+            db,
+            actor_id,
+            "timetable.version.copied",
+            "timetable_version",
+            str(row.id),
+            {
+                "source_version_id": source.id,
+                "source_revision": source.revision,
+                "source_week_start": source.week_start.isoformat(),
+                "week_start": payload.week_start.isoformat(),
+                "academic_year": payload.academic_year,
+                "class_ids": class_ids,
+                "copied_placements": len(copied_blocks),
+                "unlocked_placements": len(copied_blocks),
+            },
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Replacement timetable conflicts with current configuration") from exc
     return _view(db, row)
 
 

@@ -126,7 +126,36 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open timetable ${version.name}`);
       open.addEventListener("click", () => run(open, () => load(version.id)));
-      cell(row, "").append(open);
+      const actions = cell(row, "");
+      actions.append(open);
+      if (canEdit()) {
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "secondary";
+        copy.textContent = "Copy to new week";
+        copy.setAttribute("aria-label", `Copy ${version.name} to new week`);
+        copy.addEventListener("click", () => run(copy, async () => {
+          const source = await api(`/timetable/versions/${version.id}`);
+          document.querySelector('[data-timetable-page="board"]')?.click();
+          const form = $("timetable-create-form");
+          form.reset();
+          form.dataset.copyFromId = String(source.id);
+          form.dataset.sourceRevision = String(source.revision);
+          form.elements.name.value = `${source.name} copy`.slice(0, 120);
+          form.elements.academic_year.value = source.academic_year;
+          form.elements.week_start.value = "";
+          const sourceClasses = new Set(Object.keys(source.snapshot.classes));
+          for (const option of form.elements.class_ids.options) option.selected = sourceClasses.has(option.value);
+          form.elements.class_ids.disabled = true;
+          form.elements.class_ids.required = false;
+          $("timetable-create-title").textContent = "Copy timetable to a new week";
+          form.querySelector('button[type="submit"]').textContent = "Create copied draft";
+          $("timetable-class-help").textContent = "The source classes are carried forward. Placements are checked against the selected week's current rules, resources and periods; copied lessons start unlocked.";
+          form.hidden = false;
+          form.elements.week_start.focus();
+        }));
+        actions.append(copy);
+      }
       rows.append(row);
     }
     if (!versions.length) {
@@ -1392,17 +1421,34 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
     event.preventDefault();
     run(event.currentTarget, async () => {
       const form = event.currentTarget;
-      const payload = {
+      const values = {
         name: form.elements.name.value,
         academic_year: form.elements.academic_year.value,
         week_start: form.elements.week_start.value,
-        class_ids: [...form.elements.class_ids.selectedOptions].map((option) => Number(option.value)),
       };
-      current = await api("/timetable/versions", "POST", payload);
+      const isCopy = Boolean(form.dataset.copyFromId);
+      if (isCopy) {
+        current = await api(`/timetable/versions/${form.dataset.copyFromId}/copy`, "POST", {
+          ...values,
+          expected_revision: Number(form.dataset.sourceRevision),
+        });
+      } else {
+        current = await api("/timetable/versions", "POST", {
+          ...values,
+          class_ids: [...form.elements.class_ids.selectedOptions].map((option) => Number(option.value)),
+        });
+      }
+      delete form.dataset.copyFromId;
+      delete form.dataset.sourceRevision;
+      form.elements.class_ids.disabled = false;
+      form.elements.class_ids.required = true;
+      $("timetable-create-title").textContent = "Create weekly draft";
+      form.querySelector('button[type="submit"]').textContent = "Create draft";
+      $("timetable-class-help").textContent = "Select one or more active instructional classes with valid scheduling rules and lesson requirements.";
       form.hidden = true;
       await refresh();
       render();
-      notice("Weekly timetable draft created.");
+      notice(isCopy ? "Copied timetable draft created." : "Weekly timetable draft created.");
     });
   });
   placementForm.addEventListener("submit", (event) => {
@@ -1438,8 +1484,28 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
   $("timetable-unpublish").addEventListener("click", () => run($("timetable-unpublish"), unpublish));
   $("new-timetable").addEventListener("click", () => {
     const form = $("timetable-create-form");
+    delete form.dataset.copyFromId;
+    delete form.dataset.sourceRevision;
+    form.reset();
+    form.elements.class_ids.disabled = false;
+    form.elements.class_ids.required = true;
+    $("timetable-create-title").textContent = "Create weekly draft";
+    form.querySelector('button[type="submit"]').textContent = "Create draft";
+    $("timetable-class-help").textContent = "Select one or more active instructional classes with valid scheduling rules and lesson requirements.";
     form.hidden = !form.hidden;
     if (!form.hidden) form.elements.name.focus();
+  });
+  $("timetable-create-cancel").addEventListener("click", () => {
+    const form = $("timetable-create-form");
+    delete form.dataset.copyFromId;
+    delete form.dataset.sourceRevision;
+    form.reset();
+    form.elements.class_ids.disabled = false;
+    form.elements.class_ids.required = true;
+    $("timetable-create-title").textContent = "Create weekly draft";
+    form.querySelector('button[type="submit"]').textContent = "Create draft";
+    $("timetable-class-help").textContent = "Select one or more active instructional classes with valid scheduling rules and lesson requirements.";
+    form.hidden = true;
   });
   $("refresh-timetables").addEventListener("click", () => run($("refresh-timetables"), refresh));
   $("timetable-reload").addEventListener("click", () => run($("timetable-reload"), () => load(current.id)));
