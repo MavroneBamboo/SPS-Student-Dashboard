@@ -392,6 +392,8 @@ Progress (18 November 2026): `app/legacy_pri.py` and `scripts/validate_legacy_pr
 
 Implementation now creates an audited, validated draft with explicit resource mappings and duplicate-import protection. Whole-school `ALL` placements map to existing class fixed events only when academic year, target classes and weekday/period slots exactly match; event IDs are audited by source subject row and included in the draft snapshot. Lunch placeholders, pending rows and ambiguous availability remain import blockers. Exit criteria remain: import a representative legacy project into staging, reconcile requirements and slots against the source, and record business-owner sign-off with no silent data loss.
 
+Lunch review increment (18 November): IT Administrators and Superusers must inspect and confirm every blank-teacher Period 3 source row as a lunch placeholder before import. The API requires an exact unique set of source row indexes, excludes confirmed rows from lesson creation, rejects missing or unexpected confirmations, and audits the row indexes and count without labels. Browser, API and schema tests cover confirmation and rejection paths. Assigned-teacher lunch lessons and whole-school entries remain separate blockers.
+
 Preflight now bounds each source collection to 5,000 rows and includes redacted issue locations by source type and row index. The IT-only inspection view includes placed schedule rows so administrators can match those locations to source data; audit events retain counts and issue codes only.
 
 ### Timetable phase B — Resources and scheduling draft

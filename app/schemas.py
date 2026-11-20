@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from datetime import time as time_value
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -173,6 +173,7 @@ class LegacyPriImportOptions(BaseModel):
     classes: dict[int, int]
     teacher_groups: dict[str, int] = Field(default_factory=dict)
     fixed_events: dict[int, int] = Field(default_factory=dict)
+    confirmed_lunch_placeholder_rows: list[StrictInt] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_import_mapping(self):
@@ -182,6 +183,10 @@ class LegacyPriImportOptions(BaseModel):
         for mapping in (self.teachers, self.subjects, self.classes, self.fixed_events):
             if any(key < 0 or value < 1 for key, value in mapping.items()):
                 raise ValueError("Resource mappings require non-negative source indices and positive target IDs")
+        if any(type(row) is not int or row < 0 for row in self.confirmed_lunch_placeholder_rows):
+            raise ValueError("Lunch placeholder rows require non-negative source indexes")
+        if len(set(self.confirmed_lunch_placeholder_rows)) != len(self.confirmed_lunch_placeholder_rows):
+            raise ValueError("Lunch placeholder rows cannot be repeated")
         if any(not key or len(key) > 320 for key in self.teacher_groups):
             raise ValueError("Composite teacher source labels must contain 1 to 320 characters")
         if any(value < 1 for value in self.teacher_groups.values()):

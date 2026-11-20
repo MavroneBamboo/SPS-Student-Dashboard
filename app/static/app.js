@@ -15,6 +15,7 @@ let referenceData = null;
 let auditRequest = 0;
 let auditOffset = 0;
 let legacyPriInspection = null;
+let legacyPriReport = null;
 
 function notice(message = "") { $("notice").textContent = message; }
 function clearData() {
@@ -26,9 +27,11 @@ function clearData() {
   referenceData?.clear();
   for (const id of ["user-rows", "audit-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
   legacyPriInspection = null;
+  legacyPriReport = null;
   for (const id of [
     "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
     "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups", "legacy-pri-map-events",
+    "legacy-pri-lunch-review-rows",
   ]) $(id).replaceChildren();
   $("legacy-pri-source").hidden = true;
   $("legacy-pri-import-panel").hidden = true;
@@ -319,6 +322,7 @@ async function inspectLegacyPriSource() {
   if (!file) throw new Error("Select the .pri project again before inspecting its source labels.");
   $("legacy-pri-status").textContent = "Inspecting source labels…";
   const data = await requestLegacyPri("inspect", file);
+  legacyPriInspection = data;
   renderLegacyPriInspection(data);
   const [teachers, subjects, classes, fixedEvents] = await Promise.all([
     api("/timetable/teachers"),
@@ -537,6 +541,7 @@ function renderLegacyPriMappings(data, targets) {
     }
   }
   renderLegacyPriEventMappings(data, targets.fixedEvents);
+  renderLegacyLunchPlaceholderReview(data);
   $("legacy-pri-import-panel").hidden = false;
 }
 
@@ -575,6 +580,48 @@ function renderLegacyPriEventMappings(data, fixedEvents) {
       eventContainer.append(label);
     }
   }
+}
+
+function renderLegacyLunchPlaceholderReview(data) {
+  const fieldset = $("legacy-pri-lunch-review");
+  const target = $("legacy-pri-lunch-review-rows");
+  target.replaceChildren();
+  const rows = (legacyPriReport?.issues || [])
+    .filter((issue) => issue.code === "lunch_entry_requires_review" && Number.isInteger(issue.row))
+    .map((issue) => data.placements.find((placement) => placement.source_index === issue.row))
+    .filter((placement) => placement && placement.period === 3 && !String(placement.teacher || "").trim());
+  fieldset.hidden = rows.length === 0;
+  if (!rows.length) return;
+
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const header = document.createElement("tr");
+  for (const label of ["Source row", "Class", "Day", "Subject", "Review disposition"]) {
+    const th = document.createElement("th");
+    th.textContent = label;
+    header.append(th);
+  }
+  head.append(header);
+  const body = document.createElement("tbody");
+  for (const source of rows) {
+    const row = document.createElement("tr");
+    cell(row, source.source_index + 1);
+    cell(row, source.class ?? "");
+    cell(row, source.weekday ?? "");
+    cell(row, source.subject ?? "");
+    const disposition = document.createElement("td");
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.lunchPlaceholderRow = String(source.source_index);
+    checkbox.setAttribute("aria-label", `Confirm source row ${source.source_index + 1} is a lunch placeholder`);
+    label.append(checkbox, document.createTextNode(" Confirm this is a lunch placeholder to exclude from lesson import"));
+    disposition.append(label);
+    row.append(disposition);
+    body.append(row);
+  }
+  table.append(head, body);
+  target.append(table);
 }
 
 function renderLegacyPriSummary(targetId, values) {
@@ -887,9 +934,11 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
     const file = event.currentTarget.elements.project.files[0];
     if (!file) throw new Error("Choose a .pri project file.");
     if (file.size > 10 * 1024 * 1024) throw new Error("Legacy project exceeds the 10 MiB upload limit.");
+    legacyPriInspection = null;
     $("legacy-pri-result").hidden = true;
     $("legacy-pri-status").textContent = "Validating the project…";
     const report = await requestLegacyPri("validate", file);
+    legacyPriReport = report;
     renderLegacyPriSummary("legacy-pri-counts", report.counts);
     renderLegacyPriSummary("legacy-pri-periods", report.period_mapping);
     renderLegacyPriSummary("legacy-pri-availability", report.availability_profiles);
@@ -904,11 +953,14 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
 });
 $("legacy-pri-form").elements.project.addEventListener("change", () => {
   legacyPriInspection = null;
+  legacyPriReport = null;
   $("legacy-pri-result").hidden = true;
   $("legacy-pri-inspect-button").hidden = true;
   $("legacy-pri-source").hidden = true;
   $("legacy-pri-import-panel").hidden = true;
   $("legacy-pri-map-groups").replaceChildren();
+  $("legacy-pri-lunch-review-rows").replaceChildren();
+  $("legacy-pri-lunch-review").hidden = true;
   for (const id of [
     "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
     "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups", "legacy-pri-map-events",
@@ -934,6 +986,19 @@ $("legacy-pri-import-form").addEventListener("submit", (event) => {
       [...document.querySelectorAll("#legacy-pri-map-" + kind + " select[data-source-index]")]
         .map((select) => [select.dataset.sourceIndex, Number(select.value)]),
     );
+    const confirmedLunchRows = [...document.querySelectorAll("#legacy-pri-lunch-review-rows input[data-lunch-placeholder-row]:checked")]
+      .map((checkbox) => Number(checkbox.dataset.lunchPlaceholderRow));
+    const requiredLunchRows = (legacyPriReport?.issues || [])
+      .filter((issue) => issue.code === "lunch_entry_requires_review" && Number.isInteger(issue.row))
+      .map((issue) => issue.row)
+      .filter((sourceIndex) => legacyPriInspection.placements.some((placement) =>
+        placement.source_index === sourceIndex && placement.period === 3 && !String(placement.teacher || "").trim(),
+      ))
+      .sort((left, right) => left - right);
+    if (confirmedLunchRows.length !== requiredLunchRows.length ||
+        confirmedLunchRows.some((sourceIndex) => !requiredLunchRows.includes(sourceIndex))) {
+      throw new Error(`Review and confirm all ${requiredLunchRows.length} blank-teacher lunch placeholder rows before importing.`);
+    }
     const options = {
       name: form.elements.name.value,
       academic_year: form.elements.academic_year.value,
@@ -949,6 +1014,7 @@ $("legacy-pri-import-form").addEventListener("submit", (event) => {
         [...document.querySelectorAll("#legacy-pri-map-events select[data-fixed-event-source-index]")]
           .map((select) => [select.dataset.fixedEventSourceIndex, Number(select.value)]),
       ),
+      confirmed_lunch_placeholder_rows: confirmedLunchRows,
     };
     $("legacy-pri-status").textContent = "Validating mappings and creating a timetable draft…";
     const result = await submitLegacyPriImport(file, options);
