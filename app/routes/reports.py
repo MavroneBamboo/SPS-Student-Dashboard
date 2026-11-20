@@ -70,61 +70,74 @@ def dashboard(
         .where(*profile_filters)
     ).one()
 
-    session_query = select(AttendanceSession)
-    if class_name:
-        session_query = session_query.where(AttendanceSession.class_name == class_name.strip())
-    if date_from:
-        session_query = session_query.where(AttendanceSession.session_date >= date_from)
-    if date_to:
-        session_query = session_query.where(AttendanceSession.session_date <= date_to)
-    sessions = db.scalars(session_query.order_by(AttendanceSession.session_date)).all()
-    session_ids = [session.id for session in sessions]
-    counts: dict[int, dict[str, int]] = {}
-    if session_ids:
-        for session_id, attendance_status, count in db.execute(
-            select(AttendanceRecord.session_id, AttendanceRecord.attendance_status, func.count())
-            .where(AttendanceRecord.session_id.in_(session_ids))
-            .group_by(AttendanceRecord.session_id, AttendanceRecord.attendance_status)
-        ):
-            counts.setdefault(session_id, {})[attendance_status] = int(count)
-    expected = sum(session.expected_count for session in sessions)
-    present = sum(values.get("PRESENT", 0) + values.get("LATE", 0) for values in counts.values())
-    recorded = sum(sum(values.values()) for values in counts.values())
-    missing = sum(
-        max(0, session.expected_count - sum(counts.get(session.id, {}).values())) + counts.get(session.id, {}).get("MISSING", 0)
-        for session in sessions
-    )
-    trend = []
-    for session in sessions:
-        statuses = counts.get(session.id, {})
-        session_present = statuses.get("PRESENT", 0) + statuses.get("LATE", 0)
-        trend.append(
-            {
-                "date": session.session_date.isoformat(),
-                "class": session.class_name,
-                "session": session.session_type,
-                "present_or_late": session_present,
-                "recorded": sum(statuses.values()),
-                "expected": session.expected_count,
-                "rate": round(100 * session_present / session.expected_count, 1) if session.expected_count else 0,
-            }
-        )
-
     def as_utc(value: datetime | None) -> datetime | None:
         if value is None:
             return None
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
+    session_filters = []
+    if class_name:
+        session_filters.append(AttendanceSession.class_name == class_name.strip())
+    if date_from:
+        session_filters.append(AttendanceSession.session_date >= date_from)
+    if date_to:
+        session_filters.append(AttendanceSession.session_date <= date_to)
+    session_rows = db.execute(
+        select(
+            AttendanceSession.session_date.label("session_date"),
+            AttendanceSession.session_type.label("session_type"),
+            AttendanceSession.class_name.label("class_name"),
+            AttendanceSession.expected_count.label("expected_count"),
+            AttendanceSession.updated_at.label("session_updated_at"),
+            func.count(AttendanceRecord.id).label("recorded_count"),
+            func.sum(
+                case(
+                    (AttendanceRecord.attendance_status.in_(("PRESENT", "LATE")), 1),
+                    else_=0,
+                )
+            ).label("present_or_late"),
+            func.sum(case((AttendanceRecord.attendance_status == "MISSING", 1), else_=0)).label("explicit_missing"),
+            func.max(AttendanceRecord.updated_at).label("record_updated_at"),
+        )
+        .select_from(AttendanceSession)
+        .outerjoin(AttendanceRecord, AttendanceRecord.session_id == AttendanceSession.id)
+        .where(*session_filters)
+        .group_by(
+            AttendanceSession.id,
+            AttendanceSession.session_date,
+            AttendanceSession.session_type,
+            AttendanceSession.class_name,
+            AttendanceSession.expected_count,
+            AttendanceSession.updated_at,
+        )
+        .order_by(AttendanceSession.session_date, AttendanceSession.id)
+    ).all()
+    expected = sum(row.expected_count for row in session_rows)
+    present = sum(int(row.present_or_late or 0) for row in session_rows)
+    recorded = sum(row.recorded_count for row in session_rows)
+    missing = sum(max(0, row.expected_count - row.recorded_count) + int(row.explicit_missing or 0) for row in session_rows)
+    trend = []
+    for row in session_rows:
+        session_present = int(row.present_or_late or 0)
+        session_recorded = row.recorded_count
+        trend.append(
+            {
+                "date": row.session_date.isoformat(),
+                "class": row.class_name,
+                "session": row.session_type,
+                "present_or_late": session_present,
+                "recorded": session_recorded,
+                "expected": row.expected_count,
+                "rate": round(100 * session_present / row.expected_count, 1) if row.expected_count else 0,
+            }
+        )
+
     data_profile_filters = active_filters if status == "ACTIVE" else profile_scope_filters
     if status == "INACTIVE":
         data_profile_filters = [*profile_scope_filters, Student.status.in_(("ACTIVE", "INACTIVE"))]
     profile_data_through = as_utc(db.scalar(select(func.max(Student.updated_at)).where(*data_profile_filters)))
-    record_data_through = (
-        as_utc(db.scalar(select(func.max(AttendanceRecord.updated_at)).where(AttendanceRecord.session_id.in_(session_ids))))
-        if session_ids
-        else None
-    )
-    session_data_through = max((as_utc(session.updated_at) for session in sessions if session.updated_at is not None), default=None)
+    record_data_through = max((as_utc(row.record_updated_at) for row in session_rows if row.record_updated_at is not None), default=None)
+    session_data_through = max((as_utc(row.session_updated_at) for row in session_rows if row.session_updated_at is not None), default=None)
     attendance_timestamps = [value for value in (session_data_through, record_data_through) if value is not None]
     attendance_data_through = max(attendance_timestamps, default=None)
     data_timestamps = [value for value in (profile_data_through, attendance_data_through) if value is not None]
@@ -158,7 +171,7 @@ def dashboard(
             },
         },
         "attendance": {
-            "sessions": len(sessions),
+            "sessions": len(session_rows),
             "expected": expected,
             "recorded": recorded,
             "missing": missing,
