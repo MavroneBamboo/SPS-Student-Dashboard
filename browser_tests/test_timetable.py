@@ -67,7 +67,8 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
         return response.json()
 
     teacher = create(
-        "/api/v1/timetable/teachers", {"short_code": f"T{suffix}", "full_name": "Browser Timetable Teacher", "availability": availability}
+        "/api/v1/timetable/teachers",
+        {"short_code": f"T{suffix}", "full_name": "Browser Teacher With A Very Long Full Name", "availability": availability},
     )
     subject = create("/api/v1/timetable/subjects", {"code": f"S{suffix}", "name": "Browser Timetable Subject"})
     class_item = create("/api/v1/timetable/classes", {"code": f"C{suffix}", "name": "Browser Timetable Class"})
@@ -336,9 +337,23 @@ def test_operator_amend_4_up_add_move_lock_and_it_approves_complete_draft(page, 
     teacher_report = teacher_popup_info.value
     teacher_report.wait_for_load_state("load")
     expect(teacher_report.locator(".report-page")).to_have_count(1)
-    expect(teacher_report.locator(".report-title h1")).to_have_text("Teacher Browser Timetable Teacher")
+    expect(teacher_report.locator(".report-title h1")).to_have_text("Teacher Browser Teacher With A Very Long Full Name")
     expect(teacher_report.locator(".report-page")).to_contain_text("Browser Timetable Subject")
     expect(teacher_report.locator(".report-page")).to_contain_text(f"C{suffix}")
+    teacher_report.emulate_media(media="print")
+    header_geometry = teacher_report.evaluate("""() => {
+      const heading = document.querySelector('.report-title h1');
+      const range = document.createRange();
+      range.selectNodeContents(heading);
+      const textRects = [...range.getClientRects()].map(rect => ({left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom}));
+      const brand = document.querySelector('.report-brand').getBoundingClientRect();
+      const header = document.querySelector('.report-header');
+      return {
+        titleOverlapsBrand: textRects.some(rect => rect.left < brand.right && rect.right > brand.left && rect.top < brand.bottom && rect.bottom > brand.top),
+        headerOverflows: header.scrollHeight > header.clientHeight + 1,
+      };
+    }""")
+    assert header_geometry == {"titleOverlapsBrand": False, "headerOverflows": False}, header_geometry
     teacher_pdf = teacher_report.pdf(format="A4", landscape=True, print_background=True, prefer_css_page_size=True)
     teacher_page_boxes = re.findall(rb"/MediaBox\s*\[([^\]]+)\]", teacher_pdf)
     assert len(teacher_page_boxes) == 1
