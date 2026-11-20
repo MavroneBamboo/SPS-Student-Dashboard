@@ -220,7 +220,7 @@ Tests are organised by unit, service/API, integration, end-to-end, security and 
 
 ## 12. Observability and audit
 
-Use structured logs with request/job correlation IDs. Never log passwords, JWTs, database credentials, encryption keys or plaintext sensitive fields. Capture application health, readiness, job failures, authentication failures, import errors and database connectivity without exposing data.
+Nginx replaces client-supplied request IDs with its generated 32-character hexadecimal `$request_id` and passes that value to the API. The API accepts only that format, otherwise generating a new opaque ID. The same ID is returned as `X-Request-ID` and recorded in redacted JSON events by both proxy and API; audit events also persist the request ID in a nullable column and authorized audit readers can retrieve it. Proxy events contain method, status, elapsed time and upstream status; API events add the matched route template and (for unhandled errors) the exception type only. Neither access log includes raw paths, query strings, request/response bodies, headers, exception messages or peer addresses. Uvicorn's unstructured access log is disabled. Never log passwords, JWTs, database credentials, encryption keys or plaintext sensitive fields. Health/readiness, authentication failures and import decisions continue to use their dedicated response or audit controls without exposing protected data. Job-level correlation remains required for future asynchronous jobs.
 
 Audit events include actor, action, entity, entity ID, timestamp, outcome, request ID and safe before/after metadata. Audit history is append-only to normal application users.
 

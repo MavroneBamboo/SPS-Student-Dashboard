@@ -592,6 +592,7 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(String(80), index=True)
     entity_type: Mapped[str] = mapped_column(String(80), index=True)
     entity_id: Mapped[str] = mapped_column(String(120), index=True)
+    request_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     details_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 

@@ -68,6 +68,15 @@ def test_audit_api_is_admin_only_filterable_and_pageable():
         assert [event["action"] for event in filtered.json()] == [actions[1]]
         assert filtered.json()[0]["details"] == {"index": 1}
 
+        # Real route actions persist the same opaque ID returned in the HTTP response.
+        action_response = client.post("/api/v1/auth/logout", headers=admin)
+        assert action_response.status_code == 204
+        correlation_id = action_response.headers["x-request-id"]
+        admin = _headers(client, admin_name, admin_password)
+        session_events = client.get("/api/v1/reports/audit", params={"action": "auth.session.revoked", "actor_id": actor_id}, headers=admin)
+        assert session_events.status_code == 200
+        assert session_events.json()[0]["request_id"] == correlation_id
+
         for username, password in ((operator_name, operator_password), (executive_name, executive_password)):
             assert client.get("/api/v1/reports/audit", headers=_headers(client, username, password)).status_code == 403
         assert client.get("/api/v1/reports/audit?offset=-1", headers=admin).status_code == 422

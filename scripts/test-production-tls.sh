@@ -63,10 +63,13 @@ fi
 http_headers="$temp_dir/http.headers"
 https_headers="$temp_dir/https.headers"
 https_body="$temp_dir/https.body"
+ready_headers="$temp_dir/ready.headers"
+request_sentinel="observability-redaction-$RANDOM-$RANDOM"
 ready=false
 for _ in $(seq 1 120); do
-  if curl --insecure --silent --show-error --output "$temp_dir/ready.json" \
-    "https://localhost:$https_port/health/ready" 2>/dev/null; then
+  if curl --insecure --silent --show-error --header 'X-Request-ID: caller-value' \
+    --dump-header "$ready_headers" --output "$temp_dir/ready.json" \
+    "https://localhost:$https_port/health/ready?access_token=$request_sentinel" 2>/dev/null; then
     ready=true
     break
   fi
@@ -79,6 +82,21 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 grep -q '"revision":"'"$image_tag"'"' "$temp_dir/ready.json"
+request_id="$(awk 'tolower($1) == "x-request-id:" { gsub("\r", "", $2); print $2 }' "$ready_headers")"
+if [[ ! "$request_id" =~ ^[a-f0-9]{32}$ ]] || [[ "$request_id" == caller-value ]]; then
+  echo "API did not return a proxy-generated request ID" >&2
+  exit 1
+fi
+proxy_logs="$("${compose[@]}" --env-file "$temp_dir/production.env" logs --no-color proxy)"
+app_logs="$("${compose[@]}" --env-file "$temp_dir/production.env" logs --no-color app)"
+grep -Fq "\"request_id\":\"$request_id\"" <<<"$proxy_logs"
+grep -Fq '"event":"http.proxy.completed"' <<<"$proxy_logs"
+grep -Fq "\"request_id\":\"$request_id\"" <<<"$app_logs"
+grep -Fq '"event":"http.request.completed"' <<<"$app_logs"
+if grep -Fq "$request_sentinel" <<<"$proxy_logs$app_logs"; then
+  echo "Sensitive query data appeared in access logs" >&2
+  exit 1
+fi
 
 curl --silent --show-error --header 'Host: localhost' --dump-header "$http_headers" \
   --output /dev/null "http://127.0.0.1:$http_port/"

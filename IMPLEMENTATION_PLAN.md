@@ -14,6 +14,8 @@ The initial release should be delivered in phases over approximately 16–20 wee
 
 ### Current delivery checkpoint (18 November 2026)
 
+- Request observability slice (20 November): Nginx replaces caller IDs with a generated request ID, and API responses plus proxy/API JSON access events carry the same validated ID. Events omit paths with parameters, query strings, bodies, headers, exception messages and peer addresses; unhandled errors return a generic response and log only the exception type. Uvicorn access logging is disabled. Background-job correlation remains for when asynchronous jobs are introduced.
+
 - Timetable resource profile lifecycle (18 November): teacher, subject and instructional-class responses carry deterministic SHA-256 revisions. IT Administrators and Superusers can edit profiles with stale-write protection, audited changes and reversible activation. Deactivation is blocked while active lessons, mappings, rules, overrides, groups or fixed events depend on the resource. Teacher availability edits recompute composite-group availability and are rejected if they invalidate active requirements. The resource tables provide Edit, Deactivate and Reactivate actions; no schema migration is required. API and Chromium acceptance coverage is in `tests/test_timetable_resource_lifecycle.py` and `browser_tests/test_timetable.py`.
 
 - First-run setup increment: a persisted API gate now blocks normal operations until the bootstrap Superuser rotates the initial password, creates a named IT Administrator and completes the setup wizard. Administrator creation, setup state and both audit records commit atomically. The migration preserves existing installations already meeting the setup criteria; see FIRST_RUN_SETUP.md.
@@ -163,6 +165,7 @@ Activities:
 - Implement roles and permission matrix.
 - Implement JWT issuance, validation, expiry, refresh rotation and revocation.
 - Add secure headers, HTTPS configuration, rate limiting and request correlation.
+- Delivered (20 November 2026): request-correlated redacted JSON API/proxy logs; request IDs are stored on audit events and exposed to authorized audit readers. Runtime TLS checks verify correlation across proxy/API logs and verify query-string sentinels are absent.
 - Add authentication and authorisation audit events.
 - Complete initial threat model and security test cases.
 

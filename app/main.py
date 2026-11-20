@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import User
+from app.observability import RequestCorrelationMiddleware
 from app.routes import (
     attendance,
     auth,
@@ -49,6 +50,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="SPS Student Dashboard API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(RequestCorrelationMiddleware)
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(setup.router, prefix="/api/v1")
