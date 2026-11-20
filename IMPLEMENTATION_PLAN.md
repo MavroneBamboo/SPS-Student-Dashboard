@@ -452,6 +452,8 @@ Exit criteria: operators can correct a generated draft entirely in Amend 4-up, s
 - Delivered: IT approval and publication controls expose the current approved version to attendance users. Attendance session creation validates the published week/class and stores version provenance; manual sessions remain supported.
 - Remaining: compare both report layouts and content against the latest supplied PDFs; server-generated PDF output remains a follow-up.
 
+PDF review follow-up (18 November 2026): the supplied By Teacher sample includes long names that can collide with the crest or crowd the report header. Print-view title sizing now adapts to long teacher names, with browser coverage asserting the title does not overlap the crest or overflow its header. Full layout/content comparison against both supplied PDFs remains open.
+
 Exit criteria: both report types reconcile with the approved grid and the report renderer does not mutate timetable data.
 
 ### Timetable testing gates

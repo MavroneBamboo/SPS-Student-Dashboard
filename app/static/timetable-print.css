@@ -47,6 +47,8 @@ html, body {
 .report-brand img { width: 15mm; height: 15mm; object-fit: contain; }
 .report-title { grid-column: 2; grid-row: 1; text-align: center; }
 .report-title h1 { font-size: 21pt; line-height: 1.05; margin: 0 0 1mm; font-weight: 500; }
+.report-title-long h1 { font-size: 16pt; }
+.report-title-very-long h1 { font-size: 13pt; overflow-wrap: anywhere; }
 .report-title > span { display: block; font-size: 9pt; }
 .report-title p { font-size: 8pt; line-height: 1.1; margin: 0.7mm 0; color: #222; }
 
