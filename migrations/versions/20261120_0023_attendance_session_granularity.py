@@ -49,11 +49,12 @@ def upgrade() -> None:
             "attendance_sessions",
             "session_type IN ('MORNING', 'AFTERNOON', 'FULL_DAY')",
         )
+    class_scope_expression = "upper(btrim(class_name))" if connection.dialect.name == "postgresql" else "upper(trim(class_name))"
     period_filter = "session_type IN ('MORNING', 'FULL_DAY')"
     op.create_index(
         "uq_attendance_session_morning_scope",
         "attendance_sessions",
-        [sa.text("upper(trim(class_name))"), "session_date"],
+        [sa.text(class_scope_expression), "session_date"],
         unique=True,
         postgresql_where=sa.text(period_filter),
         sqlite_where=sa.text(period_filter),
@@ -62,7 +63,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_attendance_session_afternoon_scope",
         "attendance_sessions",
-        [sa.text("upper(trim(class_name))"), "session_date"],
+        [sa.text(class_scope_expression), "session_date"],
         unique=True,
         postgresql_where=sa.text(period_filter),
         sqlite_where=sa.text(period_filter),

@@ -531,7 +531,7 @@ class AttendanceSession(Base):
     __table_args__ = (
         Index(
             "uq_attendance_session_morning_scope",
-            text("upper(trim(class_name))"),
+            func.upper(_SpaceTrim(text("class_name"))),
             "session_date",
             unique=True,
             postgresql_where=text("session_type IN ('MORNING', 'FULL_DAY')"),
@@ -539,7 +539,7 @@ class AttendanceSession(Base):
         ),
         Index(
             "uq_attendance_session_afternoon_scope",
-            text("upper(trim(class_name))"),
+            func.upper(_SpaceTrim(text("class_name"))),
             "session_date",
             unique=True,
             postgresql_where=text("session_type IN ('AFTERNOON', 'FULL_DAY')"),
