@@ -529,7 +529,23 @@ class StudentImportBatch(Base):
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
     __table_args__ = (
-        Index("uq_session_class_date_type", "class_name", "session_date", "session_type", unique=True),
+        Index(
+            "uq_attendance_session_morning_scope",
+            text("upper(trim(class_name))"),
+            "session_date",
+            unique=True,
+            postgresql_where=text("session_type IN ('MORNING', 'FULL_DAY')"),
+            sqlite_where=text("session_type IN ('MORNING', 'FULL_DAY')"),
+        ),
+        Index(
+            "uq_attendance_session_afternoon_scope",
+            text("upper(trim(class_name))"),
+            "session_date",
+            unique=True,
+            postgresql_where=text("session_type IN ('AFTERNOON', 'FULL_DAY')"),
+            sqlite_where=text("session_type IN ('AFTERNOON', 'FULL_DAY')"),
+        ),
+        CheckConstraint("session_type IN ('MORNING', 'AFTERNOON', 'FULL_DAY')", name="ck_attendance_session_type"),
         CheckConstraint("roster_snapshot_state IN ('CAPTURED', 'LEGACY_PARTIAL')", name="ck_attendance_roster_snapshot_state"),
         CheckConstraint(
             "(timetable_version_id IS NULL AND instructional_class_id IS NULL) OR "

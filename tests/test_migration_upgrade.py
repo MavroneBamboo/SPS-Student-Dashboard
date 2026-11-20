@@ -294,6 +294,61 @@ def test_extended_student_profile_upgrade_preserves_existing_encrypted_profile(t
         database.dispose()
 
 
+def test_attendance_granularity_upgrade_refuses_overlapping_rows_without_deleting_them(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'attendance-granularity-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+    migrate_to_previous = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "20261118_0022"],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert migrate_to_previous.returncode == 0, migrate_to_previous.stdout + migrate_to_previous.stderr
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        sessions = metadata.tables["attendance_sessions"]
+        with database.begin() as connection:
+            connection.execute(
+                sessions.insert(),
+                [
+                    {
+                        "session_date": date(2026, 11, 18),
+                        "session_type": session_type,
+                        "class_name": "Overlap Class",
+                        "expected_count": 2,
+                        "status": "OPEN",
+                        "version": 1,
+                        "roster_snapshot_state": "LEGACY_PARTIAL",
+                        "created_by": 1,
+                    }
+                    for session_type in ("MORNING", "FULL_DAY")
+                ],
+            )
+            original_rows = list(connection.execute(select(sessions)))
+
+        upgraded = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert upgraded.returncode != 0
+        assert "invalid or overlapping attendance sessions" in upgraded.stderr
+        with database.connect() as connection:
+            assert list(connection.execute(select(sessions))) == original_rows
+            version = connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one()
+            assert version == "20261118_0022"
+    finally:
+        database.dispose()
+
+
 def test_student_import_upgrade_adds_encrypted_staging_without_touching_profiles(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'student-import-upgrade.db').as_posix()}"
     environment = _migration_environment(database_url)

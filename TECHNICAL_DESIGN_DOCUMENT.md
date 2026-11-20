@@ -236,7 +236,7 @@ Production deployment requires a tagged, tested container artifact, approved con
 
 - Confirm the approved application framework and relational database.
 - Confirm Active Directory availability and the final JWT/browser session pattern.
-- Define the exact attendance granularity and retention rules.
+- Attendance granularity permits one MORNING and one AFTERNOON session per class/date, or one FULL_DAY session exclusively. Database partial unique indexes enforce this under concurrent writes; conflicting legacy rows stop the migration for explicit reconciliation.
 - Agree field-level encryption classification and key custody process.
 - Define performance targets, recovery time objective and recovery point objective.
 - Resolve legacy workbook naming and formula-range issues during migration.
