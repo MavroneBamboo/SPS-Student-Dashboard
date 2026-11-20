@@ -513,6 +513,110 @@ def test_legacy_project_maps_whole_school_placements_to_exact_fixed_events(lesso
         assert "Assembly" not in audit.details_json
 
 
+def test_legacy_project_maps_many_whole_school_class_rows_to_one_fixed_event(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    event_subject = client.post(
+        "/api/v1/timetable/subjects",
+        json={"code": "ASM-MULTI", "name": "Multi-class Assembly"},
+        headers=headers["admin"],
+    )
+    assert event_subject.status_code == 201, event_subject.text
+
+    class_names = ["C1"]
+    target_ids = [resources["instructional_class_id"]]
+    source_class_mappings = {0: resources["instructional_class_id"]}
+    for source_index in range(1, 24):
+        class_name = f"C{source_index + 1}"
+        created_class = client.post(
+            "/api/v1/timetable/classes",
+            json={"code": f"ASM{source_index:02d}", "name": f"Assembly Class {source_index:02d}"},
+            headers=headers["admin"],
+        )
+        assert created_class.status_code == 201, created_class.text
+        class_id = created_class.json()["id"]
+        class_names.append(class_name)
+        target_ids.append(class_id)
+        source_class_mappings[source_index] = class_id
+
+    for class_id in target_ids:
+        rule = client.post(
+            "/api/v1/timetable/rules",
+            json={
+                "academic_year": "2026",
+                "target_type": "CLASS",
+                "target_id": class_id,
+                "effective_from": "2026-01-01",
+                "effective_to": "2026-12-31",
+                "rule": {},
+            },
+            headers=headers["admin"],
+        )
+        assert rule.status_code == 201, rule.text
+
+    fixed_event = client.post(
+        "/api/v1/timetable/fixed-events",
+        json={
+            "academic_year": "2026",
+            "label": "Multi-class Assembly",
+            "audience_type": "CLASS",
+            "target_mode": "SELECTED",
+            "target_ids": target_ids,
+            "slots": [{"weekday": "WED", "slot_code": "P1"}],
+        },
+        headers=headers["admin"],
+    )
+    assert fixed_event.status_code == 201, fixed_event.text
+
+    values = sample_data()
+    values["R02.bin"].append({"Id": 1, "Name": "Multi-class Assembly"})
+    values["R03.bin"].extend({"Id": index, "Name": name} for index, name in enumerate(class_names[1:], start=1))
+    values["R05.bin"].extend(
+        {
+            "Id": 2 + index,
+            "Teacher": "ALL",
+            "Subject": "Multi-class Assembly",
+            "InstClass": class_name,
+            "DayOfWeek": "Wed",
+            "Period": 1,
+        }
+        for index, class_name in enumerate(class_names)
+    )
+    archive = encrypted_archive(values)
+    preflight = client.post(
+        "/api/v1/timetable/legacy-projects/validate",
+        content=archive,
+        headers={**headers["admin"], "Content-Type": "application/octet-stream"},
+    )
+    assert preflight.status_code == 200, preflight.text
+    assert preflight.json()["issue_counts"]["whole_school_event_mapping_required"] == 24
+
+    options = {
+        "name": "Legacy week with multi-class assembly",
+        "academic_year": "2026",
+        "week_start": "2026-11-16",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"], "1": event_subject.json()["id"]},
+        "classes": {str(index): class_id for index, class_id in source_class_mappings.items()},
+        "fixed_events": {"1": fixed_event.json()["id"]},
+    }
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers={**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"},
+    )
+    assert imported.status_code == 201, imported.text
+    assert imported.json()["placement_count"] == 2
+    version = client.get(
+        f"/api/v1/timetable/versions/{imported.json()['version_id']}",
+        headers=headers["superuser"],
+    )
+    assert version.status_code == 200
+    imported_event = next(event for event in version.json()["snapshot"]["fixed_events"] if event["id"] == fixed_event.json()["id"])
+    assert imported_event["target_mode"] == "SELECTED"
+    assert imported_event["target_ids"] == sorted(target_ids)
+    assert imported_event["slots"] == [{"weekday": "WED", "slot_code": "P1"}]
+
+
 def test_legacy_project_import_requires_explicit_mapping_and_it_role(lesson_context, configured_legacy_key):
     client, headers, resources = lesson_context
     archive = encrypted_archive()
