@@ -26,6 +26,7 @@ from app.schemas import (
     AttendanceSessionClose,
     AttendanceSessionCount,
     AttendanceSessionCreate,
+    AttendanceSessionReopen,
     AttendanceSessionResponse,
 )
 
@@ -403,6 +404,38 @@ def close_session(session_id: int, payload: AttendanceSessionClose, db: DbSessio
         },
     )
     db.flush()
+    result = session_response(row)
+    db.commit()
+    return result
+
+
+@router.post("/sessions/{session_id}/reopen", response_model=AttendanceSessionResponse)
+def reopen_session(session_id: int, payload: AttendanceSessionReopen, db: DbSession, claims: Claims) -> AttendanceSessionResponse:
+    row = _session(db, session_id)
+    if row.status != "CLOSED":
+        raise HTTPException(status_code=409, detail="Only a closed attendance session can be reopened")
+    if row.version != payload.expected_version:
+        raise HTTPException(status_code=409, detail="Attendance changed; reload the session before reopening")
+    changed = db.execute(
+        update(AttendanceSession)
+        .where(
+            AttendanceSession.id == session_id, AttendanceSession.version == payload.expected_version, AttendanceSession.status == "CLOSED"
+        )
+        .values(version=payload.expected_version + 1, status="OPEN")
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Attendance changed; reload the session before reopening")
+    db.refresh(row)
+    record_event(
+        db,
+        int(claims["sub"]),
+        "attendance.session.reopened",
+        "attendance_session",
+        str(row.id),
+        {"previous_version": payload.expected_version, "version": row.version, "reason": payload.reason},
+    )
     result = session_response(row)
     db.commit()
     return result

@@ -94,6 +94,46 @@ def test_attendance_full_lifecycle_missing_review_correction_and_close(attendanc
         assert detail["before"]["attendance_status"] == "MISSING" and detail["after"]["attendance_status"] == "ABSENT"
 
 
+def test_closed_attendance_can_be_reopened_for_audited_correction(attendance_context):
+    ctx = attendance_context
+    client, headers, _, students = ctx
+    session = _session(ctx)
+    closed = client.post(
+        f"{BASE}/sessions/{session['id']}/close",
+        json={"expected_version": 1, "allow_incomplete": True, "reason": "Close pending supervisor review"},
+        headers=headers["operator"],
+    )
+    assert closed.status_code == 200 and closed.json()["status"] == "CLOSED"
+    reopened = client.post(
+        f"{BASE}/sessions/{session['id']}/reopen",
+        json={"expected_version": closed.json()["version"], "reason": "Supervisor verified the signed attendance register"},
+        headers=headers["operator"],
+    )
+    assert reopened.status_code == 200 and reopened.json()["status"] == "OPEN"
+    assert reopened.json()["version"] == closed.json()["version"] + 1
+    assert (
+        client.post(
+            f"{BASE}/sessions/{session['id']}/reopen",
+            json={"expected_version": closed.json()["version"], "reason": "Stale reopen attempt"},
+            headers=headers["operator"],
+        ).status_code
+        == 409
+    )
+    record = client.post(
+        f"{BASE}/sessions/{session['id']}/records",
+        json={"pris_no": students[0]["pris_no"], "attendance_status": "PRESENT", "expected_session_version": reopened.json()["version"]},
+        headers=headers["operator"],
+    )
+    assert record.status_code == 201
+    with SessionLocal() as db:
+        event = db.scalars(
+            select(AuditEvent).where(AuditEvent.action == "attendance.session.reopened", AuditEvent.entity_id == str(session["id"]))
+        ).one()
+        details = json.loads(event.details_json)
+        assert details["reason"] == "Supervisor verified the signed attendance register"
+        assert details["version"] == reopened.json()["version"]
+
+
 def test_session_roster_snapshot_survives_student_transfer_and_rejects_later_enrollment(attendance_context):
     ctx = attendance_context
     client, headers, payload, students = ctx

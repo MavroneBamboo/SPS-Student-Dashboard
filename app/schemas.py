@@ -776,6 +776,12 @@ class AttendanceSessionClose(BaseModel):
         return self
 
 
+class AttendanceSessionReopen(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class AttendanceSessionCount(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     expected_version: int = Field(ge=1)

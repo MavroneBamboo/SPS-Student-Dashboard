@@ -11,6 +11,7 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
   const recordForm = $("attendance-record-form");
   const countForm = $("attendance-count-form");
   const closeForm = $("attendance-close-form");
+  const reopenForm = $("attendance-reopen-form");
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
   function resetRecord() {
     correction = null;
@@ -29,6 +30,7 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     for (const id of ["attendance-session-rows", "attendance-record-rows", "eligible-student-rows"]) $(id).replaceChildren();
     for (const id of ["attendance-summary", "attendance-notes", "eligible-summary", "attendance-page"]) $(id).textContent = "";
     $("attendance-editor").hidden = true;
+    $("attendance-reopen-panel").hidden = true;
     $("new-session-panel").hidden = true;
     createForm.elements.class_name.replaceChildren();
     $("scheduled-class-select").replaceChildren(new Option("Select a published class", ""));
@@ -90,6 +92,7 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     $("attendance-summary").textContent = `${data.session.status} · version ${data.session.version} · roster ${data.roster_count}${data.roster_snapshot_complete ? " captured" : " legacy partial"} · ${data.records.length}/${data.session.expected_count} recorded · ${data.missing} not entered · ${data.marked_missing} marked missing`;
     $("attendance-notes").textContent = data.session.notes ? `Notes: ${data.session.notes}` : "";
     $("attendance-write-panel").hidden = data.session.status !== "OPEN";
+    $("attendance-reopen-panel").hidden = data.session.status !== "CLOSED";
     countForm.elements.expected_count.value = data.session.expected_count;
     $("attendance-record-rows").replaceChildren(); $("eligible-student-rows").replaceChildren(); $("eligible-summary").textContent = "";
     for (const record of data.records) {
@@ -208,6 +211,12 @@ export function createAttendanceWorkspace({$, api, run, notice, cell, showPanel}
     await api(`/attendance/sessions/${id}/close`, "POST", payload);
     if (sequence !== detailSequence) return;
     await load(id); await list(); notice("Attendance session closed.");
+  }); });
+  reopenForm.addEventListener("submit", event => { event.preventDefault(); run(reopenForm, async () => {
+    const sequence = detailSequence; const id = current.session.id;
+    await api(`/attendance/sessions/${id}/reopen`, "POST", {expected_version: current.session.version, reason: reopenForm.elements.reason.value});
+    if (sequence !== detailSequence) return;
+    await load(id); await list(); notice("Attendance session reopened.");
   }); });
   $("attendance-search").addEventListener("submit", event => { event.preventDefault(); offset = 0; run(event.currentTarget, list); });
   async function movePage(button, direction) { await run(button, async () => { const previous = offset; offset = Math.max(0, offset+direction*25); try { await list(); } catch (error) { offset = previous; throw error; } }); pager(); }

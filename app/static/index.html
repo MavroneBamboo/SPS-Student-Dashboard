@@ -220,6 +220,7 @@
             <h3>Close session</h3><p>Closed sessions cannot be edited. Incomplete attendance requires an explicit decision and reason.</p>
             <form id="attendance-close-form" class="filters"><label><input name="allow_incomplete" type="checkbox">Close incomplete attendance</label><label>Closure reason<input name="reason" maxlength="1000"></label><button type="submit">Close session</button></form>
           </section>
+          <section id="attendance-reopen-panel" hidden><h3>Reopen session</h3><p>Reopening allows audited corrections after closure.</p><form id="attendance-reopen-form" class="filters"><label>Reopen reason<input name="reason" maxlength="1000" required></label><button type="submit">Reopen session</button></form></section>
         </section>
       </section>
       <section id="users-panel" hidden aria-labelledby="users-title">
