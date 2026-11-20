@@ -721,6 +721,90 @@ def test_legacy_project_import_requires_explicit_lunch_placeholder_review(lesson
         assert "S1" not in audit.details_json
 
 
+def test_legacy_project_import_requires_review_of_all_95_lunch_placeholders(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+
+    values = sample_data()
+    lunch_rows = list(range(2, 97))
+    values["R05.bin"].extend(
+        {
+            "Id": row_index,
+            "Teacher": "",
+            "Subject": "S1",
+            "InstClass": "C1",
+            "DayOfWeek": "Wed",
+            "Period": 3,
+        }
+        for row_index in lunch_rows
+    )
+    archive = encrypted_archive(values)
+    headers_for_import = {**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"}
+    preflight = client.post(
+        "/api/v1/timetable/legacy-projects/validate",
+        content=archive,
+        headers={**headers["admin"], "Content-Type": "application/octet-stream"},
+    )
+    assert preflight.status_code == 200, preflight.text
+    assert preflight.json()["issue_counts"]["lunch_entry_requires_review"] == 95
+
+    options = {
+        "name": "Reviewed 95-row lunch week",
+        "academic_year": "2026",
+        "week_start": "2026-11-09",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    unreviewed = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=headers_for_import,
+    )
+    assert unreviewed.status_code == 422
+    assert unreviewed.json()["detail"]["missing_rows"] == lunch_rows
+
+    options["confirmed_lunch_placeholder_rows"] = lunch_rows
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=headers_for_import,
+    )
+    assert imported.status_code == 201, imported.text
+    result = imported.json()
+    assert result["placement_count"] == 2
+    assert result["confirmed_lunch_placeholder_count"] == 95
+    version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
+    assert version.status_code == 200
+    assert len(version.json()["placements"]) == 2
+    assert all(slot["slot_code"] != "LUNCH" for placement in version.json()["placements"] for slot in placement["slots"])
+    with SessionLocal() as db:
+        audit = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "timetable.legacy_project.imported",
+                AuditEvent.entity_id == str(result["version_id"]),
+            )
+        )
+        assert audit is not None
+        details = json.loads(audit.details_json)
+        assert details["confirmed_lunch_placeholder_rows"] == lunch_rows
+        assert details["confirmed_lunch_placeholder_count"] == 95
+        assert "C1" not in audit.details_json
+        assert "S1" not in audit.details_json
+
+
 def test_legacy_project_import_requires_explicit_mapping_and_it_role(lesson_context, configured_legacy_key):
     client, headers, resources = lesson_context
     archive = encrypted_archive()
