@@ -107,6 +107,53 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
         database.dispose()
 
 
+def test_audit_request_correlation_migration_preserves_existing_events(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'audit-correlation-upgrade.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    migrate("20261118_0022")
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        audit_events = metadata.tables["audit_events"]
+        existing_event = {
+            "id": 8042,
+            "actor_id": 7,
+            "action": "migration.audit.preserved",
+            "entity_type": "migration_test",
+            "entity_id": "correlation-upgrade",
+            "details_json": '{"preserve":true}',
+        }
+        with database.begin() as connection:
+            connection.execute(audit_events.insert().values(**existing_event))
+
+        migrate("20261120_0023")
+        with database.connect() as connection:
+            upgraded = MetaData()
+            upgraded.reflect(bind=connection)
+            table = upgraded.tables["audit_events"]
+            row = connection.execute(select(table).where(table.c.id == existing_event["id"])).mappings().one()
+            for key, value in existing_event.items():
+                assert row[key] == value
+            assert row["request_id"] is None
+            assert "ix_audit_events_request_id" in {index["name"] for index in inspect(connection).get_indexes("audit_events")}
+    finally:
+        database.dispose()
+
+
 @pytest.mark.parametrize("has_completed_setup", [False, True])
 def test_setup_completion_migration_marks_new_or_already_configured_installation(tmp_path, has_completed_setup):
     database_url = f"sqlite:///{(tmp_path / f'setup-{has_completed_setup}.db').as_posix()}"
