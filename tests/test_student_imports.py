@@ -917,7 +917,7 @@ def test_import_transaction_failure_rolls_back_profiles_history_and_batch_status
         raise RuntimeError("Injected audit failure")
 
     monkeypatch.setattr(student_imports, "record_event", fail)
-    with pytest.raises(RuntimeError, match="Injected audit failure"):
+    with pytest.raises(RuntimeError, match="Internal Server Error"):
         client.post(f"{BASE}/{preview['id']}/commit", json={"mode": "CREATE_ONLY"}, headers=headers["operator"])
     assert client.get("/api/v1/students?q=IMPORT-ROLLBACK-1", headers=headers["operator"]).json() == []
     with SessionLocal() as db:

@@ -2,6 +2,7 @@ import json
 import logging
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -50,4 +51,16 @@ def test_unhandled_errors_return_generic_response_and_log_no_exception_message(m
     assert event["route"] == "/health/ready"
     assert event["status_code"] == 500
     assert event["error_type"] == "RuntimeError"
+    assert "private database detail" not in caplog.text
+
+
+def test_unhandled_errors_propagate_only_a_sanitized_exception(monkeypatch, caplog):
+    def fail_database_check():
+        raise RuntimeError("private database detail")
+
+    monkeypatch.setattr(health, "check_database", fail_database_check)
+    with TestClient(app) as client, caplog.at_level(logging.ERROR, logger="sps.access"):
+        with pytest.raises(RuntimeError, match="Internal Server Error"):
+            client.get("/health/ready")
+
     assert "private database detail" not in caplog.text

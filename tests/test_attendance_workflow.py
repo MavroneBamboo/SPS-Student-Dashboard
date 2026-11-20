@@ -282,7 +282,7 @@ def test_attendance_audit_failure_rolls_back_session_record_and_revision(attenda
         raise RuntimeError("Injected attendance audit failure")
 
     monkeypatch.setattr(attendance, "record_event", fail)
-    with pytest.raises(RuntimeError, match="Injected attendance audit failure"):
+    with pytest.raises(RuntimeError, match="Internal Server Error"):
         _record(ctx, session)
     grid = client.get(f"{BASE}/sessions/{session['id']}", headers=headers["operator"]).json()
     assert grid["session"]["version"] == 1 and grid["records"] == []

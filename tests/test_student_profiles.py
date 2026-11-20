@@ -286,7 +286,7 @@ def test_profile_transaction_failure_rolls_back_record_history_and_audit(lesson_
 
     monkeypatch.setattr(students, "record_event", fail)
     path = f"{BASE}/{profile['id']}"
-    with pytest.raises(RuntimeError, match="Injected audit failure"):
+    with pytest.raises(RuntimeError, match="Internal Server Error"):
         client.patch(path, json={"expected_version": 1, "name": "Must roll back", "status": "INACTIVE"}, headers=headers["operator"])
     assert client.get(path, headers=headers["operator"]).json() == profile
     with SessionLocal() as db:

@@ -82,6 +82,10 @@ class RequestCorrelationMiddleware:
                     }
                 )
                 await send({"type": "http.response.body", "body": body})
+            # Propagate only a generic failure so rollback semantics and
+            # TestClient's default exception handling remain intact without
+            # leaking the original exception message to the server log.
+            raise RuntimeError("Internal Server Error") from None
         finally:
             route = scope.get("route")
             event = {
