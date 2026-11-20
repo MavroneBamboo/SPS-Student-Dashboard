@@ -82,7 +82,7 @@ jobs:
         run: pytest --cov=app --cov-report=term-missing --cov-report=xml
 
       - name: Cache Playwright browser binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
