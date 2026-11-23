@@ -1,3 +1,4 @@
+import re
 from uuid import uuid4
 
 from playwright.sync_api import expect
@@ -35,6 +36,8 @@ def test_it_administrator_can_filter_and_review_read_only_audit_events(page, mak
     expect(event_row).to_have_count(1)
     expect(event_row).to_contain_text(admin["username"])
     expect(event_row).to_contain_text("user.created")
+    request_id = event_row.locator("td.audit-request-id")
+    expect(request_id).to_have_text(re.compile(r"^[0-9a-f]{32}$"))
     event_row.get_by_text("View details", exact=True).click()
     expect(event_row.locator("pre.audit-details")).to_contain_text(new_username)
     expect(event_row.locator("pre.audit-details")).not_to_contain_text("audit-target-temporary-password")

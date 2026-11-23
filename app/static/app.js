@@ -857,6 +857,8 @@ async function showAudit() {
     cell(row, event.actor_username ? `${event.actor_username} (#${event.actor_id})` : `Account #${event.actor_id}`);
     cell(row, event.action);
     cell(row, `${event.entity_type} · ${event.entity_id}`);
+    const requestIdCell = cell(row, event.request_id || "—");
+    if (event.request_id) requestIdCell.className = "audit-request-id";
     const details = document.createElement("details");
     const summary = document.createElement("summary");
     summary.textContent = "View details";

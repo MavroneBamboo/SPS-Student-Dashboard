@@ -107,6 +107,54 @@ def test_resource_revision_upgrade_preserves_existing_profiles_and_students(tmp_
         database.dispose()
 
 
+def test_request_correlation_migration_preserves_existing_audit_rows(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'request-correlation.db').as_posix()}"
+    environment = _migration_environment(database_url)
+    root = Path(__file__).resolve().parents[1]
+
+    def migrate(revision):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", revision],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    migrate("20261120_0023")
+    database = create_engine(database_url)
+    try:
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        with database.begin() as connection:
+            connection.execute(
+                metadata.tables["audit_events"]
+                .insert()
+                .values(
+                    actor_id=1,
+                    action="audit.before-correlation",
+                    entity_type="test",
+                    entity_id="preserved-event",
+                    details_json='{"preserve":true}',
+                )
+            )
+
+        migrate("20261123_0024")
+        metadata = MetaData()
+        metadata.reflect(bind=database)
+        audit_events = metadata.tables["audit_events"]
+        assert "request_id" in audit_events.c
+        with database.connect() as connection:
+            row = connection.execute(sa.select(audit_events).where(audit_events.c.entity_id == "preserved-event")).one()
+        assert row.action == "audit.before-correlation"
+        assert row.details_json == '{"preserve":true}'
+        assert row.request_id is None
+    finally:
+        database.dispose()
+
+
 @pytest.mark.parametrize("has_completed_setup", [False, True])
 def test_setup_completion_migration_marks_new_or_already_configured_installation(tmp_path, has_completed_setup):
     database_url = f"sqlite:///{(tmp_path / f'setup-{has_completed_setup}.db').as_posix()}"
