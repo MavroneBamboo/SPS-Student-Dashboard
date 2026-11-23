@@ -105,7 +105,7 @@ def test_duplicate_session_and_stale_attendance_require_reload(page, make_accoun
     page.get_by_label("Session class", exact=True).select_option(class_name)
     page.get_by_label("Session date", exact=True).fill("2026-10-26")
     page.get_by_role("button", name="Create session", exact=True).click()
-    expect(page.get_by_role("status")).to_contain_text("A session already exists")
+    expect(page.get_by_role("status")).to_contain_text("An attendance session already exists for an overlapping class, date and period")
 
 
 def test_operator_can_create_attendance_from_published_timetable(page, make_account, live_url):

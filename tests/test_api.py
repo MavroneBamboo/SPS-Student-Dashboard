@@ -386,6 +386,42 @@ def test_dashboard_profile_filters_are_independent_from_attendance_scope():
         assert client.get("/api/v1/reports/dashboard?status=ARCHIVED", headers=headers).status_code == 422
 
 
+def test_attendance_sessions_allow_am_pm_but_reject_full_day_overlap():
+    with TestClient(app) as client:
+        headers = login_headers(client)
+        half_day_class = f"SESSION-GRANULARITY-{uuid4().hex[:8]}"
+        full_day_class = f"SESSION-FULL-DAY-{uuid4().hex[:8]}"
+        for index, class_name in enumerate((half_day_class, full_day_class)):
+            created = client.post(
+                "/api/v1/students",
+                json={
+                    "pris_no": f"PS-GRANULARITY-{uuid4().hex[:8]}",
+                    "name": f"Granularity Student {index}",
+                    "class_name": class_name,
+                    "category": "OP",
+                    "status": "ACTIVE",
+                },
+                headers=headers,
+            )
+            assert created.status_code == 201, created.text
+
+        def create_session(class_name, session_type, session_date):
+            return client.post(
+                "/api/v1/attendance/sessions",
+                json={"session_date": session_date, "session_type": session_type, "class_name": class_name, "expected_count": 1},
+                headers=headers,
+            )
+
+        assert create_session(half_day_class, "MORNING", "2026-11-18").status_code == 201
+        assert create_session(half_day_class, "AFTERNOON", "2026-11-18").status_code == 201
+        assert create_session(half_day_class.lower(), "MORNING", "2026-11-18").status_code == 409
+        assert create_session(half_day_class, "FULL_DAY", "2026-11-18").status_code == 409
+
+        assert create_session(full_day_class, "FULL_DAY", "2026-11-19").status_code == 201
+        assert create_session(full_day_class, "MORNING", "2026-11-19").status_code == 409
+        assert create_session(full_day_class, "AFTERNOON", "2026-11-19").status_code == 409
+
+
 def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
     with TestClient(app) as client:
         headers = operator_headers(client)

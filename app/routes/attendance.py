@@ -125,8 +125,28 @@ def _roster(db: DbSession, session: AttendanceSession) -> list[AttendanceRosterE
     ]
 
 
+def _lock_and_validate_session_period(db: DbSession, payload: AttendanceSessionCreate) -> None:
+    normalized_class = payload.class_name.strip().upper()
+    if db.bind.dialect.name == "postgresql":
+        lock_key = f"attendance-session:{normalized_class}:{payload.session_date.isoformat()}"
+        db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
+    existing = db.scalars(
+        select(AttendanceSession)
+        .where(
+            func.upper(func.trim(AttendanceSession.class_name)) == normalized_class,
+            AttendanceSession.session_date == payload.session_date,
+        )
+        .with_for_update()
+    ).all()
+    if any(
+        row.session_type == payload.session_type or row.session_type == "FULL_DAY" or payload.session_type == "FULL_DAY" for row in existing
+    ):
+        raise HTTPException(status_code=409, detail="An attendance session already exists for an overlapping class, date and period")
+
+
 @router.post("/sessions", response_model=AttendanceSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Claims) -> AttendanceSessionResponse:
+    _lock_and_validate_session_period(db, payload)
     provenance = (payload.timetable_version_id, payload.instructional_class_id)
     mapped_class_key = None
     if (provenance[0] is None) != (provenance[1] is None):
@@ -232,7 +252,9 @@ def create_session(payload: AttendanceSessionCreate, db: DbSession, claims: Clai
         return result
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="A session already exists for this class, date and session type") from exc
+        raise HTTPException(
+            status_code=409, detail="An attendance session already exists for an overlapping class, date and period"
+        ) from exc
 
 
 @router.get("/scheduled-classes")
