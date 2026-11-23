@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 from uuid import uuid4
 
@@ -285,8 +286,18 @@ def test_dashboard_export_and_audit_are_committed_data_views():
         audit = client.get("/api/v1/reports/audit", headers=admin_headers)
         assert audit.status_code == 200
         actions = {event["action"] for event in audit.json()}
-        assert {"student.created", "attendance.session.created", "attendance.record.created"} <= actions
+        assert {"student.created", "attendance.session.created", "attendance.record.created", "report.attendance.exported"} <= actions
         assert all("pris_no" not in event["details"] for event in audit.json())
+        attendance_export = next(
+            event for event in audit.json() if event["action"] == "report.attendance.exported" and event["entity_id"] == "csv"
+        )
+        assert attendance_export["details"] == {
+            "format": "csv",
+            "filters": {"class_name": "REPORT CLASS", "date_from": None, "date_to": None},
+            "record_count": 1,
+        }
+        assert "PS-REPORT-001" not in json.dumps(attendance_export["details"])
+        assert "Report Student" not in json.dumps(attendance_export["details"])
 
 
 def test_dashboard_profile_filters_are_independent_from_attendance_scope():
@@ -491,6 +502,23 @@ def test_monthly_attendance_xlsx_matches_am_pm_register_layout():
         assert export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         bootstrap_headers = login_headers(client)
+        audit = client.get(
+            "/api/v1/reports/audit",
+            params={"action": "report.attendance.exported", "entity_type": "ATTENDANCE_REPORT"},
+            headers=bootstrap_headers,
+        )
+        assert audit.status_code == 200
+        monthly_export = next(event for event in audit.json() if event["entity_id"] == "monthly.xlsx")
+        assert monthly_export["details"] == {
+            "format": "monthly.xlsx",
+            "filters": {"month": "2026-10", "class_name": class_name},
+            "session_count": 2,
+            "roster_count": 1,
+            "record_count": 2,
+            "roster_source": "session_snapshots",
+        }
+        assert pris_no not in json.dumps(monthly_export["details"])
+        assert "Monthly Report Student" not in json.dumps(monthly_export["details"])
         assert (
             client.get(f"/api/v1/reports/attendance/monthly.xlsx?month=2026-13&class_name={class_name}", headers=headers).status_code == 422
         )
