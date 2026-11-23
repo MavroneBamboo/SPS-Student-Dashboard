@@ -62,6 +62,13 @@ def test_bootstrap_setup_rotates_password_and_creates_named_it_administrator(pag
 
 def test_first_login_rotation_account_creation_role_change_disable_and_reload(page, make_account, live_url):
     expect(page.locator('link[rel="icon"]')).to_have_attribute("href", "/ui/sps-dashboard-logo.svg")
+    page.goto(live_url + "/ui/")
+    password = page.get_by_label("Password", exact=True)
+    expect(password).to_have_attribute("type", "password")
+    page.get_by_role("button", name="Show password", exact=True).click()
+    expect(password).to_have_attribute("type", "text")
+    page.get_by_role("button", name="Hide password", exact=True).click()
+    expect(password).to_have_attribute("type", "password")
     logo = page.locator(".brand-logo")
     expect(logo).to_be_visible()
     assert page.evaluate("document.querySelector('.brand-logo').naturalWidth") == 128

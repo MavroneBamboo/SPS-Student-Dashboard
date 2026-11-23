@@ -126,6 +126,8 @@ input, select, textarea {
 }
 input, select { min-height: 43px; padding: 9px 12px; }
 textarea { min-height: 96px; padding: 10px 12px; resize: vertical; }
+.password-control { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.password-control .password-toggle { min-width: 68px; min-height: 43px; padding: 8px 11px; }
 input::placeholder { color: #9aa8ba; }
 input:hover, select:hover, textarea:hover { border-color: #aebed1; }
 input:focus, select:focus, textarea:focus { border-color: #5b91e8; box-shadow: 0 0 0 3px rgb(64 124 221 / 14%); }

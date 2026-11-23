@@ -18,6 +18,18 @@ let legacyPriInspection = null;
 let legacyPriReport = null;
 
 function notice(message = "") { $("notice").textContent = message; }
+for (const button of document.querySelectorAll("button[data-password-toggle]")) button.setAttribute("aria-label", "Show password");
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-password-toggle]");
+  if (!button) return;
+  const input = button.closest(".password-control")?.querySelector("input");
+  if (!input) return;
+  const visible = input.type === "password";
+  input.type = visible ? "text" : "password";
+  button.textContent = visible ? "Hide" : "Show";
+  button.setAttribute("aria-label", `${visible ? "Hide" : "Show"} password`);
+  button.setAttribute("aria-pressed", String(visible));
+});
 function clearData() {
   auditRequest += 1;
   auditOffset = 0;
@@ -25,6 +37,12 @@ function clearData() {
   timetable.clear();
   students.clear();
   referenceData?.clear();
+  for (const input of document.querySelectorAll(".password-control input")) input.type = "password";
+  for (const button of document.querySelectorAll("button[data-password-toggle]")) {
+    button.textContent = "Show";
+    button.setAttribute("aria-label", "Show password");
+    button.setAttribute("aria-pressed", "false");
+  }
   for (const id of ["user-rows", "audit-rows", "session-rows", "metrics", "class-counts", "category-counts", "institution-counts", "age-counts", "attendance-trend"]) $(id).replaceChildren();
   legacyPriInspection = null;
   legacyPriReport = null;
@@ -35,6 +53,8 @@ function clearData() {
   ]) $(id).replaceChildren();
   $("legacy-pri-source").hidden = true;
   $("legacy-pri-import-panel").hidden = true;
+  $("legacy-pri-r07-confirmation").hidden = true;
+  $("legacy-pri-apply-r07").checked = false;
   $("legacy-pri-inspect-button").hidden = true;
   $("legacy-pri-result").hidden = true;
   $("identity").textContent = "";
@@ -540,9 +560,102 @@ function renderLegacyPriMappings(data, targets) {
       container.append(label);
     }
   }
+  renderLegacyTeacherOverrides(data, targets.teachers, "requirement");
+  renderLegacyTeacherOverrides(data, targets.teachers, "placement");
+  renderLegacyAvailabilityConfirmations(data);
   renderLegacyPriEventMappings(data, targets.fixedEvents);
   renderLegacyLunchPlaceholderReview(data);
+  $("legacy-pri-r07-confirmation").hidden = !legacyPriReport?.period_schedule?.present;
   $("legacy-pri-import-panel").hidden = false;
+}
+
+function renderLegacyTeacherOverrides(data, teachers, sourceKind) {
+  const issueCodes = sourceKind === "requirement"
+    ? new Set(["missing_teacher_reference", "invalid_teacher_reference", "invalid_composite_teacher_reference"])
+    : new Set(["missing_placement_teacher", "invalid_placement_teacher_reference"]);
+  const sourceName = sourceKind === "requirement" ? "lesson_requirement" : "placement";
+  const rows = [...new Set((legacyPriReport?.issues || [])
+    .filter((issue) => issue.source === sourceName && issueCodes.has(issue.code) && Number.isInteger(issue.row))
+    .map((issue) => issue.row))].sort((left, right) => left - right);
+  const container = $(sourceKind === "requirement" ? "legacy-pri-map-teacher-requirements" : "legacy-pri-map-teacher-placements");
+  container.replaceChildren();
+  if (!rows.length) {
+    container.textContent = "No unresolved teacher references.";
+    return;
+  }
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const header = document.createElement("tr");
+  for (const title of ["Source row", "Source reference", "Explicit application teacher"]) {
+    const th = document.createElement("th");
+    th.textContent = title;
+    header.append(th);
+  }
+  head.append(header);
+  const body = document.createElement("tbody");
+  for (const sourceIndex of rows) {
+    const row = document.createElement("tr");
+    const source = sourceKind === "requirement"
+      ? data.lesson_requirements.find((item) => item.source_index === sourceIndex)
+      : data.placements.find((item) => item.source_index === sourceIndex);
+    cell(row, sourceIndex + 1);
+    cell(row, source?.teacher || "(missing)");
+    const targetCell = document.createElement("td");
+    const select = document.createElement("select");
+    select.required = true;
+    select.dataset.teacherOverrideKind = sourceKind;
+    select.dataset.sourceIndex = String(sourceIndex);
+    select.append(new Option("Select the verified teacher or group", ""));
+    for (const teacher of teachers.filter((item) => item.is_active)) {
+      select.append(new Option(teacher.short_code + " · " + teacher.full_name, String(teacher.id)));
+    }
+    targetCell.append(select);
+    row.append(targetCell);
+    body.append(row);
+  }
+  table.append(head, body);
+  container.append(table);
+}
+
+function renderLegacyAvailabilityConfirmations(data) {
+  const container = $("legacy-pri-availability-confirmations");
+  container.replaceChildren();
+  const rows = (legacyPriReport?.issues || [])
+    .filter((issue) => issue.code === "legacy_availability_mapping_required" && Number.isInteger(issue.row))
+    .map((issue) => issue.row);
+  if (!rows.length) {
+    container.textContent = "No ambiguous 25-position profiles.";
+    return;
+  }
+  const teachers = data.resources.teachers;
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const header = document.createElement("tr");
+  for (const title of ["Source row", "Mapped application teacher", "Availability decision"]) {
+    const th = document.createElement("th");
+    th.textContent = title;
+    header.append(th);
+  }
+  head.append(header);
+  const body = document.createElement("tbody");
+  for (const sourceIndex of rows) {
+    const teacher = teachers.find((item) => item.source_index === sourceIndex);
+    const row = document.createElement("tr");
+    cell(row, sourceIndex + 1);
+    cell(row, teacher?.name || teacher?.full_name || "(missing source name)");
+    const decisionCell = document.createElement("td");
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.targetAvailabilitySourceIndex = String(sourceIndex);
+    checkbox.setAttribute("aria-label", `Use mapped application availability for source teacher row ${sourceIndex + 1}`);
+    label.append(checkbox, document.createTextNode(" I verified the mapped application's availability and will use it"));
+    decisionCell.append(label);
+    row.append(decisionCell);
+    body.append(row);
+  }
+  table.append(head, body);
+  container.append(table);
 }
 
 function renderLegacyPriEventMappings(data, fixedEvents) {
@@ -944,6 +1057,7 @@ $("legacy-pri-form").addEventListener("submit", (event) => {
     renderLegacyPriSummary("legacy-pri-counts", report.counts);
     renderLegacyPriSummary("legacy-pri-periods", report.period_mapping);
     renderLegacyPriSummary("legacy-pri-availability", report.availability_profiles);
+    renderLegacyPriSummary("legacy-pri-period-schedule", report.period_schedule || {present: false});
     renderLegacyPriIssues(report);
     $("legacy-pri-readiness").textContent = report.import_ready
       ? "Preflight passed. This report is advisory; no data was imported."
@@ -963,6 +1077,8 @@ $("legacy-pri-form").elements.project.addEventListener("change", () => {
   $("legacy-pri-map-groups").replaceChildren();
   $("legacy-pri-lunch-review-rows").replaceChildren();
   $("legacy-pri-lunch-review").hidden = true;
+  $("legacy-pri-r07-confirmation").hidden = true;
+  $("legacy-pri-apply-r07").checked = false;
   for (const id of [
     "legacy-pri-source-teachers", "legacy-pri-source-subjects", "legacy-pri-source-classes", "legacy-pri-source-lessons", "legacy-pri-source-placements",
     "legacy-pri-map-teachers", "legacy-pri-map-subjects", "legacy-pri-map-classes", "legacy-pri-map-groups", "legacy-pri-map-events",
@@ -1005,9 +1121,20 @@ $("legacy-pri-import-form").addEventListener("submit", (event) => {
       name: form.elements.name.value,
       academic_year: form.elements.academic_year.value,
       week_start: form.elements.week_start.value,
+      apply_period_schedule: $("legacy-pri-apply-r07").checked,
       teachers: mapping("teachers"),
       subjects: mapping("subjects"),
       classes: mapping("classes"),
+      teacher_requirement_overrides: Object.fromEntries(
+        [...document.querySelectorAll('#legacy-pri-map-teacher-requirements select[data-teacher-override-kind="requirement"]')]
+          .map((select) => [select.dataset.sourceIndex, Number(select.value)]),
+      ),
+      teacher_placement_overrides: Object.fromEntries(
+        [...document.querySelectorAll('#legacy-pri-map-teacher-placements select[data-teacher-override-kind="placement"]')]
+          .map((select) => [select.dataset.sourceIndex, Number(select.value)]),
+      ),
+      confirmed_target_availability_profiles: [...document.querySelectorAll("#legacy-pri-availability-confirmations input[data-target-availability-source-index]:checked")]
+        .map((checkbox) => Number(checkbox.dataset.targetAvailabilitySourceIndex)),
       teacher_groups: Object.fromEntries(
         [...document.querySelectorAll("#legacy-pri-map-groups select[data-group-reference]")]
           .map((select) => [select.dataset.groupReference, Number(select.value)]),
