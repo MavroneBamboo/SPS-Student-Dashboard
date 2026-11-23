@@ -15,6 +15,7 @@ from sqlalchemy import case, func, select
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
 from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent, Student, User
+from app.observability import current_request_id
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -268,6 +269,7 @@ def dashboard_xlsx(
         action="report.dashboard.exported",
         entity_type="DASHBOARD_REPORT",
         entity_id="filtered-excel",
+        request_id=current_request_id(),
         details_json=json.dumps(
             {
                 "filters": result["filters"],
@@ -504,6 +506,7 @@ def audit_events(
             "action": row.action,
             "entity_type": row.entity_type,
             "entity_id": row.entity_id,
+            "request_id": row.request_id,
             "details": json.loads(row.details_json),
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }

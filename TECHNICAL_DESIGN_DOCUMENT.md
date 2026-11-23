@@ -220,7 +220,7 @@ Tests are organised by unit, service/API, integration, end-to-end, security and 
 
 ## 12. Observability and audit
 
-Use structured logs with request/job correlation IDs. Never log passwords, JWTs, database credentials, encryption keys or plaintext sensitive fields. Capture application health, readiness, job failures, authentication failures, import errors and database connectivity without exposing data.
+HTTP requests receive a 32-character lowercase hexadecimal correlation ID. The reverse proxy's generated ID is accepted only in that format; otherwise the application creates one. The API returns it in `X-Request-ID`, stores it on audit events generated during the request and emits structured access logs with only the method, matched route template, status, duration and request ID. Query strings, bodies, credentials and exception messages are excluded. Never log passwords, JWTs, database credentials, encryption keys or plaintext sensitive fields. Capture application health, readiness, job failures, authentication failures, import errors and database connectivity without exposing data.
 
 Audit events include actor, action, entity, entity ID, timestamp, outcome, request ID and safe before/after metadata. Audit history is append-only to normal application users.
 

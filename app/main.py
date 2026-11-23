@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import User
+from app.observability import RequestCorrelationMiddleware
 from app.routes import (
     attendance,
     auth,
@@ -89,3 +90,8 @@ async def browser_security_headers(request, call_next):
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
     return RedirectResponse("/ui/", status_code=303)
+
+
+# Keep correlation outside FastAPI's server-error middleware so it can tag
+# generic 500 responses without changing the framework's exception semantics.
+app = RequestCorrelationMiddleware(app)
