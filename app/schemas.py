@@ -171,6 +171,10 @@ class LegacyPriImportOptions(BaseModel):
     teachers: dict[int, int]
     subjects: dict[int, int]
     classes: dict[int, int]
+    apply_period_schedule: bool = False
+    teacher_requirement_overrides: dict[int, int] = Field(default_factory=dict)
+    teacher_placement_overrides: dict[int, int] = Field(default_factory=dict)
+    confirmed_target_availability_profiles: list[StrictInt] = Field(default_factory=list)
     teacher_groups: dict[str, int] = Field(default_factory=dict)
     fixed_events: dict[int, int] = Field(default_factory=dict)
     confirmed_lunch_placeholder_rows: list[StrictInt] = Field(default_factory=list)
@@ -180,9 +184,20 @@ class LegacyPriImportOptions(BaseModel):
         self.academic_year = self.academic_year.upper()
         if self.week_start.weekday() != 0:
             raise ValueError("week_start must be a Monday")
-        for mapping in (self.teachers, self.subjects, self.classes, self.fixed_events):
+        for mapping in (
+            self.teachers,
+            self.subjects,
+            self.classes,
+            self.teacher_requirement_overrides,
+            self.teacher_placement_overrides,
+            self.fixed_events,
+        ):
             if any(key < 0 or value < 1 for key, value in mapping.items()):
                 raise ValueError("Resource mappings require non-negative source indices and positive target IDs")
+        if any(type(index) is not int or index < 0 for index in self.confirmed_target_availability_profiles):
+            raise ValueError("Availability profile confirmations require non-negative source teacher indexes")
+        if len(set(self.confirmed_target_availability_profiles)) != len(self.confirmed_target_availability_profiles):
+            raise ValueError("Availability profile confirmations cannot be repeated")
         if any(type(row) is not int or row < 0 for row in self.confirmed_lunch_placeholder_rows):
             raise ValueError("Lunch placeholder rows require non-negative source indexes")
         if len(set(self.confirmed_lunch_placeholder_rows)) != len(self.confirmed_lunch_placeholder_rows):

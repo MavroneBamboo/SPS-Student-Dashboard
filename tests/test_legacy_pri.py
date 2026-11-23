@@ -1,7 +1,7 @@
 import io
 import json
 import zipfile
-from datetime import date
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from cryptography.hazmat.primitives import padding
@@ -152,7 +152,7 @@ def test_rejects_unexpected_member_set(tmp_path):
     values = sample_data()
     values.pop("R06.bin")
     write_pri(path, values)
-    with pytest.raises(LegacyPriError, match="exactly R01.bin"):
+    with pytest.raises(LegacyPriError, match="R01.bin through R06.bin"):
         read_legacy_pri(path, KEY)
 
 
@@ -250,6 +250,43 @@ def test_read_legacy_pri_bytes_matches_read_only_path_parser(tmp_path):
     source.write_bytes(archive_bytes)
 
     assert read_legacy_pri_bytes(archive_bytes, KEY) == read_legacy_pri(source, KEY)
+
+
+def test_reads_optional_r07_period_schedule_and_validates_legacy_schema():
+    values = sample_data()
+    values["R07.bin"] = {
+        "DefaultPeriods": [
+            {"Name": f"P{index}", "Time": interval}
+            for index, interval in enumerate(
+                ("08:30 - 10:15", "10:15 - 12:00", "12:00 - 13:25", "13:25 - 15:10", "15:10 - 16:55"),
+                start=1,
+            )
+        ],
+        "Clusters": [
+            {
+                "Name": "Synthetic cluster",
+                "Classes": ["C1"],
+                "HasCustomPeriods": True,
+                "Periods": [
+                    {"Name": f"P{index}", "Time": interval}
+                    for index, interval in enumerate(
+                        ("08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00", "12:00 - 13:00"),
+                        start=1,
+                    )
+                ],
+            }
+        ],
+        "ClassOverrides": [],
+    }
+    data = read_legacy_pri_bytes(encrypted_archive(values), KEY)
+    assert data.period_schedule is not None
+    assert len(data.period_schedule["default_periods"]) == 5
+    assert data.period_schedule["clusters"][0]["has_custom_periods"] is True
+    assert data.period_schedule["clusters"][0]["classes"] == ["C1"]
+
+    values["R07.bin"]["DefaultPeriods"].pop()
+    with pytest.raises(LegacyPriError, match="exactly five periods"):
+        read_legacy_pri_bytes(encrypted_archive(values), KEY)
 
 
 @pytest.fixture
@@ -410,6 +447,148 @@ def test_legacy_project_import_creates_audited_draft_and_rejects_duplicate(lesso
         assert event is not None
         assert "source_sha256" in event.details_json
         assert "T1" not in event.details_json
+
+
+def test_legacy_r07_times_require_confirmation_and_apply_to_imported_class(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+    response = client.get(f"/api/v1/timetable/classes/{resources['instructional_class_id']}/periods", headers=headers["admin"])
+    assert response.status_code == 200, response.text
+    rows_by_slot = {row["slot_code"]: row for row in response.json()}
+    legacy_slots = ("P1", "P2", "LUNCH", "P3", "P4")
+
+    def shifted(value):
+        return (datetime.combine(date.min, time.fromisoformat(value)) + timedelta(minutes=5)).strftime("%H:%M")
+
+    profile = [
+        {
+            "Name": f"P{index}",
+            "Time": f"{shifted(rows_by_slot[slot]['starts_at'])} - {shifted(rows_by_slot[slot]['ends_at'])}",
+        }
+        for index, slot in enumerate(legacy_slots, start=1)
+    ]
+    values = sample_data()
+    values["R07.bin"] = {
+        "DefaultPeriods": profile,
+        "Clusters": [{"Name": "Synthetic cluster", "Classes": ["C1"], "HasCustomPeriods": True, "Periods": profile}],
+        "ClassOverrides": [],
+    }
+    archive = encrypted_archive(values)
+    options = {
+        "name": "R07 period schedule import",
+        "academic_year": "2026",
+        "week_start": "2026-11-02",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+    }
+    request_headers = {**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"}
+    without_confirmation = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert without_confirmation.status_code == 422
+    assert "explicitly confirm" in without_confirmation.json()["detail"]
+
+    options["apply_period_schedule"] = True
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert imported.status_code == 201, imported.text
+    result = imported.json()
+    assert result["period_profile_override_count"] == 1
+    version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
+    assert version.status_code == 200
+    snapshot_periods = version.json()["snapshot"]["classes"][str(resources["instructional_class_id"])]["periods"]
+    assert snapshot_periods[0]["starts_at"] == shifted(rows_by_slot["P1"]["starts_at"])
+    with SessionLocal() as db:
+        audit = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "timetable.legacy_project.imported",
+                AuditEvent.entity_id == str(result["version_id"]),
+            )
+        )
+        assert audit is not None
+        assert json.loads(audit.details_json)["applied_r07_period_class_rows"] == [0]
+
+
+def test_legacy_import_accepts_explicit_missing_teacher_and_ambiguous_availability_resolution(lesson_context, configured_legacy_key):
+    client, headers, resources = lesson_context
+    rule = client.post(
+        "/api/v1/timetable/rules",
+        json={
+            "academic_year": "2026",
+            "target_type": "CLASS",
+            "target_id": resources["instructional_class_id"],
+            "effective_from": "2026-01-01",
+            "effective_to": "2026-12-31",
+            "rule": {},
+        },
+        headers=headers["admin"],
+    )
+    assert rule.status_code == 201, rule.text
+
+    values = sample_data()
+    values["R01.bin"][0]["Availability"] = ":".join(["1"] * 25)
+    values["R04.bin"][0]["Teacher"] = ""
+    archive = encrypted_archive(values)
+    options = {
+        "name": "Explicitly reconciled legacy week",
+        "academic_year": "2026",
+        "week_start": "2026-11-02",
+        "teachers": {"0": resources["teacher_id"]},
+        "subjects": {"0": resources["subject_id"]},
+        "classes": {"0": resources["instructional_class_id"]},
+        "teacher_requirement_overrides": {"0": resources["teacher_id"]},
+        "confirmed_target_availability_profiles": [0],
+    }
+    request_headers = {**headers["admin"], "Content-Type": "application/vnd.sps.legacy-pri-import"}
+    rejected = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps({**options, "confirmed_target_availability_profiles": []}).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["missing_rows"] == [0]
+
+    imported = client.post(
+        "/api/v1/timetable/legacy-projects/import",
+        content=json.dumps(options).encode() + b"\n" + archive,
+        headers=request_headers,
+    )
+    assert imported.status_code == 201, imported.text
+    result = imported.json()
+    assert result["status"] == "DRAFT"
+    version = client.get(f"/api/v1/timetable/versions/{result['version_id']}", headers=headers["superuser"])
+    assert version.status_code == 200
+    assert len(version.json()["placements"]) == 2
+    with SessionLocal() as db:
+        audit = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "timetable.legacy_project.imported",
+                AuditEvent.entity_id == str(result["version_id"]),
+            )
+        )
+        assert audit is not None
+        details = json.loads(audit.details_json)
+        assert details["teacher_requirement_overrides"] == [0]
+        assert details["confirmed_target_availability_profiles"] == [0]
+        assert "T1" not in audit.details_json
 
 
 def test_legacy_project_maps_whole_school_placements_to_exact_fixed_events(lesson_context, configured_legacy_key):

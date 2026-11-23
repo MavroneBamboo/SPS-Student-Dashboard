@@ -8,16 +8,20 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from collections import Counter
 from dataclasses import dataclass
+from datetime import time
 from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-MEMBERS = {f"R{i:02}.bin" for i in range(1, 7)}
+REQUIRED_MEMBERS = {f"R{i:02}.bin" for i in range(1, 7)}
+OPTIONAL_MEMBERS = {"R07.bin"}
+PERIOD_SLOT_CODES = ("P1", "P2", "LUNCH", "P3", "P4")
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 MAX_MEMBER_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
@@ -55,9 +59,10 @@ class LegacyPriData:
     lessons: list[dict[str, Any]]
     placements: list[dict[str, Any]]
     pending: list[dict[str, Any]]
+    period_schedule: dict[str, Any] | None = None
 
 
-def _decrypt_member(data: bytes, key: bytes, name: str) -> Any:
+def _decrypt_member(data: bytes, key: bytes, name: str, *, expected_type: type = list) -> Any:
     if len(data) < 32 or len(data) > MAX_MEMBER_BYTES:
         raise LegacyPriError(f"{name} has an invalid encrypted payload size")
     iv, ciphertext = data[:16], data[16:]
@@ -71,13 +76,86 @@ def _decrypt_member(data: bytes, key: bytes, name: str) -> Any:
         value = json.loads(plaintext.decode("utf-8-sig"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LegacyPriError(f"{name} failed decryption or JSON validation") from exc
-    if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
-        raise LegacyPriError(f"{name} must contain a JSON array of objects")
+    valid = isinstance(value, expected_type)
+    if expected_type is list:
+        valid = valid and all(isinstance(row, dict) for row in value)
+    if not valid:
+        raise LegacyPriError(f"{name} has an invalid JSON structure")
     return value
 
 
+def _validate_period_profile(value: Any, label: str) -> list[dict[str, str]]:
+    if not isinstance(value, list) or len(value) != 5:
+        raise LegacyPriError(f"R07.bin {label} must contain exactly five periods")
+    profile = []
+    ranges = []
+    for index, row in enumerate(value):
+        if not isinstance(row, dict) or set(row) != {"Name", "Time"}:
+            raise LegacyPriError(f"R07.bin {label} has an invalid period record")
+        if row["Name"] != f"P{index + 1}" or not isinstance(row["Time"], str):
+            raise LegacyPriError(f"R07.bin {label} has an invalid period name or time")
+        parts = row["Time"].split("-")
+        if len(parts) != 2 or any(not re.fullmatch(r"\d{2}:\d{2}", part.strip()) for part in parts):
+            raise LegacyPriError(f"R07.bin {label} contains a malformed time interval")
+        try:
+            start, end = (time.fromisoformat(part.strip()) for part in parts)
+        except ValueError as exc:
+            raise LegacyPriError(f"R07.bin {label} contains an invalid time interval") from exc
+        if start >= end:
+            raise LegacyPriError(f"R07.bin {label} contains an invalid time interval")
+        ranges.append((start, end))
+        profile.append({"name": row["Name"], "time": row["Time"]})
+    ordered = sorted(ranges)
+    if any(previous[1] > current[0] for previous, current in zip(ordered, ordered[1:], strict=False)):
+        raise LegacyPriError(f"R07.bin {label} has overlapping periods")
+    return profile
+
+
+def _validate_period_schedule(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {"DefaultPeriods", "Clusters", "ClassOverrides"}:
+        raise LegacyPriError("R07.bin has an unsupported period schedule structure")
+    if any(not isinstance(value[name], list) or len(value[name]) > 5000 for name in ("Clusters", "ClassOverrides")):
+        raise LegacyPriError("R07.bin has an invalid or oversized period schedule")
+    defaults = _validate_period_profile(value["DefaultPeriods"], "default schedule")
+    clusters = []
+    cluster_names = set()
+    for cluster in value["Clusters"]:
+        if not isinstance(cluster, dict) or set(cluster) != {"Name", "Classes", "HasCustomPeriods", "Periods"}:
+            raise LegacyPriError("R07.bin has an invalid cluster schedule")
+        name, classes = cluster["Name"], cluster["Classes"]
+        if not isinstance(name, str) or not name.strip() or name.strip().casefold() in cluster_names:
+            raise LegacyPriError("R07.bin has a missing or duplicate cluster name")
+        if not isinstance(classes, list) or any(not isinstance(item, str) or not item.strip() for item in classes):
+            raise LegacyPriError("R07.bin has an invalid cluster class assignment")
+        normalized_classes = [item.strip().casefold() for item in classes]
+        if len(set(normalized_classes)) != len(normalized_classes):
+            raise LegacyPriError("R07.bin repeats a class within one cluster")
+        if type(cluster["HasCustomPeriods"]) is not bool:
+            raise LegacyPriError("R07.bin has an invalid cluster timing setting")
+        cluster_names.add(name.strip().casefold())
+        clusters.append(
+            {
+                "name": name.strip(),
+                "classes": [item.strip() for item in classes],
+                "has_custom_periods": cluster["HasCustomPeriods"],
+                "periods": _validate_period_profile(cluster["Periods"], "cluster schedule"),
+            }
+        )
+    overrides = []
+    override_names = set()
+    for override in value["ClassOverrides"]:
+        if not isinstance(override, dict) or set(override) != {"ClassName", "Periods"}:
+            raise LegacyPriError("R07.bin has an invalid class period override")
+        class_name = override["ClassName"]
+        if not isinstance(class_name, str) or not class_name.strip() or class_name.strip().casefold() in override_names:
+            raise LegacyPriError("R07.bin has a missing or duplicate class period override")
+        override_names.add(class_name.strip().casefold())
+        overrides.append({"class_name": class_name.strip(), "periods": _validate_period_profile(override["Periods"], "class override")})
+    return {"default_periods": defaults, "clusters": clusters, "class_overrides": overrides}
+
+
 def read_legacy_pri(path: str | Path, key: bytes) -> LegacyPriData:
-    """Read the six known members, with archive bounds and exact-name checks."""
+    """Read the six core members and optional v2.0 period schedule, with bounds."""
     source = Path(path)
     try:
         if source.stat().st_size > MAX_ARCHIVE_BYTES:
@@ -100,13 +178,22 @@ def read_legacy_pri_bytes(archive_bytes: bytes, key: bytes) -> LegacyPriData:
             names = [entry.filename for entry in entries]
             if len(names) != len(set(names)):
                 raise LegacyPriError(".pri archive contains duplicate member names")
-            if set(names) != MEMBERS or any(entry.is_dir() for entry in entries):
-                raise LegacyPriError(".pri archive must contain exactly R01.bin through R06.bin")
+            if (
+                not REQUIRED_MEMBERS.issubset(names)
+                or not set(names).issubset(REQUIRED_MEMBERS | OPTIONAL_MEMBERS)
+                or any(entry.is_dir() for entry in entries)
+            ):
+                raise LegacyPriError(".pri archive must contain R01.bin through R06.bin and may contain R07.bin")
             if sum(entry.file_size for entry in entries) > MAX_TOTAL_UNCOMPRESSED_BYTES:
                 raise LegacyPriError(".pri archive expands beyond the size limit")
             if any(entry.file_size > MAX_MEMBER_BYTES for entry in entries):
                 raise LegacyPriError(".pri member exceeds the size limit")
-            payloads = {entry.filename: _decrypt_member(archive.read(entry), key, entry.filename) for entry in entries}
+            payloads = {
+                entry.filename: _decrypt_member(
+                    archive.read(entry), key, entry.filename, expected_type=dict if entry.filename == "R07.bin" else list
+                )
+                for entry in entries
+            }
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         raise LegacyPriError("Unable to read the .pri archive") from exc
     return LegacyPriData(
@@ -116,6 +203,7 @@ def read_legacy_pri_bytes(archive_bytes: bytes, key: bytes) -> LegacyPriData:
         lessons=payloads["R04.bin"],
         placements=payloads["R05.bin"],
         pending=payloads["R06.bin"],
+        period_schedule=_validate_period_schedule(payloads["R07.bin"]) if "R07.bin" in payloads else None,
     )
 
 
@@ -277,6 +365,36 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
         if resource_tuple not in requirements:
             add_issue("placement_without_lesson_requirement", "placement", count=actual)
 
+    period_schedule_summary = None
+    if data.period_schedule is not None:
+        class_name_indexes = {
+            row["Name"].strip().casefold(): row_index
+            for row_index, row in enumerate(data.classes)
+            if isinstance(row.get("Name"), str) and row["Name"].strip()
+        }
+        assigned_classes: dict[str, int] = {}
+        for cluster_index, cluster in enumerate(data.period_schedule["clusters"]):
+            for class_name in cluster["classes"]:
+                normalized = class_name.casefold()
+                source_index = class_name_indexes.get(normalized)
+                if source_index is None:
+                    add_issue("legacy_period_cluster_class_unmapped", "class", row=cluster_index)
+                elif normalized in assigned_classes:
+                    add_issue("legacy_period_duplicate_cluster_assignment", "class", row=source_index)
+                else:
+                    assigned_classes[normalized] = cluster_index
+        for override_index, override in enumerate(data.period_schedule["class_overrides"]):
+            if override["class_name"].casefold() not in class_name_indexes:
+                add_issue("legacy_period_class_override_unmapped", "class", row=override_index)
+        period_schedule_summary = {
+            "present": True,
+            "default_period_count": len(data.period_schedule["default_periods"]),
+            "cluster_count": len(data.period_schedule["clusters"]),
+            "custom_cluster_count": sum(cluster["has_custom_periods"] for cluster in data.period_schedule["clusters"]),
+            "class_override_count": len(data.period_schedule["class_overrides"]),
+            "assigned_class_count": len(assigned_classes),
+        }
+
     codes = Counter(issue["code"] for issue in issues)
     return {
         "counts": {
@@ -288,6 +406,7 @@ def reconcile_legacy_pri(data: LegacyPriData) -> dict[str, Any]:
             "pending_lessons": len(data.pending),
         },
         "period_mapping": {str(period): display for period, display in LEGACY_PERIOD_MAP.items()},
+        "period_schedule": period_schedule_summary,
         "availability_profiles": dict(sorted(availability_mapping.items())),
         "issue_counts": dict(sorted(codes.items())),
         "issues": issues,

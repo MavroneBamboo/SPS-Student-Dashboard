@@ -1,6 +1,7 @@
 import hashlib
 import json
 from collections import defaultdict
+from datetime import time as time_value
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import ValidationError
@@ -17,11 +18,12 @@ from app.legacy_pri import (
     read_legacy_pri_bytes,
     reconcile_legacy_pri,
 )
-from app.lesson_validation import validate_lesson_resources
+from app.lesson_validation import validate_existing_class_lessons, validate_lesson_resources
 from app.models import (
     InstructionalClass,
     LegacyTimetableImport,
     LessonRequirement,
+    PeriodDefinition,
     Subject,
     Teacher,
     TeacherGroupMember,
@@ -33,6 +35,7 @@ from app.models import (
 )
 from app.schemas import LegacyPriImportOptions, LessonRequirementCreate
 from app.timetable_lock import lock_timetable_configuration
+from app.timetable_periods import resolve_period_rows, validate_period_intervals
 from app.timetable_planning import build_snapshot, required_blocks, validate_plan
 
 router = APIRouter(
@@ -154,6 +157,7 @@ async def inspect_legacy_project(request: Request, db: DbSession, claims: Claims
     _record_preflight(db, claims, "timetable.legacy_project.inspected", report)
     return {
         "counts": report["counts"],
+        "period_schedule": report["period_schedule"],
         "resources": {
             "teachers": _source_rows(data.teachers, kind="teacher"),
             "subjects": _source_rows(data.subjects, kind="subject"),
@@ -181,7 +185,18 @@ def _active_target(db, model, target_id: int, label: str):
     return target
 
 
-def _mapped_teacher(data: LegacyPriData, options: LegacyPriImportOptions, db, source_name: str) -> Teacher:
+def _mapped_teacher(
+    data: LegacyPriData,
+    options: LegacyPriImportOptions,
+    db,
+    source_name: str,
+    *,
+    source_kind: str,
+    source_index: int,
+) -> Teacher:
+    overrides = options.teacher_requirement_overrides if source_kind == "requirement" else options.teacher_placement_overrides
+    if source_index in overrides:
+        return _active_target(db, Teacher, overrides[source_index], "teacher override")
     if source_name == "ALL":
         raise HTTPException(status_code=422, detail="Whole-school entries require fixed-event reconciliation before import")
     if "/" in source_name:
@@ -210,7 +225,9 @@ def _mapped_teacher(data: LegacyPriData, options: LegacyPriImportOptions, db, so
     if teacher.is_composite:
         raise HTTPException(status_code=422, detail="An individual source teacher must map to an individual profile")
     availability = map_legacy_availability(data.teachers[index].get("Availability", ""))
-    if availability is None or json.loads(teacher.availability_json) != availability:
+    if index not in options.confirmed_target_availability_profiles and (
+        availability is None or json.loads(teacher.availability_json) != availability
+    ):
         raise HTTPException(status_code=422, detail="Mapped teacher availability does not match the verified legacy profile")
     return teacher
 
@@ -333,6 +350,84 @@ def _validate_whole_school_event_mappings(
             )
 
 
+def _apply_legacy_period_schedule(
+    db,
+    data: LegacyPriData,
+    options: LegacyPriImportOptions,
+    actor_id: int,
+) -> list[int]:
+    """Preserve each imported class's effective R07 times as explicit class overrides."""
+    schedule = data.period_schedule
+    if schedule is None:
+        return []
+
+    clusters_by_class = {class_name.casefold(): cluster for cluster in schedule["clusters"] for class_name in cluster["classes"]}
+    class_overrides = {override["class_name"].casefold(): override["periods"] for override in schedule["class_overrides"]}
+    source_slot_codes = ("P1", "P2", "LUNCH", "P3", "P4")
+    display_orders = {"P1": 1, "P2": 2, "LUNCH": 3, "P3": 4, "P4": 5}
+    changed_source_indexes = []
+    mapped_class_ids = []
+
+    for source_index, source_class in enumerate(data.classes):
+        source_name = source_class.get("Name")
+        if not isinstance(source_name, str) or not source_name.strip():
+            continue
+        target_id = options.classes[source_index]
+        normalized_name = source_name.strip().casefold()
+        profile = schedule["default_periods"]
+        cluster = clusters_by_class.get(normalized_name)
+        if cluster is not None and cluster["has_custom_periods"]:
+            profile = cluster["periods"]
+        profile = class_overrides.get(normalized_name, profile)
+        mapped_class_ids.append(target_id)
+        effective = {row.slot_code: row for row in resolve_period_rows(db, target_id)}
+        direct = {
+            row.slot_code: row
+            for row in db.scalars(
+                select(PeriodDefinition).where(
+                    PeriodDefinition.scope == "CLASS",
+                    PeriodDefinition.target_id == target_id,
+                    PeriodDefinition.is_active.is_(True),
+                )
+            ).all()
+        }
+        class_changed = False
+        for index, legacy_period in enumerate(profile):
+            slot_code = source_slot_codes[index]
+            start_text, end_text = (part.strip() for part in legacy_period["time"].split("-", maxsplit=1))
+            start_at = time_value.fromisoformat(start_text).isoformat(timespec="minutes")
+            end_at = time_value.fromisoformat(end_text).isoformat(timespec="minutes")
+            if (effective[slot_code].starts_at, effective[slot_code].ends_at) == (start_at, end_at):
+                continue
+            row = direct.get(slot_code)
+            if row is None:
+                row = PeriodDefinition(
+                    scope="CLASS",
+                    target_id=target_id,
+                    slot_code=slot_code,
+                    display_order=display_orders[slot_code],
+                    label="Lunch" if slot_code == "LUNCH" else slot_code,
+                    starts_at=start_at,
+                    ends_at=end_at,
+                    is_schedulable=slot_code != "LUNCH",
+                    is_active=True,
+                    created_by=actor_id,
+                )
+                db.add(row)
+                direct[slot_code] = row
+            else:
+                row.starts_at = start_at
+                row.ends_at = end_at
+            class_changed = True
+        if class_changed:
+            changed_source_indexes.append(source_index)
+
+    db.flush()
+    validate_period_intervals(db, mapped_class_ids)
+    validate_existing_class_lessons(db, mapped_class_ids)
+    return changed_source_indexes
+
+
 @router.post("/import", status_code=status.HTTP_201_CREATED)
 async def import_legacy_project(request: Request, db: DbSession, claims: Claims) -> dict:
     """Create a validated draft from a source project and explicit resource mappings."""
@@ -406,10 +501,96 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
                 "unexpected_rows": sorted(set(confirmed_lunch_rows) - set(lunch_placeholder_rows)),
             },
         )
+    requirement_teacher_rows = {
+        issue["row"]
+        for issue in report["issues"]
+        if issue.get("source") == "lesson_requirement"
+        and issue.get("code") in {"missing_teacher_reference", "invalid_teacher_reference", "invalid_composite_teacher_reference"}
+        and isinstance(issue.get("row"), int)
+    }
+    placement_teacher_rows = {
+        issue["row"]
+        for issue in report["issues"]
+        if issue.get("source") == "placement"
+        and issue.get("code") in {"missing_placement_teacher", "invalid_placement_teacher_reference"}
+        and isinstance(issue.get("row"), int)
+    }
+    ambiguous_availability_rows = {
+        issue["row"]
+        for issue in report["issues"]
+        if issue.get("code") == "legacy_availability_mapping_required" and isinstance(issue.get("row"), int)
+    }
+    if set(options.teacher_requirement_overrides) != requirement_teacher_rows:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Select an explicit application teacher for every unresolved lesson requirement teacher reference",
+                "missing_rows": sorted(requirement_teacher_rows - set(options.teacher_requirement_overrides)),
+                "unexpected_rows": sorted(set(options.teacher_requirement_overrides) - requirement_teacher_rows),
+            },
+        )
+    if set(options.teacher_placement_overrides) != placement_teacher_rows:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Select an explicit application teacher for every unresolved placement teacher reference",
+                "missing_rows": sorted(placement_teacher_rows - set(options.teacher_placement_overrides)),
+                "unexpected_rows": sorted(set(options.teacher_placement_overrides) - placement_teacher_rows),
+            },
+        )
+    if set(options.confirmed_target_availability_profiles) != ambiguous_availability_rows:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "For every ambiguous legacy availability profile, explicitly confirm that the mapped application profile will govern",
+                "missing_rows": sorted(ambiguous_availability_rows - set(options.confirmed_target_availability_profiles)),
+                "unexpected_rows": sorted(set(options.confirmed_target_availability_profiles) - ambiguous_availability_rows),
+            },
+        )
     resolved_by_mapping = {"composite_teacher_mapping_required", "whole_school_event_mapping_required", "lunch_entry_requires_review"}
-    blockers = {code: count for code, count in report["issue_counts"].items() if code not in resolved_by_mapping}
+    unresolved_issues = []
+    for issue in report["issues"]:
+        code = issue["code"]
+        row = issue.get("row")
+        source = issue.get("source")
+        if code in resolved_by_mapping:
+            continue
+        if code == "missing_teacher_name" and source == "teacher" and row in options.teachers:
+            continue
+        if (
+            code in {"missing_teacher_reference", "invalid_teacher_reference", "invalid_composite_teacher_reference"}
+            and row in options.teacher_requirement_overrides
+        ):
+            continue
+        if code in {"missing_placement_teacher", "invalid_placement_teacher_reference"} and row in options.teacher_placement_overrides:
+            continue
+        if code == "legacy_availability_mapping_required" and row in options.confirmed_target_availability_profiles:
+            continue
+        if (
+            code in {"unplaced_lesson_periods", "overplaced_lesson_periods"}
+            and issue.get("rows")
+            and set(issue["rows"]).issubset(options.teacher_requirement_overrides)
+        ):
+            continue
+        if code == "placement_without_lesson_requirement" and options.teacher_requirement_overrides:
+            continue
+        if code == "duplicate_teacher_slot" and (
+            row in options.teacher_placement_overrides or issue.get("conflicting_row") in options.teacher_placement_overrides
+        ):
+            continue
+        unresolved_issues.append(issue)
+    blockers: dict[str, int] = defaultdict(int)
+    for issue in unresolved_issues:
+        blockers[issue["code"]] += int(issue.get("count", 1))
     if blockers:
         raise HTTPException(status_code=422, detail={"message": "Resolve source validation issues before import", "issue_counts": blockers})
+    if data.period_schedule is not None and not options.apply_period_schedule:
+        raise HTTPException(
+            status_code=422,
+            detail="Review the R07 period schedule and explicitly confirm importing its effective class times before continuing",
+        )
+    if data.period_schedule is None and options.apply_period_schedule:
+        raise HTTPException(status_code=422, detail="This source project does not contain an R07 period schedule")
     if any(row.get("Teacher") == "ALL" for row in data.lessons):
         raise HTTPException(status_code=422, detail="Whole-school lesson requirements must be reconciled as fixed events")
     if (
@@ -444,9 +625,17 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
     actor_id = int(claims["sub"])
     lock_timetable_configuration(db)
     try:
+        changed_period_profile_rows = _apply_legacy_period_schedule(db, data, options, actor_id) if options.apply_period_schedule else []
         _validate_whole_school_event_mappings(data, options, db, class_ids_by_name)
         for source_index, source in enumerate(data.lessons):
-            teacher = _mapped_teacher(data, options, db, source["Teacher"])
+            teacher = _mapped_teacher(
+                data,
+                options,
+                db,
+                source.get("Teacher", ""),
+                source_kind="requirement",
+                source_index=source_index,
+            )
             class_id = class_ids_by_name[source["InstClass"].strip()]
             subject_id = subject_ids_by_name[source["Subject"].strip()]
             key = (class_id, teacher.id, subject_id)
@@ -485,7 +674,14 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
         for placement_index, source in enumerate(data.placements):
             if placement_index in confirmed_lunch_row_set or source.get("Teacher") == "ALL":
                 continue
-            teacher = _mapped_teacher(data, options, db, source["Teacher"])
+            teacher = _mapped_teacher(
+                data,
+                options,
+                db,
+                source.get("Teacher", ""),
+                source_kind="placement",
+                source_index=placement_index,
+            )
             key = (
                 class_ids_by_name[source["InstClass"].strip()],
                 teacher.id,
@@ -575,6 +771,10 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
                 "counts": report["counts"],
                 "week_start": options.week_start.isoformat(),
                 "fixed_event_mappings": {str(source_index): event_id for source_index, event_id in sorted(options.fixed_events.items())},
+                "teacher_requirement_overrides": sorted(options.teacher_requirement_overrides),
+                "teacher_placement_overrides": sorted(options.teacher_placement_overrides),
+                "confirmed_target_availability_profiles": sorted(options.confirmed_target_availability_profiles),
+                "applied_r07_period_class_rows": changed_period_profile_rows,
                 "confirmed_lunch_placeholder_rows": confirmed_lunch_rows,
                 "confirmed_lunch_placeholder_count": len(confirmed_lunch_rows),
             },
@@ -589,6 +789,7 @@ async def import_legacy_project(request: Request, db: DbSession, claims: Claims)
             "revision": version.revision,
             "placement_count": len(blocks),
             "class_ids": target_class_ids,
+            "period_profile_override_count": len(changed_period_profile_rows),
             "confirmed_lunch_placeholder_count": len(confirmed_lunch_rows),
         }
     except IntegrityError as exc:
