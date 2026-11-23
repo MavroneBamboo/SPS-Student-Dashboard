@@ -105,6 +105,58 @@ def _valid_project(
     return archive.getvalue()
 
 
+def _whole_school_project(teacher_names, subject_name, class_names, event_label):
+    teaching_slots = [
+        (day, period) for day in ("Mon", "Tue", "Wed", "Thu", "Fri") for period in (1, 2, 4, 5) if (day, period) != ("Wed", 1)
+    ]
+    members = {
+        "R01.bin": [{"Id": index, "Name": name, "Availability": ":".join(["1"] * 20)} for index, name in enumerate(teacher_names)],
+        "R02.bin": [{"Id": 0, "Name": subject_name}, {"Id": 1, "Name": event_label}],
+        "R03.bin": [{"Id": index, "Name": name} for index, name in enumerate(class_names)],
+        "R04.bin": [],
+        "R05.bin": [],
+        "R06.bin": [],
+    }
+    for index, class_name in enumerate(class_names):
+        teacher_index = index // (len(class_names) // len(teacher_names))
+        day, period = teaching_slots[index % (len(class_names) // len(teacher_names))]
+        members["R04.bin"].append(
+            {
+                "Id": index,
+                "Teacher": teacher_names[teacher_index],
+                "Subject": subject_name,
+                "InstClass": class_name,
+                "Count": 1,
+                "Length": 1,
+            }
+        )
+        members["R05.bin"].extend(
+            [
+                {
+                    "Id": index,
+                    "Teacher": teacher_names[teacher_index],
+                    "Subject": subject_name,
+                    "InstClass": class_name,
+                    "DayOfWeek": day,
+                    "Period": period,
+                },
+                {
+                    "Id": len(class_names) + index,
+                    "Teacher": "ALL",
+                    "Subject": event_label,
+                    "InstClass": class_name,
+                    "DayOfWeek": "Wed",
+                    "Period": 1,
+                },
+            ]
+        )
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zipped:
+        for name, value in members.items():
+            zipped.writestr(name, _encrypted_member(value))
+    return archive.getvalue()
+
+
 def _sign_in(page, account):
     page.get_by_label("Username", exact=True).fill(account["username"])
     page.get_by_label("Password", exact=True).fill(account["password"])
@@ -242,6 +294,105 @@ def test_it_admin_can_validate_legacy_project_without_exposing_resource_names(pa
     expect(page.locator("#legacy-pri-source")).to_be_hidden()
     assert teacher_name not in page.locator("#legacy-pri-source").inner_text()
     assert not page.locator("#legacy-pri-source-placements").inner_text().strip()
+
+
+def test_it_admin_maps_24_whole_school_rows_to_one_fixed_event_in_browser(page, make_account, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "legacy_pri_key_hex", KEY.hex())
+    account = make_account("IT Administrator")
+    suffix = uuid4().hex[:8]
+    teacher_names = [f"Synthetic Event Teacher {index} {suffix}" for index in range(2)]
+    subject_name = "Synthetic Event Lesson " + suffix
+    event_label = "Synthetic Whole School Event " + suffix
+    class_names = [f"Synthetic Event Class {index + 1:02d} {suffix}" for index in range(24)]
+
+    with TestClient(app) as client:
+        login = client.post("/api/v1/auth/login", json={"username": account["username"], "password": account["password"]})
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        teachers = []
+        for index, name in enumerate(teacher_names):
+            response = client.post(
+                "/api/v1/timetable/teachers",
+                json={"short_code": f"SYN-EVT-{suffix}-{index}", "full_name": name},
+                headers=headers,
+            )
+            assert response.status_code == 201, response.text
+            teachers.append(response.json())
+        subject = client.post(
+            "/api/v1/timetable/subjects",
+            json={"code": "SYN-EVS-" + suffix, "name": subject_name},
+            headers=headers,
+        )
+        event_subject = client.post(
+            "/api/v1/timetable/subjects",
+            json={"code": "SYN-EVE-" + suffix, "name": event_label},
+            headers=headers,
+        )
+        assert subject.status_code == event_subject.status_code == 201
+
+        classes = []
+        for index, name in enumerate(class_names):
+            instructional_class = client.post(
+                "/api/v1/timetable/classes",
+                json={"code": f"SYN-EVC-{suffix}-{index + 1:02d}", "name": name},
+                headers=headers,
+            )
+            assert instructional_class.status_code == 201, instructional_class.text
+            classes.append(instructional_class.json())
+            rule = client.post(
+                "/api/v1/timetable/rules",
+                json={
+                    "academic_year": "2026",
+                    "target_type": "CLASS",
+                    "target_id": instructional_class.json()["id"],
+                    "effective_from": "2026-01-01",
+                    "effective_to": "2026-12-31",
+                    "rule": {},
+                },
+                headers=headers,
+            )
+            assert rule.status_code == 201, rule.text
+
+        fixed_event = client.post(
+            "/api/v1/timetable/fixed-events",
+            json={
+                "academic_year": "2026",
+                "label": event_label,
+                "audience_type": "CLASS",
+                "target_mode": "SELECTED",
+                "target_ids": [row["id"] for row in classes],
+                "slots": [{"weekday": "WED", "slot_code": "P1"}],
+            },
+            headers=headers,
+        )
+        assert fixed_event.status_code == 201, fixed_event.text
+
+    _sign_in(page, account)
+    page.get_by_role("button", name="Legacy timetable preflight", exact=True).click()
+    page.locator("#legacy-pri-form input[type=file]").set_input_files(
+        {
+            "name": "synthetic-24-class-events.pri",
+            "mimeType": "application/octet-stream",
+            "buffer": _whole_school_project(teacher_names, subject_name, class_names, event_label),
+        }
+    )
+    page.get_by_role("button", name="Validate project", exact=True).click()
+    expect(page.locator("#legacy-pri-status")).to_contain_text("Validation completed")
+    expect(page.locator("#legacy-pri-issues")).to_contain_text("whole school event mapping required: 24")
+    page.get_by_role("button", name="Inspect source labels for mapping", exact=True).click()
+
+    event_mapping = page.locator("#legacy-pri-map-events select[data-fixed-event-source-index='1']")
+    expect(event_mapping).to_be_visible()
+    assert page.locator("#legacy-pri-map-events label").count() == 1
+    event_mapping.select_option(value=str(fixed_event.json()["id"]))
+    page.locator("#legacy-pri-import-form [name=name]").fill("Synthetic 24-class migration " + suffix)
+    page.locator("#legacy-pri-import-form [name=academic_year]").fill("2026")
+    page.locator("#legacy-pri-import-form [name=week_start]").fill("2026-10-26")
+    page.get_by_role("button", name="Import as draft", exact=True).click()
+
+    expect(page.locator("#notice")).to_contain_text("Legacy timetable imported as draft")
+    expect(page.locator("#timetable-version-rows")).to_contain_text("Synthetic 24-class migration " + suffix)
+    expect(page.locator("#timetable-version-rows")).to_contain_text("DRAFT")
 
 
 def test_operator_does_not_see_legacy_project_preflight(page, make_account):
