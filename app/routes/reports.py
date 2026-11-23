@@ -12,6 +12,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import case, func, select
 
+from app.audit import record_event
 from app.crypto import decrypt_sensitive
 from app.deps import Claims, DbSession, require_roles
 from app.models import AttendanceRecord, AttendanceRosterEntry, AttendanceSession, AuditEvent, Student, User
@@ -329,6 +330,7 @@ def attendance_csv(
     stream = io.StringIO()
     writer = csv.writer(stream)
     writer.writerow(["Session date", "Session", "Class", "Pris No.", "Student", "Attendance"])
+    record_count = 0
     for session, record, roster_entry in db.execute(query):
         writer.writerow(
             [
@@ -340,6 +342,24 @@ def attendance_csv(
                 record.attendance_status,
             ]
         )
+        record_count += 1
+    record_event(
+        db,
+        int(claims["sub"]),
+        "report.attendance.exported",
+        "ATTENDANCE_REPORT",
+        "csv",
+        {
+            "format": "csv",
+            "filters": {
+                "class_name": class_name,
+                "date_from": date_from.isoformat() if date_from else None,
+                "date_to": date_to.isoformat() if date_to else None,
+            },
+            "record_count": record_count,
+        },
+    )
+    db.commit()
     return StreamingResponse(
         iter([stream.getvalue()]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=attendance-report.csv"}
     )
@@ -386,6 +406,7 @@ def attendance_monthly_xlsx(
                 student_status=student.status,
             )
     attendance: dict[tuple[int, int, str], str] = {}
+    record_count = 0
     if sessions_by_id and roster_entries:
         records = db.execute(
             select(AttendanceRecord, AttendanceRosterEntry)
@@ -398,6 +419,7 @@ def attendance_monthly_xlsx(
         )
         status_codes = {"PRESENT": "P", "ABSENT": "A", "LATE": "L", "EXCUSED": "E", "MISSING": "M"}
         for record, _roster_entry in records:
+            record_count += 1
             session = sessions_by_id[record.session_id]
             slots = ("AM", "PM") if session.session_type == "FULL_DAY" else (("AM",) if session.session_type == "MORNING" else ("PM",))
             for slot in slots:
@@ -484,6 +506,25 @@ def attendance_monthly_xlsx(
     sheet.print_area = f"A1:{get_column_letter(3 + days_in_month * 2)}{max(5, 5 + len(ordered_roster))}"
     output = io.BytesIO()
     workbook.save(output)
+    roster_source = (
+        "legacy_partial_session_snapshots" if legacy_sessions else ("session_snapshots" if sessions else "current_active_profiles")
+    )
+    record_event(
+        db,
+        int(claims["sub"]),
+        "report.attendance.exported",
+        "ATTENDANCE_REPORT",
+        "monthly.xlsx",
+        {
+            "format": "monthly.xlsx",
+            "filters": {"month": month, "class_name": class_name},
+            "session_count": len(sessions),
+            "roster_count": len(ordered_roster),
+            "record_count": record_count,
+            "roster_source": roster_source,
+        },
+    )
+    db.commit()
     safe_class = quote(class_name.strip().replace(" ", "_"), safe="")
     filename = f"attendance-{year}-{month_number:02d}-{safe_class}.xlsx"
     return Response(
