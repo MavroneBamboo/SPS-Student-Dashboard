@@ -1175,7 +1175,7 @@ export function createTimetableWorkspace({$, api, run, notice, cell, showPanel, 
           : times.length > 1
             ? "Times vary by class"
             : `${formatTime(definitions[0].starts_at)} – ${formatTime(definitions[0].ends_at)}`;
-        const label = period === "LUNCH" ? "Lunch / Muster" : `Period ${periodNumber[period]}`;
+        const label = `Period ${periodNumber[period]}`;
         return `<th data-period="${period}"><span>${label}</span><small>${escapeHTML(timeText)}</small></th>`;
       }).join("");
       const rows = days.map((day) => {
