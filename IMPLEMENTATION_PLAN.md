@@ -455,9 +455,9 @@ Exit criteria: operators can correct a generated draft entirely in Amend 4-up, s
 - Delivered: By Instructional Class and By Teacher reports are generated from the same immutable timetable version; audited XLSX downloads and browser print-to-PDF are available.
 - Delivered: reports include version and generation metadata; Executives can read approved timetables and reports.
 - Delivered: IT approval and publication controls expose the current approved version to attendance users. Attendance session creation validates the published week/class and stores version provenance; manual sessions remain supported.
-- Remaining: compare both report layouts and content against the latest supplied PDFs; server-generated PDF output remains a follow-up.
+- Delivered (25 November 2026): visually reviewed both supplied legacy PDFs and aligned the browser report's Period 3 lunch header/cells, grid weight, text scale, page proportions and SPS header lockup. Browser acceptance coverage checks the numbered lunch column and output page geometry. Exact pixel-level and row-by-row content reconciliation, plus server-generated PDF output, remain follow-ups.
 
-PDF review follow-up (18 November 2026): the supplied By Teacher sample includes long names that can collide with the crest or crowd the report header. Print-view title sizing now adapts to long teacher names, with browser coverage asserting the title does not overlap the crest or overflow its header. Full layout/content comparison against both supplied PDFs remains open.
+PDF review follow-up: the supplied By Teacher sample includes long names that can collide with the crest or crowd the report header. Print-view title sizing adapts to long teacher names, with browser coverage asserting the title does not overlap the crest or overflow its header. Visual review of the By InstClass and By Teacher samples also informed the layout refinements recorded in [TIMETABLE_REPORT_EXPORTS.md](TIMETABLE_REPORT_EXPORTS.md); exact pixel and source-row reconciliation remains open.
 
 Exit criteria: both report types reconcile with the approved grid and the report renderer does not mutate timetable data.
 
