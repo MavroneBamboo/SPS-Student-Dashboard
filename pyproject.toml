@@ -14,7 +14,7 @@ dependencies = [
   "psycopg[binary]==3.3.9",
   "PyJWT==2.15.1",
   "pydantic-settings==2.16.3",
-  "python-multipart==0.0.33",
+  "python-multipart==0.0.34",
   "cryptography==50.0.2",
   "openpyxl==3.1.5",
   "defusedxml==0.7.1",
